@@ -14,7 +14,11 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const admin = isAdmin(user?.role);
-  const nav: NavItem[] = admin ? [
+  const nav: NavItem[] = admin && user?.role === 'ADMINMASTER' ? [
+    {to:'/',label:'Inicio',icon:LayoutDashboard,group:'Estadísticas'},
+    {to:'/reports',label:'Reportes',icon:ChartNoAxesCombined,group:'Estadísticas'},
+    {to:'/settings/users',label:'Usuarios',icon:Settings2,group:'Sistema'},
+  ] : admin ? [
     {to:'/',label:'Inicio',icon:LayoutDashboard,group:'Administración'},
     {to:'/operation',label:'Operación',icon:PanelsTopLeft,group:'Administración'},
     {to:'/orders',label:'Órdenes',icon:ClipboardList,group:'Administración'},
