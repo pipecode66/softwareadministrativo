@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppData, OrderInput, Role, User, WorkOrder, WorkStatus } from '../src/domain/types';
 import { createWorkOrder, editWorkOrder, recordPayment, transitionWorkOrder, validateClient, validateInput } from '../src/domain/service';
-import { areaOf, canCreate, canViewOrder, CATEGORIES, currentMonthRange, dateOnly, financials, formatDate, formatMeasure, inRange, isAdmin, isCalendarDate, isFinished, MATERIALS, normalize, roundMoney, today, visibleOrders } from '../src/domain/utils';
+import { areaOf, canCreate, canViewOrder, CATEGORIES, currentMonthRange, dateOnly, financials, formatDate, formatMeasure, formatPesosInput, inRange, isAdmin, isCalendarDate, isFinished, MATERIALS, normalize, roundMoney, today, visibleOrders } from '../src/domain/utils';
 
 const NOW = '2026-09-14T15:00:00.000Z';
 const roles: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO', 'IMPRESION', 'TALLER'];
@@ -328,6 +328,11 @@ describe('Fechas, medidas y búsqueda', () => {
     expect(formatMeasure(25)).toBe('25');
     expect(formatMeasure(3.4)).toBe('3.4');
     expect(formatMeasure(85)).toBe('85');
+  });
+  it('formatea pesos enteros con puntos de miles', () => {
+    expect(formatPesosInput('25')).toBe('25');
+    expect(formatPesosInput('1000')).toBe('1.000');
+    expect(formatPesosInput('15000000')).toBe('15.000.000');
   });
   it('normaliza tildes y mayúsculas sin quitar el número OT', () => {
     expect(normalize('IMPRESIÓN ÁÉÍÓÚ 0001')).toBe('impresion aeiou 0001');
