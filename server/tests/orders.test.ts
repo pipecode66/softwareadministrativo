@@ -216,13 +216,13 @@ describe('OT: finanzas y abonos', () => {
   });
 
   it('redondea el IVA a centavos sin alterar la precisión de varios pagos', async () => {
-    const order = await create({ value: 0.1, documentType: 'FACT' });
-    expect(order.financials).toMatchObject({ iva: 0.02, collectible: 0.12 });
+    const order = await create({ value: 1, documentType: 'FACT' });
+    expect(order.financials).toMatchObject({ iva: 0.19, collectible: 1.19 });
     const first = await payment(order, 0.01);
     const second = await payment(order, 0.02);
-    const third = await payment(order, 0.09);
+    const third = await payment(order, 1.16);
     expect([first.status, second.status, third.status]).toEqual([201, 201, 201]);
-    expect(third.body.order.financials).toMatchObject({ paid: 0.12, balance: 0, paymentStatus: 'PAID' });
+    expect(third.body.order.financials).toMatchObject({ paid: 1.19, balance: 0, paymentStatus: 'PAID' });
     expect(third.body.order.payments).toHaveLength(3);
     expect(third.body.order.payments.every((p: { recordedBy: string }) => p.recordedBy === admin.user.id)).toBe(true);
     expect((await payment(order, 0.01)).status).toBe(409);

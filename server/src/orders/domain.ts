@@ -23,7 +23,7 @@ const dimension = z.number().finite().min(0.001).max(100000)
   .refine(n => Number(n.toFixed(3)) === n, 'Utiliza máximo tres decimales.');
 export const orderFields = {
   clientId: z.uuid(), description: z.string().trim().min(1).max(10000),
-  value: moneySchema.refine(n => n >= 0.01, 'El valor es obligatorio y debe ser mayor que cero.'),
+  value: moneySchema.refine(n => Number.isSafeInteger(n) && n >= 1, 'El valor es obligatorio y debe ser un peso entero desde $1.'),
   documentType: z.enum(['REM','FACT']), category: z.enum(categories), route: z.enum(routes),
   requiresInstallation: z.boolean(),
   printing: z.object({ material: z.enum(materials), length: dimension, width: dimension }).strict().optional(),

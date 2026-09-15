@@ -48,10 +48,14 @@
 .order-client-selected span { font-size: 11px; color: #64748b; margin-top: 4px; }
 .order-client-selected > svg { color: #059669; flex-shrink: 0; }
 .order-client-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 13px; font-size: 12px; }
+.order-client-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 13px; }
+.order-client-actions .link { margin-top: 0; }
+.order-inline-client { display: grid; gap: 13px; margin-top: 14px; padding: 16px; border: 1px solid #e2e9f4; border-radius: 9px; background: #f8faff; }
 .order-value-field { max-width: 350px; margin-bottom: 24px; }
 .order-input-unit { display: flex; align-items: center; border: 1px solid #d6deea; background: #f8faff; border-radius: 7px; overflow: hidden; }
 .order-input-unit:focus-within { border-color: #ea580c; outline: 3px solid #fff0e4; }
 .order-input-unit > span { padding: 0 12px; color: #475569; font-size: 12px; }
+.order-input-unit > .order-input-currency { flex: 0 0 auto; white-space: nowrap; padding-left: 8px; padding-right: 12px; font-size: 11px; font-weight: 700; letter-spacing: .03em; }
 .order-input-unit > .input { width: 100%; min-width: 0; border: 0; border-radius: 0; background: transparent; font-size: 17px; font-weight: 700; padding-left: 0; padding-right: 0; box-shadow: none; outline: 0; }
 .order-input-unit > .input:focus { box-shadow: none; outline: 0; }
 .order-choice-fieldset { padding: 0; border: 0; margin: 0; min-width: 0; }

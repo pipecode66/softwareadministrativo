@@ -19,6 +19,10 @@ export const visibleOrders = (user: User | null, orders: WorkOrder[]) => orders.
 export const formatCOP = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);
 export const formatNumber = (value: number, digits = 0) => new Intl.NumberFormat('es-CO', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
 export const formatMeasure = (value: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 3, useGrouping: false }).format(value);
+export const formatPesosInput = (value: string | number) => {
+  const digits = String(value).replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+  return digits ? new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(Number(digits)) : '';
+};
 export const isCalendarDate = (value: string): boolean => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T12:00:00Z`);

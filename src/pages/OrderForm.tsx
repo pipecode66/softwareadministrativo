@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Check, FileText, Hammer, Info, Printer, Ruler, Save } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { Category, DocumentType, Material, OrderInput, ProductionRoute, WorkOrder } from '../domain/types';
-import { areaOf, canCreate, CATEGORIES, financials, formatCOP, formatMeasure, formatNumber, isAdmin, MATERIALS, ROUTE_LABELS } from '../domain/utils';
+import { areaOf, canCreate, CATEGORIES, financials, formatCOP, formatMeasure, formatNumber, formatPesosInput, isAdmin, MATERIALS, ROUTE_LABELS } from '../domain/utils';
 import { Button, Card, EmptyState, Field, PageHeader } from '../components/ui';
 import './orders.css';
 
@@ -17,7 +17,7 @@ type FormErrors = Partial<Record<keyof FormValues | 'general', string>>;
 function initialValues(order?: WorkOrder, clientId = ''): FormValues {
   return {
     number: order ? String(order.number) : '', clientId: order?.clientId || clientId,
-    description: order?.description || '', value: order ? String(order.value) : '',
+    description: order?.description || '', value: order ? formatPesosInput(order.value) : '',
     category: order?.category || 'Otras', documentType: order?.documentType || 'REM',
     route: order?.route || 'PRINT_WORKSHOP', requiresInstallation: order?.requiresInstallation || false,
     material: order?.printing?.material || 'Panaflex', length: order?.printing ? String(order.printing.length) : '', width: order?.printing ? String(order.printing.width) : '',
@@ -52,7 +52,7 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
   const fact = values.documentType === 'FACT';
   const hasPrinting = values.route !== 'WORKSHOP_ONLY';
   const selectedClient = data.clients.find(client => client.id === values.clientId);
-  const base = Number(values.value) || 0;
+  const base = Number(values.value.replace(/\./g, '')) || 0;
   // Use the same cents-based calculation as the stored OT and its reports.
   const previewMoney = financials({
     value: Number.isFinite(base) ? base : 0, documentType: values.documentType,
@@ -79,8 +79,7 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
     const next: FormErrors = {};
     if (!selectedClient) next.clientId = 'Selecciona un cliente del directorio.';
     if (!values.description.trim()) next.description = 'Describe el trabajo que se realizará.';
-    if (!values.value.trim() || !Number.isFinite(base) || base < 0.01) next.value = 'El valor es obligatorio y debe ser mayor que cero.';
-    else if (Math.abs(Math.round(base * 100) - base * 100) > 0.0001) next.value = 'Ingresa un valor con máximo dos decimales.';
+    if (!values.value.trim() || !Number.isSafeInteger(base) || base < 1) next.value = 'El valor es obligatorio y debe ser como mínimo $1.';
     if (hasPrinting) {
       if (!values.length.trim() || !Number.isFinite(Number(values.length)) || Number(values.length) <= 0) next.length = 'El largo debe ser mayor que cero.';
       if (!values.width.trim() || !Number.isFinite(Number(values.width)) || Number(values.width) <= 0) next.width = 'El ancho debe ser mayor que cero.';
@@ -142,14 +141,14 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
             <Field label="Cliente / Razón social *" htmlFor="ot-client"><select className="select" id="ot-client" value={values.clientId} onChange={event => change('clientId', event.target.value)} required {...attrs('clientId')}><option value="">Selecciona un cliente</option>{data.clients.map(client => <option key={client.id} value={client.id}>{client.name} · {client.identification}</option>)}</select>{errorFor('clientId')}</Field>
           </div>
           {selectedClient && <div className="order-client-selected"><div><strong>{selectedClient.name}</strong><span>{selectedClient.identification} · {selectedClient.phone || 'Sin teléfono registrado'}</span></div><Check size={18} /></div>}
-          {admin && <div className="row"><Link className="link order-client-link" to="/clients">Consultar directorio de clientes <ArrowRight size={15} /></Link><button type="button" className="link" onClick={() => setNewClientOpen(value => !value)}>{newClientOpen ? 'Cancelar nuevo cliente' : 'Nuevo cliente'}</button></div>}
+          {admin && <div className="order-client-actions"><Link className="link" to="/clients">Consultar directorio de clientes <ArrowRight size={15} /></Link><button type="button" className="link" onClick={() => setNewClientOpen(value => !value)}>{newClientOpen ? 'Cancelar nuevo cliente' : 'Nuevo cliente'}</button></div>}
           {admin && newClientOpen && <div className="order-inline-client"><div className="form-grid"><Field label="Nombre / razón social *" htmlFor="new-client-name"><input className="input" id="new-client-name" value={newClientName} onChange={event => setNewClientName(event.target.value)} /></Field><Field label="NIT o identificación" htmlFor="new-client-identification"><input className="input" id="new-client-identification" value={newClientIdentification} onChange={event => setNewClientIdentification(event.target.value)} /></Field><Field label="Teléfono" htmlFor="new-client-phone"><input className="input" id="new-client-phone" value={newClientPhone} onChange={event => setNewClientPhone(event.target.value)} /></Field></div>{clientError && <p className="field-error" role="alert">{clientError}</p>}<button type="button" className="btn btn-secondary" onClick={() => void addClient()}>Agregar cliente al directorio</button></div>}
           {data.clients.length === 0 && <p className="notice notice-warning">Administración debe registrar un cliente antes de crear la orden.</p>}
         </Card>
         <Card className="order-form-section">
           <div className="order-section-heading"><span>02</span><h2>Información general del trabajo</h2></div>
           <Field label="Descripción del trabajo *" htmlFor="ot-description" hint="Incluye las especificaciones y acabados que necesita producción."><textarea className="textarea" id="ot-description" value={values.description} onChange={event => change('description', event.target.value)} rows={4} placeholder="Describe el trabajo, sus características y acabados…" required {...attrs('description')} />{errorFor('description')}</Field>
-          <div className="order-value-field"><Field label="Valor del trabajo antes de IVA (COP) *" htmlFor="ot-value"><div className="order-input-unit"><span>$</span><input className="input" id="ot-value" type="number" min="0.01" step="0.01" inputMode="decimal" value={values.value} placeholder="0" onChange={event => change('value', event.target.value)} required {...attrs('value')} /><span>COP</span></div>{errorFor('value')}</Field></div>
+          <div className="order-value-field"><Field label="Valor del trabajo antes de IVA (COP) *" htmlFor="ot-value"><div className="order-input-unit"><span>$</span><input className="input" id="ot-value" type="text" inputMode="numeric" value={values.value} placeholder="1" onChange={event => change('value', formatPesosInput(event.target.value))} required {...attrs('value')} /><span className="order-input-currency">COP</span></div>{errorFor('value')}<span className="field-hint">Ingresa pesos enteros. Ejemplo: 1.000, 15.000.000.</span></Field></div>
           <fieldset className="order-choice-fieldset"><legend>Categoría comercial *</legend><div className="order-category-options">{CATEGORIES.map(category => <label className={`order-choice-card ${values.category === category ? 'is-selected' : ''}`} key={category}><input type="radio" name="category" value={category} checked={values.category === category} onChange={() => change('category', category)} /><span>{category}</span>{values.category === category && <Check size={15} aria-hidden="true" />}</label>)}</div></fieldset>
         </Card>
         <Card className="order-form-section">
