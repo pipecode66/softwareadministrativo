@@ -141,6 +141,7 @@ export async function createApp(db: Database, config: AppConfig): Promise<Expres
       const message = error instanceof Error ? error.message : '';
       const databaseCode = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
       const schemaMissing = message === 'Schema not ready' || databaseCode === '42P01';
+      if (!schemaMissing) console.error('DATABASE_READY_CHECK_FAILED', databaseCode || 'UNKNOWN', message.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, 'postgresql://[redacted]'));
       response.status(503).json(errorBody('NOT_READY', schemaMissing
         ? 'La conexión funciona, pero faltan las migraciones de la base de datos.'
         : 'No se pudo consultar la base de datos configurada.'));
