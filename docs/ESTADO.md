@@ -1,6 +1,6 @@
 # Estado de continuidad
 
-Actualizado: 2026-09-15. **Frontend conectado a la API en sus flujos principales y reportes; regla de retenciones unificada.**
+Actualizado: 2026-09-15. **Frontend y backend preparados para desplegarse juntos en Vercel con Supabase; regla de retenciones unificada.**
 
 ## Punto de control 2026-09-15
 
@@ -11,11 +11,13 @@ Actualizado: 2026-09-15. **Frontend conectado a la API en sus flujos principales
 - Las pruebas locales tenían expectativas históricas de descuento y se actualizaron para coincidir con el backend.
 - `Reports`, `Dashboard`, `Portfolio` y `Materials` consultan reportes server-side en sesiones API; el modo local conserva los datos ficticios para revisión.
 - `npm run test:e2e:api` levanta migraciones, Adminmaster ficticio, API PGlite aislada y Vite con `VITE_USE_API=true`; login real y `/api/v1/reports/sales` respondieron correctamente (1 prueba aprobada).
+- `api/[...path].ts` adapta Express al runtime serverless de Vercel, reutilizando el pool PostgreSQL entre invocaciones; `vercel.json` mantiene el fallback SPA sin interceptar `/api/*`.
+- Las dependencias runtime del backend están también en el `package.json` raíz porque Vercel instala y empaqueta el proyecto desde esa carpeta.
 - PostgreSQL local está instalado, el servicio `postgresql-x64-17` está activo y el puerto 5432 responde. No existe `DATABASE_URL` en el workspace y no se proporcionaron credenciales, por lo que todavía no se verificó una conexión autenticada ni se ejecutaron migraciones sobre esa base.
 
 ### Comando para continuar
 
-Configurar una `DATABASE_URL` segura para el entorno acordado, ejecutar una comprobación/migración controlada sobre una base destinada al proyecto y ampliar la E2E API con creación de cliente y OT.
+Configurar en Vercel `DATABASE_MODE=postgres`, `DATABASE_URL` de Supabase y `APP_ORIGINS`; ejecutar las migraciones de Supabase antes del primer despliegue y ampliar la E2E API con creación de cliente y OT.
 
 ## Punto de control actual — backend
 

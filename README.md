@@ -87,4 +87,33 @@ Para retomar, leer primero **`docs/ESTADO.md`**, después `docs/CONTEXTO.md` y `
 - `docs/AUDITORIA.md`: hallazgos de los originales y correcciones.
 - `docs/GUIA_REVISION.md`: recorrido sugerido para revisar las pantallas.
 
-La siguiente etapa prevista es implementar el backend por módulos, comenzando por Administración, una vez revisado este frontend y confirmadas las reglas pendientes.
+El backend por módulos está implementado y el adaptador serverless para Vercel queda documentado en la sección siguiente.
+
+## Despliegue conjunto en Vercel y Supabase
+
+El repositorio incluye `api/[...path].ts`, que expone el backend Express como función serverless en el mismo proyecto Vercel. Las rutas conservan el prefijo `/api/v1`; el frontend y la API quedan bajo el mismo dominio y no requieren una URL de API distinta.
+
+En Vercel, con el directorio raíz del repositorio, usa `npm run build` y configura estas variables privadas:
+
+```env
+NODE_ENV=production
+DATABASE_MODE=postgres
+DATABASE_URL=postgresql://...cadena-de-Supabase...
+APP_ORIGINS=https://tu-proyecto.vercel.app
+SESSION_HOURS=8
+TRUST_PROXY_HOPS=0
+LOGIN_RATE_LIMIT=10
+```
+
+`DATABASE_URL` se obtiene en Supabase y no debe ir al frontend ni al repositorio. Usa la cadena PostgreSQL recomendada por Supabase para el pooler apropiado al despliegue. Antes de publicar, aplica las migraciones contra la base Supabase destinada al proyecto:
+
+```powershell
+$env:NODE_ENV = 'production'
+$env:DATABASE_MODE = 'postgres'
+$env:DATABASE_URL = 'NO_ESCRIBAS_LA_CLAVE_EN_EL_REPOSITORIO'
+npm --prefix server run db:migrate
+```
+
+El texto anterior es una plantilla: configura la URL real solo en el entorno seguro donde ejecutes la migración. Después crea el primer Adminmaster con `server/.env.example` como referencia para `BOOTSTRAP_ADMIN_NAME`, `BOOTSTRAP_ADMIN_EMAIL` y `BOOTSTRAP_ADMIN_PASSWORD`; retira esas variables después del aprovisionamiento. No ejecutes `db:bootstrap` contra una base que ya tenga usuarios.
+
+En Vercel, `PGlite` no se usa para producción: las funciones serverless utilizan Supabase mediante `DATABASE_MODE=postgres`. El proceso local `server/src/main.ts` sigue disponible para desarrollo; Vercel utiliza únicamente el adaptador de `api/`.
