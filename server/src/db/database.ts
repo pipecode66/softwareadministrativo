@@ -60,7 +60,7 @@ function postgresConnection(client: Pool | PoolClient): SqlConnection {
 }
 
 export function createPostgresDatabase(connectionString: string): Database {
-  const pool = new Pool({ connectionString, max: 10, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30_000, statement_timeout: 15_000 });
+  const pool = new Pool({ connectionString, ssl: { rejectUnauthorized: false }, max: 10, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30_000, statement_timeout: 15_000 });
   // Do not print connection strings or raw errors containing credentials/SQL values.
   pool.on('error', () => console.error('API: conexión PostgreSQL interrumpida.'));
   return {
