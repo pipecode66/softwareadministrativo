@@ -8,7 +8,9 @@ try {
     const applied = await migrate(db);
     console.log(applied.length ? `Migraciones aplicadas: ${applied.join(', ')}` : 'Base de datos actualizada; no se modificaron migraciones existentes.');
   } finally { await db.close(); }
-} catch {
-  console.error('No se pudieron aplicar las migraciones. Revisa configuración, conexión y el bloqueo local. Los datos no se reinicializan.');
+} catch (error) {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? ` [${String(error.code)}]` : '';
+  const message = error instanceof Error ? error.message : 'Error desconocido.';
+  console.error(`No se pudieron aplicar las migraciones${code}: ${message.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, 'postgresql://[redacted]')}`);
   process.exitCode = 1;
 }
