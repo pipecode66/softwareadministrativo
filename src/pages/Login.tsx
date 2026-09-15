@@ -31,7 +31,7 @@ export function LoginPage() {
   }
   return <div className="login-page"><main className="login-main"><div className="login-wrap"><div className="login-card">
     <span className="crop-mark crop-top"/><span className="crop-mark crop-bottom"/>
-    <div className="login-brand"><img src="/logo.svg" alt="Intermedios Gestión · Publicidad y Arquitectura"/><span className="login-label"><LockKeyhole size={12}/> ACCESO CORPORATIVO</span><h1>Bienvenido a Intermedios</h1><p>Tu operación, conectada en un solo lugar.</p></div>
+    <div className="login-brand"><span className="login-label"><LockKeyhole size={12}/> ACCESO CORPORATIVO</span><h1>Bienvenido a Intermedios</h1><p>Tu operación, conectada en un solo lugar.</p></div>
     <form onSubmit={submit} className="stack login-form" aria-busy={pending}>
       <Field label="Usuario o correo" htmlFor="login-email"><div className="input-with-icon"><UserRound size={18}/><input id="login-email" type="email" required autoComplete="username" maxLength={160} disabled={pending} value={email} onChange={e => setEmail(e.target.value)} placeholder={usingApi ? 'tu.correo@empresa.com' : 'tu.usuario@intermedios.local'}/></div></Field>
       <Field label="Contraseña" htmlFor="login-password"><div className="input-with-icon"><KeyRound size={18}/><input id="login-password" type={showPassword ? 'text' : 'password'} required autoComplete="current-password" maxLength={128} disabled={pending} value={password} onChange={e => setPassword(e.target.value)} placeholder="Ingresa tu contraseña"/><button type="button" className="icon-button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}>{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button></div></Field>
@@ -41,5 +41,5 @@ export function LoginPage() {
     <div className="login-review"><span className="demo-dot"/><p>{usingApi ? 'Acceso con tu cuenta del servidor' : 'Entorno local de revisión · datos de ejemplo'}</p></div>
     {!usingApi && <><button className="login-help" type="button" aria-expanded={showHelp} onClick={() => setShowHelp(!showHelp)}>Ver accesos de revisión <span>{showHelp ? '−' : '+'}</span></button>{showHelp && <div className="login-accounts"><p>Contraseña de las cuentas locales: <strong>{DEMO_PASSWORD}</strong></p>{data.users.filter(u => u.active).map(u => <button type="button" key={u.id} onClick={() => { setEmail(u.email); setPassword(DEMO_PASSWORD); setError(''); }}><span>{ROLE_LABELS[u.role]}</span><small>{u.email}</small><ArrowRight size={14}/></button>)}<p>Estos accesos son ficticios y solo permiten revisar las pantallas. No inician sesión en el servidor.</p></div>}</>}
     {usingApi && <p className="muted">Si no tienes acceso, solicita una cuenta a la persona encargada de Administración.</p>}
-  </div><p className="login-caption">Órdenes · Producción · Administración</p></div></main><footer className="login-footer">© {new Date().getFullYear()} INTERMEDIOS PUBLICIDAD & ARQUITECTURA</footer></div>;
+  </div></div></main><footer className="login-footer">© {new Date().getFullYear()} INTERMEDIOS PUBLICIDAD & ARQUITECTURA</footer></div>;
 }
