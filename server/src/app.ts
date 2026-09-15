@@ -137,8 +137,13 @@ export async function createApp(db: Database, config: AppConfig): Promise<Expres
       `);
       if (!result.rows[0]?.ready) throw new Error('Schema not ready');
       response.json({ status: 'ready' });
-    } catch {
-      response.status(503).json(errorBody('NOT_READY', 'La base de datos todavía no está disponible.'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      const databaseCode = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+      const schemaMissing = message === 'Schema not ready' || databaseCode === '42P01';
+      response.status(503).json(errorBody('NOT_READY', schemaMissing
+        ? 'La conexión funciona, pero faltan las migraciones de la base de datos.'
+        : 'No se pudo consultar la base de datos configurada.'));
     }
   });
   api.use('/auth/login', loginLimiter);
