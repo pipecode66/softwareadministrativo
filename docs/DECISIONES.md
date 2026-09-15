@@ -1,0 +1,13 @@
+# Decisiones y diferencias de las fuentes
+
+1. **Prioridad:** instrucciones directas del usuario > sugerencias del PDF > HTML decorativo. La petición autoriza corregir el diseño aunque el PDF diga no reinterpretarlo.
+2. **Numeración (confirmada 2026-09-14):** el usuario respondió «Automático desde 1». Sustituye la captura manual provisional: servidor asigna número único desde 1, sin continuidad histórica ni número elegido por cliente HTTP. Ajustar formulario/API y pruebas; no reiniciar una secuencia con datos existentes.
+3. **Retenciones:** el usuario confirmó el 2026-09-15 que son valores agregados al total por cobrar. Para FACT, el cobrable es base + IVA 19 % + RETE FUENTE + RETE IVA + ICA. Son importes manuales de operación y no representan una liquidación tributaria ni emisión electrónica.
+4. **Material:** cinco nombres expresos, un detalle por OT, dimensiones en metros y área a tres decimales, según PDF. Consumo al completar impresión; cola no cuenta como consumo.
+5. **Valor:** formulario valida >0 según documento. Reglas finales deberán validarse también en servidor.
+6. **Reportes:** ventas por creación OT (base), FACT bruto base+IVA, recaudo por fecha individual de pago, cartera al corte. No sumas estáticas ni doble conteo de abonos.
+7. **Datos locales:** solo ejemplos ficticios para revisar UI. Persistencia en navegador y sincronización entre pestañas del mismo navegador, no entre usuarios/equipos. Login local identificado como tal; no almacena contraseñas de clientes.
+8. **Stack:** React/TypeScript/Vite y React Router, CSS con tokens compartidos, Lucide SVG, Manrope/Inter locales y Recharts. CSS compilado local sin Tailwind CDN; conserva lenguaje visual con menor duplicación. Documentación consultada: https://vite.dev/guide/ y https://reactrouter.com/start/declarative/installation .
+9. **Permisos:** Diseño ve sus propias OT y selecciona clientes existentes; edición por administración antes de producción. Impresión/Taller sin finanzas. Configuración de cuentas solo adminmaster, limitada a interfaz local.
+10. **Precisión y períodos:** cálculo monetario compartido en centavos, IVA redondeado a dos decimales; no se admiten pagos/valores que redondeen a cero. Se validan fechas de calendario reales. El modo Mes comprende el mes calendario completo, incluido su último día; la zona horaria comercial es America/Bogota.
+11. **Accesibilidad y adaptación:** navegación móvil, foco contenido y restaurado en modales, etiquetas de campos, tablas convertidas en tarjetas y alternativas escritas a gráficos. Los gráficos actualizan sus valores sin animación. Se verificó Chromium; no equivale a una certificación de accesibilidad ni a pruebas en Safari/iOS físicos.
