@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppData, OrderInput, Role, User, WorkOrder, WorkStatus } from '../src/domain/types';
 import { createWorkOrder, editWorkOrder, recordPayment, transitionWorkOrder, validateClient, validateInput } from '../src/domain/service';
-import { areaOf, canCreate, canViewOrder, CATEGORIES, currentMonthRange, dateOnly, financials, formatDate, inRange, isAdmin, isCalendarDate, isFinished, MATERIALS, normalize, roundMoney, today, visibleOrders } from '../src/domain/utils';
+import { areaOf, canCreate, canViewOrder, CATEGORIES, currentMonthRange, dateOnly, financials, formatDate, formatMeasure, inRange, isAdmin, isCalendarDate, isFinished, MATERIALS, normalize, roundMoney, today, visibleOrders } from '../src/domain/utils';
 
 const NOW = '2026-09-14T15:00:00.000Z';
 const roles: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO', 'IMPRESION', 'TALLER'];
@@ -323,6 +323,11 @@ describe('Fechas, medidas y búsqueda', () => {
     expect(areaOf()).toBe(0);
     expect(MATERIALS).toHaveLength(5);
     expect(CATEGORIES).toHaveLength(4);
+  });
+  it('formatea medidas sin ceros forzados ni separadores de miles', () => {
+    expect(formatMeasure(25)).toBe('25');
+    expect(formatMeasure(3.4)).toBe('3.4');
+    expect(formatMeasure(85)).toBe('85');
   });
   it('normaliza tildes y mayúsculas sin quitar el número OT', () => {
     expect(normalize('IMPRESIÓN ÁÉÍÓÚ 0001')).toBe('impresion aeiou 0001');

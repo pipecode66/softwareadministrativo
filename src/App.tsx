@@ -21,7 +21,7 @@ const PortfolioPage = lazy(()=>import('./pages/Portfolio').then(m=>({default:m.P
 const MaterialsPage = lazy(()=>import('./pages/Materials').then(m=>({default:m.MaterialsPage})));
 const UsersPage = lazy(()=>import('./pages/Users').then(m=>({default:m.UsersPage})));
 const admins:Role[]=['ADMINMASTER','ADMIN_GENERAL'];
-const operationsAdmins:Role[]=['ADMIN_GENERAL'];
+const operationsAdmins:Role[]=['ADMINMASTER','ADMIN_GENERAL'];
 function Guard({roles,children,allowPasswordChange=false}:{roles?:Role[];children:ReactNode;allowPasswordChange?:boolean}){
   const {user,sessionReady}=useApp();const location=useLocation();
   if(!sessionReady)return <Loading/>;

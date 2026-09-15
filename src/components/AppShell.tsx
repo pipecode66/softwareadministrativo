@@ -17,6 +17,8 @@ export function AppShell() {
   const nav: NavItem[] = admin && user?.role === 'ADMINMASTER' ? [
     {to:'/',label:'Inicio',icon:LayoutDashboard,group:'Estadísticas'},
     {to:'/reports',label:'Reportes',icon:ChartNoAxesCombined,group:'Estadísticas'},
+    {to:'/orders',label:'Órdenes',icon:ClipboardList,group:'Gestión'},
+    {to:'/clients',label:'Clientes',icon:Users,group:'Gestión'},
     {to:'/settings/users',label:'Usuarios',icon:Settings2,group:'Sistema'},
   ] : admin ? [
     {to:'/',label:'Inicio',icon:LayoutDashboard,group:'Administración'},

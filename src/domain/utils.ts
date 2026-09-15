@@ -18,6 +18,7 @@ export const canViewOrder = (user: User | null, order: WorkOrder) => {
 export const visibleOrders = (user: User | null, orders: WorkOrder[]) => orders.filter(order => canViewOrder(user, order));
 export const formatCOP = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);
 export const formatNumber = (value: number, digits = 0) => new Intl.NumberFormat('es-CO', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+export const formatMeasure = (value: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 3, useGrouping: false }).format(value);
 export const isCalendarDate = (value: string): boolean => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T12:00:00Z`);

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Check, CheckCircle2, ClipboardCheck, Clock3, Hammer, MapPin, Plus, Printer, Ruler, Workflow } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { OrderAction, Role, WorkOrder } from '../domain/types';
-import { areaOf, dateOnly, formatDate, formatNumber, isAdmin, normalize, ROUTE_LABELS, today, visibleOrders } from '../domain/utils';
+import { areaOf, dateOnly, formatDate, formatMeasure, formatNumber, isAdmin, normalize, ROUTE_LABELS, today, visibleOrders } from '../domain/utils';
 import { Button, Card, DataTable, EmptyState, Field, KpiCard, Modal, PageHeader, Pagination, SearchInput, WorkBadge } from '../components/ui';
 import './operations.css';
 
@@ -105,7 +105,7 @@ function QueueContents({ department }: { department: QueueDepartment }) {
     return matchesSearch && matchesFilter;
   });
   const safePage = Math.min(page, Math.max(1, Math.ceil(filtered.length / 6)));
-  const materialCell = (order: WorkOrder) => order.printing ? <div className="ops-material-cell"><span className="cell-title">{order.printing.material}</span><span className="cell-subtitle">{formatNumber(order.printing.length, 3)} × {formatNumber(order.printing.width, 3)} m</span><strong className="ops-area-chip">{formatNumber(areaOf(order.printing), 3)} m²</strong></div> : <span className="muted">No requiere impresión</span>;
+  const materialCell = (order: WorkOrder) => order.printing ? <div className="ops-material-cell"><span className="cell-title">{order.printing.material}</span><span className="cell-subtitle">{formatMeasure(order.printing.length)} × {formatMeasure(order.printing.width)} m</span><strong className="ops-area-chip">{formatMeasure(areaOf(order.printing))} m²</strong></div> : <span className="muted">No requiere impresión</span>;
   const nextAction = (order: WorkOrder) => {
     if (department === 'DISENO') return null;
     const candidate = workflowAction(order, user.role);

@@ -37,7 +37,7 @@ export function DashboardPage() {
     { name: 'Instalación', count: active.filter(order => order.status === 'PENDING_INSTALLATION').length, icon: Wrench, description: 'Trabajos pendientes de instalar', className: 'blue', path: '/orders?status=PENDING_INSTALLATION' },
   ];
   return <div className="page-stack analytics-page">
-    <PageHeader eyebrow="RESUMEN EJECUTIVO · INTERMEDIOS" title={`Hola, ${user?.name.split(' ')[0] ?? 'Administración'}`} description="Una vista clara de las estadísticas comerciales de la empresa." actions={!statisticsOnly && <Link className="btn btn-primary" to="/orders/new"><Plus size={18} />Crear orden</Link>} />
+    <PageHeader eyebrow="RESUMEN EJECUTIVO · INTERMEDIOS" title={`Hola, ${user?.name.split(' ')[0] ?? 'Administración'}`} description="Una vista clara de las estadísticas comerciales de la empresa." actions={<Link className="btn btn-primary" to="/orders/new"><Plus size={18} />Crear orden</Link>} />
     <Card><PeriodFilter value={range} onChange={setRange} /></Card>
     <div className="metrics-grid">
       <KpiCard label="Ventas del período · base" value={formatCOP(base)} icon={TrendingUp} tone="orange" meta="Por creación de OT, antes de IVA" />

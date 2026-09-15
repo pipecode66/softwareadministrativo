@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, ClipboardCheck, Hammer, MapPin, Plus, Printer, Workflow } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { OrderAction, WorkOrder, WorkStatus } from '../domain/types';
-import { areaOf, formatDate, formatNumber, isAdmin, normalize, ROUTE_LABELS } from '../domain/utils';
+import { areaOf, formatDate, formatMeasure, isAdmin, normalize, ROUTE_LABELS } from '../domain/utils';
 import { Button, Card, EmptyState, KpiCard, PageHeader, SearchInput } from '../components/ui';
 import { OrderActionDialog, workflowAction } from './Queues';
 import './operations.css';
@@ -45,7 +45,7 @@ export function OperationPage() {
               return <article key={order.id} className="ops-board-order">
                 <div className="ops-board-order-top"><Link className="link ops-order-number" to={`/orders/${order.id}`}>OT #{String(order.number).padStart(4, '0')}</Link><span className="ops-category-label">{order.category}</span></div>
                 <h3>{client?.name ?? 'Cliente no disponible'}</h3><p className="ops-board-description">{order.description}</p>
-                {stage.key === 'printing' && order.printing && <div className="ops-board-material"><Printer size={14} /><span>{order.printing.material}</span><strong>{formatNumber(areaOf(order.printing), 3)} m²</strong></div>}
+                {stage.key === 'printing' && order.printing && <div className="ops-board-material"><Printer size={14} /><span>{order.printing.material}</span><strong>{formatMeasure(areaOf(order.printing))} m²</strong></div>}
                 {stage.key !== 'printing' && <p className="ops-board-route">{stage.key === 'workshop' ? order.workshopStartedAt ? 'En fabricación' : 'Por iniciar fabricación' : stage.key === 'installation' ? 'Pendiente de confirmar instalación' : ROUTE_LABELS[order.route]}</p>}
                 <div className="ops-board-order-date">Actualizada {formatDate(order.updatedAt)}</div>
                 <div className="ops-board-order-actions">{action && <Button variant={stage.key === 'review' ? 'primary' : 'secondary'} onClick={() => setSelectedAction({ order, ...action })}>{action.label}</Button>}<Link className="ops-card-open" to={`/orders/${order.id}`} aria-label={`Abrir OT ${order.number}`}><ArrowRight size={17} /></Link></div>

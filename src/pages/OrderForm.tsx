@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Check, FileText, Hammer, Info, Printer, Ruler, Save } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { Category, DocumentType, Material, OrderInput, ProductionRoute, WorkOrder } from '../domain/types';
-import { areaOf, canCreate, CATEGORIES, financials, formatCOP, formatNumber, isAdmin, MATERIALS, ROUTE_LABELS } from '../domain/utils';
+import { areaOf, canCreate, CATEGORIES, financials, formatCOP, formatMeasure, formatNumber, isAdmin, MATERIALS, ROUTE_LABELS } from '../domain/utils';
 import { Button, Card, EmptyState, Field, PageHeader } from '../components/ui';
 import './orders.css';
 
@@ -37,11 +37,16 @@ export function OrderFormPage() {
 }
 
 function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; initialClientId: string }) {
-  const { data, user, createOrder, updateOrder, toast } = useApp();
+  const { data, user, createOrder, saveClient, updateOrder, toast } = useApp();
   const navigate = useNavigate();
   const [values, setValues] = useState<FormValues>(() => initialValues(existing, initialClientId));
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
+  const [newClientOpen, setNewClientOpen] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientIdentification, setNewClientIdentification] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
+  const [clientError, setClientError] = useState('');
   const errorRef = useRef<HTMLDivElement>(null);
   const admin = isAdmin(user?.role);
   const fact = values.documentType === 'FACT';
@@ -57,6 +62,15 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
   const { iva, retentions, gross, collectible: total } = previewMoney;
   const area = hasPrinting ? areaOf({ material: values.material, length: Number(values.length) || 0, width: Number(values.width) || 0 }) : 0;
   const backPath = existing ? `/orders/${existing.id}` : '/orders';
+  async function addClient() {
+    if (!newClientName.trim()) { setClientError('El nombre del cliente es obligatorio.'); return; }
+    try {
+      const client = await saveClient({ name: newClientName.trim(), identification: newClientIdentification.trim(), phone: newClientPhone.trim() });
+      change('clientId', client.id);
+      setNewClientName(''); setNewClientIdentification(''); setNewClientPhone(''); setClientError(''); setNewClientOpen(false);
+      toast('Cliente agregado al directorio.');
+    } catch (error) { setClientError(error instanceof Error ? error.message : 'No fue posible crear el cliente.'); }
+  }
   function change<K extends keyof FormValues>(key: K, value: FormValues[K]) {
     setValues(current => ({ ...current, [key]: value }));
     setErrors(current => { const next = { ...current }; delete next[key]; delete next.general; return next; });
@@ -128,7 +142,8 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
             <Field label="Cliente / Razón social *" htmlFor="ot-client"><select className="select" id="ot-client" value={values.clientId} onChange={event => change('clientId', event.target.value)} required {...attrs('clientId')}><option value="">Selecciona un cliente</option>{data.clients.map(client => <option key={client.id} value={client.id}>{client.name} · {client.identification}</option>)}</select>{errorFor('clientId')}</Field>
           </div>
           {selectedClient && <div className="order-client-selected"><div><strong>{selectedClient.name}</strong><span>{selectedClient.identification} · {selectedClient.phone || 'Sin teléfono registrado'}</span></div><Check size={18} /></div>}
-          {admin && <Link className="link order-client-link" to="/clients">Consultar directorio de clientes <ArrowRight size={15} /></Link>}
+          {admin && <div className="row"><Link className="link order-client-link" to="/clients">Consultar directorio de clientes <ArrowRight size={15} /></Link><button type="button" className="link" onClick={() => setNewClientOpen(value => !value)}>{newClientOpen ? 'Cancelar nuevo cliente' : 'Nuevo cliente'}</button></div>}
+          {admin && newClientOpen && <div className="order-inline-client"><div className="form-grid"><Field label="Nombre / razón social *" htmlFor="new-client-name"><input className="input" id="new-client-name" value={newClientName} onChange={event => setNewClientName(event.target.value)} /></Field><Field label="NIT o identificación" htmlFor="new-client-identification"><input className="input" id="new-client-identification" value={newClientIdentification} onChange={event => setNewClientIdentification(event.target.value)} /></Field><Field label="Teléfono" htmlFor="new-client-phone"><input className="input" id="new-client-phone" value={newClientPhone} onChange={event => setNewClientPhone(event.target.value)} /></Field></div>{clientError && <p className="field-error" role="alert">{clientError}</p>}<button type="button" className="btn btn-secondary" onClick={() => void addClient()}>Agregar cliente al directorio</button></div>}
           {data.clients.length === 0 && <p className="notice notice-warning">Administración debe registrar un cliente antes de crear la orden.</p>}
         </Card>
         <Card className="order-form-section">
@@ -163,7 +178,7 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
             <Field label="Material *" htmlFor="ot-material"><select className="select" id="ot-material" value={values.material} onChange={event => change('material', event.target.value as Material)} required>{MATERIALS.map(material => <option key={material} value={material}>{material}</option>)}</select></Field>
             <Field label="Largo (m) *" htmlFor="ot-length"><input className="input" id="ot-length" type="number" min="0.001" step="0.001" inputMode="decimal" value={values.length} onChange={event => change('length', event.target.value)} placeholder="Ej. 2.5" required {...attrs('length')} />{errorFor('length')}</Field>
             <Field label="Ancho (m) *" htmlFor="ot-width"><input className="input" id="ot-width" type="number" min="0.001" step="0.001" inputMode="decimal" value={values.width} onChange={event => change('width', event.target.value)} placeholder="Ej. 1.2" required {...attrs('width')} />{errorFor('width')}</Field>
-          </div><div className="order-area-result" aria-live="polite"><Ruler size={21} /><div><small>Superficie requerida</small><strong>{formatNumber(Number(values.length) || 0, 3)} m × {formatNumber(Number(values.width) || 0, 3)} m = <em>{formatNumber(area, 3)} m²</em></strong></div></div></div>}
+          </div><div className="order-area-result" aria-live="polite"><Ruler size={21} /><div><small>Superficie requerida</small><strong>{formatMeasure(Number(values.length) || 0)} m × {formatMeasure(Number(values.width) || 0)} m = <em>{formatMeasure(area)} m²</em></strong></div></div></div>}
           <label className="order-install-toggle"><input type="checkbox" checked={values.requiresInstallation} onChange={event => change('requiresInstallation', event.target.checked)} /><span><strong>Este trabajo requiere instalación</strong><small>Administración o Taller registrarán su realización.</small></span></label>
         </Card>
       </div>
