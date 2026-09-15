@@ -17,6 +17,7 @@
     "api:bootstrap": "npm --prefix server run db:bootstrap"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/manrope": "^5.2.8",
     "argon2": "^0.45.1",
