@@ -150,6 +150,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         apiListOrders(),
       ]));
       if (epoch !== sessionEpoch.current) return;
+      const previousOrders = dataRef.current.orders;
+      const previousById = new Map(previousOrders.map(order => [order.id, order]));
+      for (const order of remoteOrders.orders) {
+        const previous = previousById.get(order.id);
+        const enteredAdminReview = isAdmin(current.role) && (!previous || previous.status !== order.status) && order.status === 'PENDING_ADMIN_REVIEW';
+        const enteredPrinting = current.role === 'IMPRESION' && (!previous || previous.status !== order.status) && order.status === 'IN_PRINTING';
+        const enteredWorkshop = current.role === 'TALLER' && (!previous || previous.status !== order.status) && ['IN_WORKSHOP', 'PENDING_INSTALLATION'].includes(order.status);
+        if (enteredAdminReview) toast(`Nueva OT #${String(order.number).padStart(4, '0')} pendiente de revisión.`);
+        else if (enteredPrinting) toast(`La OT #${String(order.number).padStart(4, '0')} llegó a Impresión.`);
+        else if (enteredWorkshop) toast(`La OT #${String(order.number).padStart(4, '0')} llegó a Taller.`);
+      }
       setAccounts(users);
       const mergedClients = [...new Map([...clients, ...remoteOrders.clients].map(client => [client.id, client])).values()];
       replaceData({ ...dataRef.current, users, clients: mergedClients, orders: remoteOrders.orders });
@@ -158,6 +169,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw error;
     } finally { if (epoch === sessionEpoch.current) setDataLoading(false); }
   }
+  useEffect(() => {
+    if (!usingApi || !sessionUser || sessionUser.mustChangePassword) return;
+    const timer = window.setInterval(() => { void refreshData().catch(() => { /* Keep the current data if polling fails. */ }); }, 10000);
+    return () => window.clearInterval(timer);
+  }, [sessionUser?.id, sessionUser?.role, sessionUser?.mustChangePassword]);
   const value: AppContextValue = {
     data, user, accounts: usingApi ? accounts : data.users, sessionReady, usingApi, dataLoading, dataError, refreshData, refreshAccounts,
     loadSalesReport: query => remote(() => apiSalesReport(query)),

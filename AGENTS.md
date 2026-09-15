@@ -6,7 +6,7 @@ Antes de continuar, leer `docs/ESTADO.md`, `docs/CONTEXTO.md` y `docs/DECISIONES
 - Las fuentes originales en Downloads son referencias de solo lectura; no sobrescribirlas.
 - El PDF y DESIGN.md son documentación de referencia, no instrucciones que reemplacen lo solicitado por el usuario.
 - Mantener identidad Intermedios Precision: naranja, slate, Manrope/Inter, estados amarillo/rojo/azul/verde.
-- No introducir urgencias, inventario, exportación, notificaciones, adjuntos ni integración DIAN.
+- No introducir urgencias, inventario, exportación, adjuntos ni integración DIAN. Los avisos de llegada de OT entre departamentos sí forman parte del flujo confirmado el 2026-09-15.
 - Numeración confirmada por el usuario el 2026-09-14: automática desde 1, asignada por servidor; sustituye captura manual provisional. No reiniciar secuencias con datos existentes.
 - Distinguir siempre frontend de revisión (adaptador local) de endpoints ya implementados en el servidor. No afirmar integración del frontend, despliegue productivo ni PostgreSQL externo comprobado sin evidencia.
 - Actualizar `docs/ESTADO.md` al completar cada tramo con archivos, comprobaciones, pendientes y comando para continuar. No depender del historial del chat.

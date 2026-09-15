@@ -12,8 +12,8 @@ export type QueueDepartment = 'DISENO' | 'IMPRESION' | 'TALLER';
 export function workflowAction(order: WorkOrder, role?: Role): { action: OrderAction; label: string } | null {
   const admin = isAdmin(role);
   if ((order.status === 'NEW' || order.status === 'PENDING_ADMIN_REVIEW') && admin) return { action: 'send', label: 'Aprobar y enviar' };
-  if (order.status === 'IN_PRINTING' && (admin || role === 'IMPRESION')) return { action: 'finishPrinting', label: 'Finalizar impresión' };
-  if (order.status === 'IN_WORKSHOP' && (admin || role === 'TALLER')) return order.workshopStartedAt ? { action: 'finishWorkshop', label: 'Finalizar taller' } : { action: 'startWorkshop', label: 'Iniciar taller' };
+  if (order.status === 'IN_PRINTING' && role === 'IMPRESION') return { action: 'finishPrinting', label: 'Finalizar impresión' };
+  if (order.status === 'IN_WORKSHOP' && role === 'TALLER') return order.workshopStartedAt ? { action: 'finishWorkshop', label: 'Finalizar taller' } : { action: 'startWorkshop', label: 'Iniciar taller' };
   if (order.status === 'PENDING_INSTALLATION' && (admin || role === 'TALLER')) return { action: 'install', label: 'Registrar instalación' };
   return null;
 }

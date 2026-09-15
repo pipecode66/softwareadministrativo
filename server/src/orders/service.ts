@@ -122,15 +122,18 @@ export async function transitionOrder(db: Database, auth: AuthSession, id: strin
         requireRole(); requireStatus('NEW','PENDING_ADMIN_REVIEW');
         next.status = row.route === 'WORKSHOP_ONLY' ? 'IN_WORKSHOP' : 'IN_PRINTING'; break;
       case 'finishPrinting':
-        requireRole('IMPRESION'); requireStatus('IN_PRINTING');
+        if (actor.role !== 'IMPRESION') throw new ApiError(403, 'FORBIDDEN', 'Solo Impresión puede finalizar esta fase.');
+        requireStatus('IN_PRINTING');
         next.printing_completed_at = now;
         next.status = row.route === 'PRINT_WORKSHOP' ? 'IN_WORKSHOP' : row.requires_installation ? 'PENDING_INSTALLATION' : 'COMPLETED'; break;
       case 'startWorkshop':
-        requireRole('TALLER'); requireStatus('IN_WORKSHOP');
+        if (actor.role !== 'TALLER') throw new ApiError(403, 'FORBIDDEN', 'Solo Taller puede iniciar esta fase.');
+        requireStatus('IN_WORKSHOP');
         if (row.workshop_started_at) throw conflict('El trabajo ya fue iniciado en Taller.');
         next.workshop_started_at = now; break;
       case 'finishWorkshop':
-        requireRole('TALLER'); requireStatus('IN_WORKSHOP');
+        if (actor.role !== 'TALLER') throw new ApiError(403, 'FORBIDDEN', 'Solo Taller puede finalizar esta fase.');
+        requireStatus('IN_WORKSHOP');
         next.status = row.requires_installation ? 'PENDING_INSTALLATION' : 'COMPLETED'; break;
       case 'install':
         requireRole('TALLER'); requireStatus('PENDING_INSTALLATION');

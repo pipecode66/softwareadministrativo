@@ -4,6 +4,12 @@ Actualizado: 2026-09-15. **Frontend y backend preparados para desplegarse juntos
 
 ## Punto de control 2026-09-15
 
+- Flujo productivo ajustado por regla del usuario: Diseño crea en revisión; Administración aprueba/envía y consulta estados; solo Impresión finaliza impresión; solo Taller inicia/finaliza taller; Instalación puede completarse por Administración o Taller.
+- El frontend API muestra avisos entre equipos mediante consulta periódica de órdenes cada 10 segundos para revisión, Impresión y Taller. No es WebSocket en tiempo real estricto.
+- Comprobado tras el cambio: `npm --prefix server test -- --run tests/orders.test.ts` (91 pruebas aprobadas).
+- El reporte de Materiales muestra los m² con punto decimal y sin agrupación de miles (`8.75 m²`), evitando que `8,750` se interprete como ocho mil setecientos cincuenta.
+- Comprobado tras el ajuste visual: `npm run typecheck` y `npm test -- --run tests/domain.test.ts` (129 pruebas aprobadas).
+
 - `AppContext` carga usuarios, clientes y OT desde la API cuando `VITE_USE_API` está activo; creación, edición, pagos y transiciones de OT usan los endpoints del servidor con idempotencia y control de versión.
 - El servidor publica `/api/v1/reports/sales`, `/api/v1/reports/portfolio` y `/api/v1/reports/materials`, restringidos a Administración y protegidos por sesión real.
 - Comprobado: `npm run typecheck`, `npm --prefix server run typecheck` y `npm --prefix server test` (222 pruebas aprobadas).

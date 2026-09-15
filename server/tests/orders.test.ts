@@ -376,7 +376,7 @@ describe('OT: edición, versiones y flujo productivo', () => {
   it('el cierre productivo no borra la cartera ni impide abonos posteriores', async () => {
     let order = await create({ route: 'WORKSHOP_ONLY', printing: undefined });
     order = await move(order, 'send');
-    order = await move(order, 'finishWorkshop');
+    order = await move(order, 'finishWorkshop', await actor('TALLER'));
     order = await move(order, 'close');
     const owed = await get('/orders?paymentStatus=OUTSTANDING');
     expect(owed.body.items.map((item: OrderView) => item.id)).toContain(order.id);
@@ -402,11 +402,11 @@ describe('OT: edición, versiones y flujo productivo', () => {
     const order = await create({}, designer);
     expect((await transition(order, 'send', designer)).status).toBe(403);
     expect((await transition(order, 'close')).status).toBe(409);
-    expect((await transition(order, 'finishWorkshop')).status).toBe(409);
+    expect((await transition(order, 'finishWorkshop')).status).toBe(403);
     const sent = await move(order, 'send');
     expect((await transition(sent, 'finishWorkshop', await actor('IMPRESION'))).status).toBe(403);
     expect((await transition(sent, 'finishPrinting', designer)).status).toBe(403);
-    expect((await transition(sent, 'finishPrinting', admin, { date: dateOnly() })).status).toBe(400);
+    expect((await transition(sent, 'finishPrinting', admin, { date: dateOnly() })).status).toBe(403);
   });
 });
 
@@ -451,7 +451,7 @@ describe('OT: alcance de datos y filtros', () => {
     await move(await create({ route: 'PRINT_ONLY' }), 'send');
     const workshop = await move(await create({ route: 'WORKSHOP_ONLY', printing: undefined }), 'send');
     let install = await move(await create({ route: 'PRINT_ONLY', requiresInstallation: true }), 'send');
-    install = await move(install, 'finishPrinting');
+    install = await move(install, 'finishPrinting', await actor('IMPRESION'));
     const operator = await actor('TALLER');
     const list = await get('/orders', operator);
     expect(list.body.total).toBe(2);

@@ -57,14 +57,14 @@ export function transitionWorkOrder(user: User, order: WorkOrder, action: OrderA
     assert(admin && ['NEW','PENDING_ADMIN_REVIEW'].includes(order.status), 'La orden no está pendiente de revisión o envío.');
     next.status = order.route === 'WORKSHOP_ONLY' ? 'IN_WORKSHOP' : 'IN_PRINTING';
   } else if (action === 'finishPrinting') {
-    assert((admin || user.role === 'IMPRESION') && order.status === 'IN_PRINTING', 'Solo puedes finalizar una orden en Impresión.');
+    assert(user.role === 'IMPRESION' && order.status === 'IN_PRINTING', 'Solo Impresión puede finalizar esta fase.');
     next.printingCompletedAt = now;
     next.status = order.route === 'PRINT_WORKSHOP' ? 'IN_WORKSHOP' : order.requiresInstallation ? 'PENDING_INSTALLATION' : 'COMPLETED';
   } else if (action === 'startWorkshop') {
-    assert((admin || user.role === 'TALLER') && order.status === 'IN_WORKSHOP' && !order.workshopStartedAt, 'Este trabajo no se puede iniciar en Taller.');
+    assert(user.role === 'TALLER' && order.status === 'IN_WORKSHOP' && !order.workshopStartedAt, 'Solo Taller puede iniciar esta fase.');
     next.workshopStartedAt = now;
   } else if (action === 'finishWorkshop') {
-    assert((admin || user.role === 'TALLER') && order.status === 'IN_WORKSHOP', 'Solo puedes finalizar una orden en Taller.');
+    assert(user.role === 'TALLER' && order.status === 'IN_WORKSHOP', 'Solo Taller puede finalizar esta fase.');
     next.status = order.requiresInstallation ? 'PENDING_INSTALLATION' : 'COMPLETED';
   } else if (action === 'install') {
     assert((admin || user.role === 'TALLER') && order.status === 'PENDING_INSTALLATION' && order.requiresInstallation, 'La orden no está pendiente de instalación.');
