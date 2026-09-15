@@ -32,5 +32,8 @@ function runtime(): Promise<Runtime> {
 
 export default async function handler(request: Request, response: Response): Promise<void> {
   const current = await runtime();
+  if (request.url && !request.url.startsWith('/api/')) {
+    request.url = `/api${request.url.startsWith('/') ? request.url : `/${request.url}`}`;
+  }
   current.app(request, response);
 }
