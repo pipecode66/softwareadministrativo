@@ -1,6 +1,17 @@
 # Estado de continuidad
 
-Actualizado: 2026-09-15. **Frontend y backend preparados para desplegarse juntos en Vercel con Supabase; regla de retenciones unificada.**
+Actualizado: 2026-09-16. **Backend administrativo validado: Diseño puede crear clientes, la ruta Imprenta ya forma parte del flujo y Vinilo quedó fuera de los materiales válidos y de los reportes.**
+
+## Punto de control 2026-09-16
+
+- Revisión de negocio unificada con la última decisión del usuario: Diseño cuenta con permiso de creación de clientes; la ruta `IMPRENTA` es válida; `Vinilo` no se acepta como material ni se reporta en métricas de materiales.
+- El frontend y el backend ya reflejan esta combinación en rutas, formularios y validaciones; el resto de la lógica continúa intentando consumir el mismo conjunto de datos del servidor con la misma semántica.
+- Comprobación objetivo: `npm --prefix server test -- --run tests/clients.test.ts tests/orders.test.ts`.
+- Pendientes documentados: ampliar validación de pagos multiabono y consolidar la revisión completa de reportes con los datos finales del negocio.
+
+### Comando para continuar
+
+`npm --prefix server test -- --run tests/clients.test.ts tests/orders.test.ts`
 
 ## Punto de control 2026-09-15
 

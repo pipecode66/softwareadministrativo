@@ -193,6 +193,12 @@ describe('OT: creación automática e idempotencia', () => {
     expect((await get(`/orders/${created.id}`)).status).toBe(200);
   });
 
+  it('acepta la ruta Impresión como recorrido de producción y excluye Vinilo de los materiales', async () => {
+    const created = await create({ route: 'IMPRENTA', printing: { material: 'Panaflex', length: 1.5, width: 1 } });
+    expect(created.status).toBe('NEW');
+    expect((await createRequest({ ...input({ route: 'IMPRENTA', printing: { material: 'Vinilo', length: 1, width: 1 } }), requestId: randomUUID() })).status).toBe(400);
+  });
+
   it.each(['IMPRESION', 'TALLER'] as Role[])('%s no puede crear órdenes', async role => {
     expect((await createRequest({ ...input(), requestId: randomUUID() }, await actor(role))).status).toBe(403);
     expect((await get('/orders')).body.total).toBe(0);
@@ -525,7 +531,7 @@ describe('OT: validación server-side', () => {
     expect(response.status).toBe(403);
   });
 
-  it.each(['Panaflex', 'Vinilo', 'V. Corte', 'V. Impresión', 'Banner'] as const)('acepta el material %s y muestra metros cuadrados', async material => {
+  it.each(['Panaflex', 'V. Corte', 'V. Impresión', 'Banner'] as const)('acepta el material %s y muestra metros cuadrados', async material => {
     const order = await create({ printing: { material, length: 1.234, width: 0.567 } });
     expect(order.areaM2).toBe(0.7);
   });

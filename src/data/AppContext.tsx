@@ -257,7 +257,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return client;
       }
       const current = latest();
-      if (!isAdmin(actor(current).role)) throw new Error('Solo Administración puede gestionar clientes.');
+      if (!['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO'].includes(actor(current).role)) throw new Error('Solo Administración y Diseño pueden gestionar clientes.');
       validateClient(input);
       if (id && !current.clients.some(c => c.id === id)) throw new Error('No encontramos este cliente.');
       const existing = current.clients.find(c => c.id === id);

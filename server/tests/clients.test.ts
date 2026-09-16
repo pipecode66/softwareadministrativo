@@ -191,13 +191,12 @@ describe('Clientes: permisos y sesiones', () => {
     expect((await patch(created.body.client.id, { phone: '3001234567' }, actor)).status).toBe(200);
   });
 
-  it('Diseño puede seleccionar clientes existentes pero no crearlos ni editarlos', async () => {
-    const created = await post({ name: 'Cliente para seleccionar' });
+  it('Diseño puede crear clientes y consultar el directorio', async () => {
     const actor = await actorWithRole('DISENO');
+    const created = await post({ name: 'Cliente nuevo de diseño' }, actor);
+    expect(created.status).toBe(201);
     expect((await get('/clients', actor)).status).toBe(200);
     expect((await get(`/clients/${created.body.client.id}`, actor)).status).toBe(200);
-    expect((await post({ name: 'No permitido' }, actor)).status).toBe(403);
-    expect((await patch(created.body.client.id, { name: 'No permitido' }, actor)).status).toBe(403);
     expect((await get()).body.total).toBe(1);
   });
 
@@ -233,7 +232,7 @@ describe('Clientes: permisos y sesiones', () => {
       if (reason === 'revoked') await db.query('DELETE FROM sessions WHERE token_hash = $1', [auth.tokenHash]);
       if (reason === 'expired') await db.query("UPDATE sessions SET expires_at = now() - INTERVAL '1 minute' WHERE token_hash = $1", [auth.tokenHash]);
       if (reason === 'inactive') await db.query('UPDATE users SET is_active = false WHERE id = $1', [auth.user.id]);
-      if (reason === 'role') await db.query("UPDATE users SET role = 'DISENO' WHERE id = $1", [auth.user.id]);
+      if (reason === 'role') await db.query("UPDATE users SET role = 'IMPRESION' WHERE id = $1", [auth.user.id]);
       if (reason === 'password') await db.query('UPDATE users SET must_change_password = true WHERE id = $1', [auth.user.id]);
       if (reason === 'csrf') auth.csrfToken = '0'.repeat(64);
       await expect(createClient(db, auth, { name: 'No debe guardarse', identification: '', phone: '' }))

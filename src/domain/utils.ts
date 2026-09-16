@@ -1,19 +1,20 @@
 import type { Category, DateRange, Financials, Material, Printing, ProductionRoute, Role, User, WorkOrder, WorkStatus } from './types';
 
 export const CATEGORIES: Category[] = ['SuperGiros', 'Carro Vallas', 'Proyecto', 'Otras'];
-export const MATERIALS: Material[] = ['Panaflex', 'Vinilo', 'V. Corte', 'V. Impresión', 'Banner'];
+export const MATERIALS: Material[] = ['Panaflex', 'V. Corte', 'V. Impresión', 'Banner'];
 export const ROLE_LABELS: Record<Role, string> = { ADMINMASTER: 'Adminmaster', ADMIN_GENERAL: 'Administración', DISENO: 'Diseño', IMPRESION: 'Impresión', TALLER: 'Taller' };
 export const STATUS_LABELS: Record<WorkStatus, string> = { NEW: 'Nueva', PENDING_ADMIN_REVIEW: 'En revisión', IN_PRINTING: 'En impresión', IN_WORKSHOP: 'En taller', PENDING_INSTALLATION: 'Por instalar', COMPLETED: 'Terminada', INSTALLED: 'Instalada' };
-export const ROUTE_LABELS: Record<ProductionRoute, string> = { PRINT_ONLY: 'Solo Impresión', WORKSHOP_ONLY: 'Solo Taller', PRINT_WORKSHOP: 'Impresión → Taller' };
+export const ROUTE_LABELS: Record<ProductionRoute, string> = { PRINT_ONLY: 'Solo Impresión', IMPRENTA: 'Imprenta', WORKSHOP_ONLY: 'Solo Taller', PRINT_WORKSHOP: 'Impresión → Taller' };
 export const isAdmin = (role?: Role) => role === 'ADMINMASTER' || role === 'ADMIN_GENERAL';
 export const canCreate = (role?: Role) => isAdmin(role) || role === 'DISENO';
 export const isFinished = (order: WorkOrder) => order.status === 'COMPLETED' || order.status === 'INSTALLED';
+export const hasWorkshop = (route: ProductionRoute) => !['PRINT_ONLY', 'IMPRENTA'].includes(route);
 export const canViewOrder = (user: User | null, order: WorkOrder) => {
   if (!user || !user.active) return false;
   if (isAdmin(user.role)) return true;
   if (user.role === 'DISENO') return order.createdBy === user.id;
   if (user.role === 'IMPRESION') return order.route !== 'WORKSHOP_ONLY' && order.status === 'IN_PRINTING';
-  return user.role === 'TALLER' && ((order.route !== 'PRINT_ONLY' && order.status === 'IN_WORKSHOP') || order.status === 'PENDING_INSTALLATION');
+  return user.role === 'TALLER' && ((hasWorkshop(order.route) && order.status === 'IN_WORKSHOP') || order.status === 'PENDING_INSTALLATION');
 };
 export const visibleOrders = (user: User | null, orders: WorkOrder[]) => orders.filter(order => canViewOrder(user, order));
 export const formatCOP = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);

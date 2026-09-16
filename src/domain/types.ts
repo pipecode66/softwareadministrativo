@@ -3,8 +3,8 @@ export type WorkStatus = 'NEW' | 'PENDING_ADMIN_REVIEW' | 'IN_PRINTING' | 'IN_WO
 export type PaymentStatus = 'PENDING' | 'PARTIAL' | 'PAID';
 export type DocumentType = 'REM' | 'FACT';
 export type Category = 'SuperGiros' | 'Carro Vallas' | 'Proyecto' | 'Otras';
-export type Material = 'Panaflex' | 'Vinilo' | 'V. Corte' | 'V. Impresión' | 'Banner';
-export type ProductionRoute = 'PRINT_ONLY' | 'WORKSHOP_ONLY' | 'PRINT_WORKSHOP';
+export type Material = 'Panaflex' | 'V. Corte' | 'V. Impresión' | 'Banner';
+export type ProductionRoute = 'PRINT_ONLY' | 'IMPRENTA' | 'WORKSHOP_ONLY' | 'PRINT_WORKSHOP';
 export type OrderAction = 'send' | 'finishPrinting' | 'startWorkshop' | 'finishWorkshop' | 'install' | 'close';
 export interface User { id: string; name: string; email: string; role: Role; active: boolean; mustChangePassword?: boolean }
 export interface Client { id: string; name: string; identification: string; phone: string; createdAt: string }

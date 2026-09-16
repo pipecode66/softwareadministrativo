@@ -15,13 +15,13 @@ export function canRead(user: { role: Role; id: string }, row: OrderRow): boolea
   if (user.role === 'DISENO') return row.created_by === user.id;
   if (row.closed_at) return false;
   if (user.role === 'IMPRESION') return row.route !== 'WORKSHOP_ONLY' && row.status === 'IN_PRINTING';
-  return user.role === 'TALLER' && ((row.route !== 'PRINT_ONLY' && row.status === 'IN_WORKSHOP') || row.status === 'PENDING_INSTALLATION');
+  return user.role === 'TALLER' && ((['IMPRENTA', 'PRINT_WORKSHOP', 'WORKSHOP_ONLY'].includes(row.route) && row.status === 'IN_WORKSHOP') || row.status === 'PENDING_INSTALLATION');
 }
 export function visibility(user: { role: Role; id: string }, params: unknown[]): string {
   if (isAdmin(user.role)) return 'true';
   if (user.role === 'DISENO') { params.push(user.id); return `o.created_by = $${params.length}`; }
   if (user.role === 'IMPRESION') return "o.closed_at IS NULL AND o.route <> 'WORKSHOP_ONLY' AND o.status = 'IN_PRINTING'";
-  return "o.closed_at IS NULL AND ((o.route <> 'PRINT_ONLY' AND o.status = 'IN_WORKSHOP') OR o.status = 'PENDING_INSTALLATION')";
+  return "o.closed_at IS NULL AND ((o.route IN ('IMPRENTA','PRINT_WORKSHOP','WORKSHOP_ONLY') AND o.status = 'IN_WORKSHOP') OR o.status = 'PENDING_INSTALLATION')";
 }
 async function paymentsOf(tx: SqlConnection, id: string) {
   return (await tx.query<PaymentRow>('SELECT * FROM payments WHERE order_id = $1 ORDER BY date, recorded_at, id', [id])).rows;

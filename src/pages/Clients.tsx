@@ -55,7 +55,7 @@ export function ClientsPage() {
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [editor, setEditor] = useState<Client | 'new' | null>(null);
-  if (!user?.active || !isAdmin(user.role)) return <EmptyState title="Directorio administrativo" description="Este directorio está disponible para los perfiles de Administración." />;
+  if (!user?.active || !['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO'].includes(user.role)) return <EmptyState title="Directorio administrativo" description="Este directorio está disponible para Administración y Diseño." />;
 
   const rows = data.clients.map(client => {
     const orders = data.orders.filter(order => order.clientId === client.id);
@@ -100,7 +100,7 @@ export function ClientDetailPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const client = data.clients.find(item => item.id === id);
-  if (!user?.active || !isAdmin(user.role)) return <EmptyState title="Acceso administrativo" description="La consulta de clientes está disponible para Administración." />;
+  if (!user?.active || !['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO'].includes(user.role)) return <EmptyState title="Acceso administrativo" description="La consulta de clientes está disponible para Administración y Diseño." />;
   if (!client) return <EmptyState title="No encontramos este cliente" action={<Link className="link" to="/clients">Volver al directorio</Link>} />;
 
   const orders = data.orders.filter(order => order.clientId === client.id);

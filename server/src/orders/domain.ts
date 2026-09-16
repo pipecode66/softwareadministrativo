@@ -2,9 +2,9 @@ import { z } from 'zod';
 import type { Role } from '../contracts.js';
 
 export const categories = ['SuperGiros', 'Carro Vallas', 'Proyecto', 'Otras'] as const;
-export const materials = ['Panaflex', 'Vinilo', 'V. Corte', 'V. Impresión', 'Banner'] as const;
+export const materials = ['Panaflex', 'V. Corte', 'V. Impresión', 'Banner'] as const;
 export const statuses = ['NEW','PENDING_ADMIN_REVIEW','IN_PRINTING','IN_WORKSHOP','PENDING_INSTALLATION','COMPLETED','INSTALLED'] as const;
-export const routes = ['PRINT_ONLY','WORKSHOP_ONLY','PRINT_WORKSHOP'] as const;
+export const routes = ['PRINT_ONLY','IMPRENTA','WORKSHOP_ONLY','PRINT_WORKSHOP'] as const;
 export const isAdmin = (role: Role) => role === 'ADMINMASTER' || role === 'ADMIN_GENERAL';
 export const iso = (value: Date | string) => new Date(value).toISOString();
 export function dateOnly(value: Date | string = new Date()): string {
@@ -30,7 +30,7 @@ export const orderFields = {
   reteFuente: moneySchema.default(0), reteIva: moneySchema.default(0), ica: moneySchema.default(0),
 };
 export const orderInputSchema = z.object(orderFields).strict().superRefine((value, ctx) => {
-  if (value.route !== 'WORKSHOP_ONLY' && !value.printing) ctx.addIssue({ code: 'custom', path: ['printing'], message: 'Indica material, largo y ancho para impresión.' });
+  if (!['WORKSHOP_ONLY'].includes(value.route) && !value.printing) ctx.addIssue({ code: 'custom', path: ['printing'], message: 'Indica material, largo y ancho para impresión.' });
   if (value.route === 'WORKSHOP_ONLY' && value.printing) ctx.addIssue({ code: 'custom', path: ['printing'], message: 'Esta ruta no incluye impresión.' });
   if (value.documentType === 'REM' && (value.reteFuente || value.reteIva || value.ica)) ctx.addIssue({ code: 'custom', message: 'Las retenciones corresponden únicamente a FACT.' });
 });

@@ -92,7 +92,7 @@ function QueueContents({ department }: { department: QueueDepartment }) {
   const queueOrders = visible.filter(order => {
     if (department === 'DISENO') return isAdmin(user.role) ? data.users.find(person => person.id === order.createdBy)?.role === 'DISENO' : order.createdBy === user.id;
     if (department === 'IMPRESION') return order.route !== 'WORKSHOP_ONLY' && (order.status === 'IN_PRINTING' || !!order.printingCompletedAt);
-    return (order.route !== 'PRINT_ONLY' && (!!order.printingCompletedAt || order.route === 'WORKSHOP_ONLY') && !['NEW', 'PENDING_ADMIN_REVIEW'].includes(order.status)) || (order.requiresInstallation && ['PENDING_INSTALLATION', 'INSTALLED'].includes(order.status));
+    return ((['PRINT_WORKSHOP', 'WORKSHOP_ONLY'].includes(order.route) && (!!order.printingCompletedAt || order.route === 'WORKSHOP_ONLY') && !['NEW', 'PENDING_ADMIN_REVIEW'].includes(order.status)) || (order.requiresInstallation && ['PENDING_INSTALLATION', 'INSTALLED'].includes(order.status))); 
   }).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.number - b.number);
   const active = queueOrders.filter(order => department === 'DISENO' ? !isFinished(order) : department === 'IMPRESION' ? order.status === 'IN_PRINTING' : ['IN_WORKSHOP', 'PENDING_INSTALLATION'].includes(order.status));
   const waiting = queueOrders.filter(order => department === 'DISENO' ? ['NEW', 'PENDING_ADMIN_REVIEW'].includes(order.status) : department === 'TALLER' ? order.status === 'IN_WORKSHOP' && !order.workshopStartedAt : order.status === 'IN_PRINTING');

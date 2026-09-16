@@ -38,7 +38,7 @@ export function makeSeed(): AppData {
       documentType: i % 3 === 1 ? 'REM' : 'FACT', category: CATEGORIES[i % 4], route,
       requiresInstallation: ['PENDING_INSTALLATION','INSTALLED'].includes(status) || i === 0,
       status, createdBy: i % 2 === 0 ? 'u-design' : 'u-admin', createdAt, updatedAt: at(Math.max(age - 1, 0)),
-      printing: route === 'WORKSHOP_ONLY' ? undefined : { material: MATERIALS[i % 5], length: [2.5,4,1.2,4,1,2][i % 6], width: [1.2,2,0.8,2,0.7][i % 5] },
+      printing: route === 'WORKSHOP_ONLY' ? undefined : { material: MATERIALS[i % MATERIALS.length], length: [2.5,4,1.2,4,1,2][i % 6], width: [1.2,2,0.8,2,0.7][i % 5] },
       reteFuente: 0, reteIva: 0, ica: 0, payments: [],
     };
     if (order.printing && ['IN_WORKSHOP','PENDING_INSTALLATION','COMPLETED','INSTALLED'].includes(status)) order.printingCompletedAt = at(Math.max(age - 1, 0));

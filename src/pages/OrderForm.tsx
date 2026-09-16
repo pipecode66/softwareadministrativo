@@ -170,6 +170,7 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
           <div className="order-section-heading"><span>04</span><h2>Recorrido de producción</h2></div>
           <fieldset className="order-choice-fieldset"><legend className="order-sr-only">Selecciona el recorrido</legend><div className="order-route-options">{([
             { value: 'PRINT_ONLY', icon: Printer, label: 'Solo Impresión', help: 'Administración → Impresión' },
+            { value: 'IMPRENTA', icon: Printer, label: 'Imprenta', help: 'Producción gráfica sin Taller' },
             { value: 'WORKSHOP_ONLY', icon: Hammer, label: 'Solo Taller', help: 'Administración → Taller' },
             { value: 'PRINT_WORKSHOP', icon: ArrowRight, label: 'Impresión → Taller', help: 'Ambas áreas, en este orden' },
           ] as const).map(route => <label key={route.value} className={`order-choice-card order-route-card ${values.route === route.value ? 'is-selected' : ''}`}><input type="radio" name="route" value={route.value} checked={values.route === route.value} onChange={() => change('route', route.value)} /><route.icon size={21} aria-hidden="true" /><strong>{route.label}</strong><small>{route.help}</small></label>)}</div></fieldset>

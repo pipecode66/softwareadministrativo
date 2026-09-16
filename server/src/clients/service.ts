@@ -6,7 +6,7 @@ import { requireCurrentActor } from '../security/actor.js';
 import type { CreateClientInput, ListClientsInput, UpdateClientInput } from './schemas.js';
 
 export const CLIENT_READ_ROLES: readonly Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO'];
-export const CLIENT_WRITE_ROLES: readonly Role[] = ['ADMINMASTER', 'ADMIN_GENERAL'];
+export const CLIENT_WRITE_ROLES: readonly Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO'];
 
 export interface PublicClient {
   id: string;

@@ -10,7 +10,7 @@ export function validateInput(data: AppData, input: OrderInput, exceptId?: strin
   assert(Number.isFinite(input.value) && roundMoney(input.value) > 0 && input.value <= 999999999999, 'El valor del trabajo es obligatorio y debe ser mayor que cero.');
   assert(['REM','FACT'].includes(input.documentType), 'Selecciona REM o FACT.');
   assert(CATEGORIES.includes(input.category), 'Selecciona una categoría comercial.');
-  assert(['PRINT_ONLY','WORKSHOP_ONLY','PRINT_WORKSHOP'].includes(input.route), 'Selecciona un recorrido válido.');
+  assert(['PRINT_ONLY','IMPRENTA','WORKSHOP_ONLY','PRINT_WORKSHOP'].includes(input.route), 'Selecciona un recorrido válido.');
   const retentions = [input.reteFuente,input.reteIva,input.ica];
   assert(retentions.every(v => Number.isFinite(v) && v >= 0), 'Las retenciones deben ser importes positivos o cero.');
   assert(retentions.every(v => v <= 999999999999), 'Las retenciones superan el importe máximo permitido.');
