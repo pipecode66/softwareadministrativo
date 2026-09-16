@@ -319,9 +319,9 @@ describe('Fechas, medidas y búsqueda', () => {
   });
   it('multiplica dimensiones y presenta área a tres decimales', () => {
     expect(areaOf({ material: 'Banner', length: 2.5, width: 1.2 })).toBe(3);
-    expect(areaOf({ material: 'Vinilo', length: 1.2345, width: 1 })).toBe(1.235);
+    expect(areaOf({ material: 'Panaflex', length: 1.2345, width: 1 })).toBe(1.235);
     expect(areaOf()).toBe(0);
-    expect(MATERIALS).toHaveLength(5);
+    expect(MATERIALS).toHaveLength(4);
     expect(CATEGORIES).toHaveLength(4);
   });
   it('formatea medidas sin ceros forzados ni separadores de miles', () => {
