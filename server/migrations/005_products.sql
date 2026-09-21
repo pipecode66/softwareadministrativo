@@ -60,8 +60,14 @@ SELECT md5(o.id::text || ':legacy-product')::uuid,o.id,1,o.description,1,o.value
 
 INSERT INTO order_product_materials (id,order_id,product_id,position,material,length,width,consumed_at)
 SELECT md5(o.id::text || ':legacy-material')::uuid,o.id,p.id,1,o.material,o.length,o.width,o.printing_completed_at
-FROM orders o JOIN order_products p ON p.order_id=o.id AND p.is_legacy=true
 -- Production can contain Vinilo from a schema version that predates its removal.
 -- Keep the legacy OT/product, but do not copy retired or unknown materials into
--- the new catalogue or its consumption statistics.
-WHERE o.material IN ('Panaflex','V. Corte','V. Impresión','Banner');
+-- the new catalogue or its consumption statistics. Incomplete historical
+-- printing dimensions are also omitted instead of aborting the whole migration.
+FROM orders o JOIN order_products p
+  ON p.order_id=o.id
+  AND p.is_legacy=true
+  AND o.material IN ('Panaflex','V. Corte','V. Impresión','Banner')
+  AND o.length IS NOT NULL AND o.width IS NOT NULL
+  AND o.length > 0 AND o.length <= 100000
+  AND o.width > 0 AND o.width <= 100000;

@@ -310,6 +310,7 @@ describe('Migración de materiales históricos', () => {
       });
       const historicalClient = randomUUID();
       const historicalOrder = randomUUID();
+      const workshopOrder = randomUUID();
       await historical.query('INSERT INTO clients (id,name,identification,phone) VALUES ($1,$2,$3,$4)',
         [historicalClient, 'Cliente Vinilo previo', 'NIT-800000003', '3001234567']);
       await historical.query(`
@@ -318,6 +319,12 @@ describe('Migración de materiales históricos', () => {
         VALUES ($1,$2,$3,100000,'REM','Proyecto','PRINT_ONLY',false,'COMPLETED',
           $4,'Vinilo',2,1.5,now(),$5,$6)
       `, [historicalOrder, historicalClient, 'Trabajo histórico en Vinilo', owner.id, randomUUID(), 'b'.repeat(64)]);
+      await historical.query(`
+        INSERT INTO orders (id,client_id,description,value,document_type,category,route,requires_installation,status,
+          created_by,material,length,width,creation_key,creation_fingerprint)
+        VALUES ($1,$2,$3,100000,'REM','Proyecto','WORKSHOP_ONLY',false,'COMPLETED',
+          $4,null,null,null,$5,$6)
+      `, [workshopOrder, historicalClient, 'Trabajo histórico sin material', owner.id, randomUUID(), 'c'.repeat(64)]);
 
       for (const name of ['005_products.sql', '006_composite_order.sql', '007_product_dimensions.sql']) {
         await historical.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'));
@@ -326,6 +333,8 @@ describe('Migración de materiales históricos', () => {
       expect((await historical.query('SELECT id FROM orders WHERE id=$1', [historicalOrder])).rows).toHaveLength(1);
       expect((await historical.query('SELECT id FROM order_products WHERE order_id=$1', [historicalOrder])).rows).toHaveLength(1);
       expect((await historical.query('SELECT id FROM order_product_materials WHERE order_id=$1', [historicalOrder])).rows).toHaveLength(0);
+      expect((await historical.query('SELECT id FROM order_products WHERE order_id=$1', [workshopOrder])).rows).toHaveLength(1);
+      expect((await historical.query('SELECT id FROM order_product_materials WHERE order_id=$1', [workshopOrder])).rows).toHaveLength(0);
     } finally {
       await historical.close();
     }
