@@ -291,4 +291,43 @@ describe('Migración de materiales históricos', () => {
       await historical.close();
     }
   });
+
+  it('conserva la OT de un esquema antiguo con Vinilo sin copiarlo al catálogo ni a métricas', async () => {
+    const historical = await createPgliteDatabase();
+    try {
+      for (const name of ['001_access.sql', '002_clients.sql', '003_orders.sql', '004_finance.sql']) {
+        let sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
+        if (name === '003_orders.sql') {
+          sql = sql.replace(
+            "'Panaflex','V. Corte','V. Impresión','Banner'",
+            "'Panaflex','Vinilo','V. Corte','V. Impresión','Banner'",
+          );
+        }
+        await historical.exec(sql);
+      }
+      const owner = await bootstrapAdmin(historical, {
+        name: 'Admin histórico Vinilo', email: 'historico-vinilo@example.test', password: PASSWORD,
+      });
+      const historicalClient = randomUUID();
+      const historicalOrder = randomUUID();
+      await historical.query('INSERT INTO clients (id,name,identification,phone) VALUES ($1,$2,$3,$4)',
+        [historicalClient, 'Cliente Vinilo previo', 'NIT-800000003', '3001234567']);
+      await historical.query(`
+        INSERT INTO orders (id,client_id,description,value,document_type,category,route,requires_installation,status,
+          created_by,material,length,width,printing_completed_at,creation_key,creation_fingerprint)
+        VALUES ($1,$2,$3,100000,'REM','Proyecto','PRINT_ONLY',false,'COMPLETED',
+          $4,'Vinilo',2,1.5,now(),$5,$6)
+      `, [historicalOrder, historicalClient, 'Trabajo histórico en Vinilo', owner.id, randomUUID(), 'b'.repeat(64)]);
+
+      for (const name of ['005_products.sql', '006_composite_order.sql', '007_product_dimensions.sql']) {
+        await historical.exec(await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'));
+      }
+
+      expect((await historical.query('SELECT id FROM orders WHERE id=$1', [historicalOrder])).rows).toHaveLength(1);
+      expect((await historical.query('SELECT id FROM order_products WHERE order_id=$1', [historicalOrder])).rows).toHaveLength(1);
+      expect((await historical.query('SELECT id FROM order_product_materials WHERE order_id=$1', [historicalOrder])).rows).toHaveLength(0);
+    } finally {
+      await historical.close();
+    }
+  });
 });
