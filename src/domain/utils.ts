@@ -3,18 +3,22 @@ import type { Category, DateRange, Financials, Material, Printing, ProductionRou
 export const CATEGORIES: Category[] = ['SuperGiros', 'Carro Vallas', 'Proyecto', 'Otras'];
 export const MATERIALS: Material[] = ['Panaflex', 'V. Corte', 'V. Impresión', 'Banner'];
 export const ROLE_LABELS: Record<Role, string> = { ADMINMASTER: 'Adminmaster', ADMIN_GENERAL: 'Administración', DISENO: 'Diseño', IMPRESION: 'Impresión', TALLER: 'Taller' };
-export const STATUS_LABELS: Record<WorkStatus, string> = { NEW: 'Nueva', PENDING_ADMIN_REVIEW: 'En revisión', IN_PRINTING: 'En impresión', IN_WORKSHOP: 'En taller', PENDING_INSTALLATION: 'Por instalar', COMPLETED: 'Terminada', INSTALLED: 'Instalada' };
-export const ROUTE_LABELS: Record<ProductionRoute, string> = { PRINT_ONLY: 'Solo Impresión', IMPRENTA: 'Imprenta', WORKSHOP_ONLY: 'Solo Taller', PRINT_WORKSHOP: 'Impresión → Taller' };
+export const STATUS_LABELS: Record<WorkStatus, string> = { NEW: 'Nueva', PENDING_ADMIN_REVIEW: 'En revisión (anterior)', IN_PRINTING: 'En impresión', IN_WORKSHOP: 'En taller', IN_EXTERNAL: 'En externo', IN_PRODUCTION: 'En producción', PENDING_INSTALLATION: 'Por instalar', COMPLETED: 'Terminada', INSTALLED: 'Instalada' };
+export const ROUTE_LABELS: Record<ProductionRoute, string> = { PRINT_ONLY: 'Solo Impresión', IMPRENTA: 'Imprenta (anterior)', EXTERNO: 'Externo', WORKSHOP_ONLY: 'Solo Taller', PRINT_WORKSHOP: 'Impresión → Taller', MULTI_AREA: 'Varias áreas' };
 export const isAdmin = (role?: Role) => role === 'ADMINMASTER' || role === 'ADMIN_GENERAL';
 export const canCreate = (role?: Role) => isAdmin(role) || role === 'DISENO';
 export const isFinished = (order: WorkOrder) => order.status === 'COMPLETED' || order.status === 'INSTALLED';
-export const hasWorkshop = (route: ProductionRoute) => !['PRINT_ONLY', 'IMPRENTA'].includes(route);
+export const hasWorkshop = (route: ProductionRoute) => ['WORKSHOP_ONLY', 'PRINT_WORKSHOP'].includes(route);
 export const canViewOrder = (user: User | null, order: WorkOrder) => {
   if (!user || !user.active) return false;
   if (isAdmin(user.role)) return true;
-  if (user.role === 'DISENO') return order.createdBy === user.id;
-  if (user.role === 'IMPRESION') return order.route !== 'WORKSHOP_ONLY' && order.status === 'IN_PRINTING';
-  return user.role === 'TALLER' && ((hasWorkshop(order.route) && order.status === 'IN_WORKSHOP') || order.status === 'PENDING_INSTALLATION');
+  if (order.serverVisible) return true;
+  if (user.role === 'DISENO') return order.createdBy === user.id || Boolean(order.products?.some(product =>
+    product.activities.some(activity => activity.area === 'DESIGN' && (!activity.assignedUserId || activity.assignedUserId === user.id))));
+  if (user.role === 'IMPRESION') return Boolean(order.products?.some(product => product.activities.some(activity => activity.area === 'PRINTING'))) ||
+    order.route !== 'WORKSHOP_ONLY' && order.status === 'IN_PRINTING';
+  return user.role === 'TALLER' && (Boolean(order.products?.some(product => product.activities.some(activity => activity.area === 'WORKSHOP'))) ||
+    (hasWorkshop(order.route) && order.status === 'IN_WORKSHOP') || order.status === 'PENDING_INSTALLATION');
 };
 export const visibleOrders = (user: User | null, orders: WorkOrder[]) => orders.filter(order => canViewOrder(user, order));
 export const formatCOP = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);
@@ -54,14 +58,15 @@ export const formatDate = (value?: string, withTime = false): string => {
 };
 export const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 export const areaOf = (printing?: Printing) => printing ? Math.round(printing.length * printing.width * 1000) / 1000 : 0;
-type FinancialInput = Pick<WorkOrder, 'value' | 'documentType' | 'reteFuente' | 'reteIva' | 'ica' | 'payments'>;
+type FinancialInput = Pick<WorkOrder, 'value' | 'documentType' | 'reteFuente' | 'reteIva' | 'ica' | 'payments'> & Pick<WorkOrder, 'financialRule' | 'specialPayment'>;
 export function financials(order: FinancialInput, cutoff?: string): Financials {
   const baseCents = Math.round(roundMoney(order.value) * 100);
   const ivaCents = order.documentType === 'FACT' ? Math.round(baseCents * 19 / 100) : 0;
   const retCents = order.documentType === 'FACT' ? [order.reteFuente, order.reteIva, order.ica].reduce((sum, v) => sum + Math.round(roundMoney(v) * 100), 0) : 0;
   const paidCents = order.payments.filter(p => !cutoff || dateOnly(p.date) <= cutoff).reduce((sum, p) => sum + Math.round(roundMoney(p.amount) * 100), 0);
-  const balanceCents = baseCents + ivaCents + retCents - paidCents;
-  return { base: baseCents / 100, iva: ivaCents / 100, gross: (baseCents + ivaCents) / 100, retentions: retCents / 100, collectible: (baseCents + ivaCents + retCents) / 100, paid: paidCents / 100, balance: balanceCents / 100, paymentStatus: balanceCents <= 0 ? 'PAID' : paidCents > 0 ? 'PARTIAL' : 'PENDING' };
+  const collectibleCents = baseCents + ivaCents + (order.financialRule === 'NEW' ? -retCents : retCents);
+  const balanceCents = collectibleCents - paidCents;
+  return { base: baseCents / 100, iva: ivaCents / 100, gross: (baseCents + ivaCents) / 100, retentions: retCents / 100, collectible: collectibleCents / 100, paid: paidCents / 100, balance: balanceCents / 100, paymentStatus: balanceCents <= 0 ? 'PAID' : order.specialPayment ? 'SPECIAL' : paidCents > 0 ? 'PARTIAL' : 'PENDING' };
 }
 export const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map(n => n[0]).join('').toUpperCase();
 export const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();

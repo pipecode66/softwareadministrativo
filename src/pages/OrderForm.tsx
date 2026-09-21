@@ -5,6 +5,7 @@ import { useApp } from '../data/AppContext';
 import type { Category, DocumentType, Material, OrderInput, ProductionRoute, WorkOrder } from '../domain/types';
 import { areaOf, canCreate, CATEGORIES, financials, formatCOP, formatMeasure, formatNumber, formatPesosInput, isAdmin, MATERIALS, ROUTE_LABELS } from '../domain/utils';
 import { Button, Card, EmptyState, Field, PageHeader } from '../components/ui';
+import { NewOrderEditor } from './NewOrderEditor';
 import './orders.css';
 
 interface FormValues {
@@ -19,7 +20,7 @@ function initialValues(order?: WorkOrder, clientId = ''): FormValues {
     number: order ? String(order.number) : '', clientId: order?.clientId || clientId,
     description: order?.description || '', value: order ? formatPesosInput(order.value) : '',
     category: order?.category || 'Otras', documentType: order?.documentType || 'REM',
-    route: order?.route || 'PRINT_WORKSHOP', requiresInstallation: order?.requiresInstallation || false,
+    route: order?.route === 'IMPRENTA' ? 'EXTERNO' : order?.route || 'PRINT_WORKSHOP', requiresInstallation: order?.requiresInstallation || false,
     material: order?.printing?.material || 'Panaflex', length: order?.printing ? String(order.printing.length) : '', width: order?.printing ? String(order.printing.width) : '',
     reteFuente: order?.reteFuente ? String(order.reteFuente) : '', reteIva: order?.reteIva ? String(order.reteIva) : '', ica: order?.ica ? String(order.ica) : '',
   };
@@ -32,8 +33,11 @@ export function OrderFormPage() {
   const order = id ? data.orders.find(item => item.id === id) : undefined;
   if (!canCreate(user?.role)) return <EmptyState title="No tienes acceso a crear órdenes" description="La creación corresponde a Administración y Diseño." action={<Link className="btn btn-secondary" to="/orders">Ver órdenes</Link>} />;
   if (id && !order) return <EmptyState title="No encontramos esta orden" action={<Link className="btn btn-secondary" to="/orders">Volver a órdenes</Link>} />;
-  if (order && (!isAdmin(user?.role) || !['NEW', 'PENDING_ADMIN_REVIEW'].includes(order.status))) return <EmptyState title="Esta orden no está disponible para edición" description="Administración puede editar los datos antes de enviar el trabajo a producción." action={<Link className="btn btn-secondary" to={`/orders/${order.id}`}>Volver a la orden</Link>} />;
-  return <OrderEditor key={id || 'new'} existing={order} initialClientId={params.get('client') || params.get('clientId') || ''} />;
+  if (order && (!isAdmin(user?.role) || !['NEW', 'PENDING_ADMIN_REVIEW', 'IN_PRODUCTION'].includes(order.status))) return <EmptyState title="Esta orden no está disponible para edición" description="Administración puede editar la OT antes de que inicie una actividad de producción." action={<Link className="btn btn-secondary" to={`/orders/${order.id}`}>Volver a la orden</Link>} />;
+  const initialClientId = params.get('client') || params.get('clientId') || '';
+  if (!order) return <NewOrderEditor initialClientId={initialClientId} />;
+  if (order.status === 'IN_PRODUCTION') return <NewOrderEditor key={order.id} existing={order} initialClientId={initialClientId} />;
+  return <OrderEditor key={id} existing={order} initialClientId={initialClientId} />;
 }
 
 function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; initialClientId: string }) {
@@ -50,12 +54,12 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
   const errorRef = useRef<HTMLDivElement>(null);
   const admin = isAdmin(user?.role);
   const fact = values.documentType === 'FACT';
-  const hasPrinting = values.route !== 'WORKSHOP_ONLY';
+  const hasPrinting = !['WORKSHOP_ONLY', 'EXTERNO', 'MULTI_AREA'].includes(values.route);
   const selectedClient = data.clients.find(client => client.id === values.clientId);
   const base = Number(values.value.replace(/\./g, '')) || 0;
   // Use the same cents-based calculation as the stored OT and its reports.
   const previewMoney = financials({
-    value: Number.isFinite(base) ? base : 0, documentType: values.documentType,
+    value: Number.isFinite(base) ? base : 0, documentType: values.documentType, financialRule: existing?.financialRule || 'LEGACY',
     reteFuente: Number(values.reteFuente) || 0, reteIva: Number(values.reteIva) || 0, ica: Number(values.ica) || 0,
     payments: existing?.payments || [],
   });
@@ -63,7 +67,7 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
   const area = hasPrinting ? areaOf({ material: values.material, length: Number(values.length) || 0, width: Number(values.width) || 0 }) : 0;
   const backPath = existing ? `/orders/${existing.id}` : '/orders';
   async function addClient() {
-    if (!newClientName.trim()) { setClientError('El nombre del cliente es obligatorio.'); return; }
+    if (!newClientName.trim() || !newClientPhone.trim()) { setClientError('Nombre y celular son obligatorios.'); return; }
     try {
       const client = await saveClient({ name: newClientName.trim(), identification: newClientIdentification.trim(), phone: newClientPhone.trim() });
       change('clientId', client.id);
@@ -142,7 +146,7 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
           </div>
           {selectedClient && <div className="order-client-selected"><div><strong>{selectedClient.name}</strong><span>{selectedClient.identification} · {selectedClient.phone || 'Sin teléfono registrado'}</span></div><Check size={18} /></div>}
           {admin && <div className="order-client-actions"><Link className="link" to="/clients">Consultar directorio de clientes <ArrowRight size={15} /></Link><button type="button" className="link" onClick={() => setNewClientOpen(value => !value)}>{newClientOpen ? 'Cancelar nuevo cliente' : 'Nuevo cliente'}</button></div>}
-          {admin && newClientOpen && <div className="order-inline-client"><div className="form-grid"><Field label="Nombre / razón social *" htmlFor="new-client-name"><input className="input" id="new-client-name" value={newClientName} onChange={event => setNewClientName(event.target.value)} /></Field><Field label="NIT o identificación" htmlFor="new-client-identification"><input className="input" id="new-client-identification" value={newClientIdentification} onChange={event => setNewClientIdentification(event.target.value)} /></Field><Field label="Teléfono" htmlFor="new-client-phone"><input className="input" id="new-client-phone" value={newClientPhone} onChange={event => setNewClientPhone(event.target.value)} /></Field></div>{clientError && <p className="field-error" role="alert">{clientError}</p>}<button type="button" className="btn btn-secondary" onClick={() => void addClient()}>Agregar cliente al directorio</button></div>}
+          {admin && newClientOpen && <div className="order-inline-client"><div className="form-grid"><Field label="Nombre / razón social *" htmlFor="new-client-name"><input className="input" id="new-client-name" value={newClientName} onChange={event => setNewClientName(event.target.value)} /></Field><Field label="NIT o identificación" htmlFor="new-client-identification"><input className="input" id="new-client-identification" value={newClientIdentification} onChange={event => setNewClientIdentification(event.target.value)} /></Field><Field label="Celular *" htmlFor="new-client-phone"><input className="input" id="new-client-phone" value={newClientPhone} onChange={event => setNewClientPhone(event.target.value)} /></Field></div>{clientError && <p className="field-error" role="alert">{clientError}</p>}<button type="button" className="btn btn-secondary" onClick={() => void addClient()}>Agregar cliente al directorio</button></div>}
           {data.clients.length === 0 && <p className="notice notice-warning">Administración debe registrar un cliente antes de crear la orden.</p>}
         </Card>
         <Card className="order-form-section">
@@ -160,9 +164,9 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
           {fact && <div className="order-fact-panel">
             <p className="eyebrow">Desglose de la orden</p>
             <div className="order-tax-breakdown"><div><span>Valor antes de IVA</span><strong>{formatCOP(base)}</strong></div><div><span>IVA 19 %</span><strong>+ {formatCOP(iva)}</strong></div><div><span>Subtotal con IVA</span><strong>{formatCOP(gross)}</strong></div></div>
-            {admin && <><p className="eyebrow">Retenciones manuales y opcionales · importes en COP</p><div className="order-retention-grid">
+            {admin && <><p className="eyebrow">Retenciones · importes en COP</p><div className="order-retention-grid">
               {([{ key: 'reteFuente', label: 'RETE FUENTE' }, { key: 'reteIva', label: 'RETE IVA 15' }, { key: 'ica', label: 'ICA 7 × 1000' }] as const).map(item => <Field key={item.key} label={item.label} htmlFor={`ot-${item.key}`}><input className="input" id={`ot-${item.key}`} type="number" min="0" step="0.01" inputMode="decimal" placeholder="0 COP" value={values[item.key]} onChange={event => change(item.key, event.target.value)} {...attrs(item.key)} />{errorFor(item.key)}</Field>)}
-            </div><p className="order-help-text">Los importes ingresados se suman al subtotal con IVA. Déjalos vacíos cuando no correspondan.</p></>}
+            </div><p className="order-help-text">{existing?.financialRule === 'NEW' ? 'Estos importes se descuentan del valor de la OT antes de sumar el IVA. Puedes corregirlos incluso bajo el umbral de $524.000.' : 'Esta orden conserva la regla financiera histórica: las retenciones ingresadas se suman al total.'}</p></>}
             <p className="order-help-text"><Info size={15} /> Esta selección clasifica la OT; no emite una factura electrónica.</p>
           </div>}
         </Card>
@@ -170,7 +174,7 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
           <div className="order-section-heading"><span>04</span><h2>Recorrido de producción</h2></div>
           <fieldset className="order-choice-fieldset"><legend className="order-sr-only">Selecciona el recorrido</legend><div className="order-route-options">{([
             { value: 'PRINT_ONLY', icon: Printer, label: 'Solo Impresión', help: 'Administración → Impresión' },
-            { value: 'IMPRENTA', icon: Printer, label: 'Imprenta', help: 'Producción gráfica sin Taller' },
+            { value: 'EXTERNO', icon: ArrowRight, label: 'Externo', help: 'Trabajo realizado por terceros' },
             { value: 'WORKSHOP_ONLY', icon: Hammer, label: 'Solo Taller', help: 'Administración → Taller' },
             { value: 'PRINT_WORKSHOP', icon: ArrowRight, label: 'Impresión → Taller', help: 'Ambas áreas, en este orden' },
           ] as const).map(route => <label key={route.value} className={`order-choice-card order-route-card ${values.route === route.value ? 'is-selected' : ''}`}><input type="radio" name="route" value={route.value} checked={values.route === route.value} onChange={() => change('route', route.value)} /><route.icon size={21} aria-hidden="true" /><strong>{route.label}</strong><small>{route.help}</small></label>)}</div></fieldset>

@@ -2,18 +2,16 @@ import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, KeyRound, LockKeyhole, UserRound } from 'lucide-react';
 import { useApp } from '../data/AppContext';
-import { DEMO_PASSWORD } from '../data/seed';
-import { isAdmin, ROLE_LABELS } from '../domain/utils';
+import { isAdmin } from '../domain/utils';
 import { Button, Field } from '../components/ui';
 
 export function LoginPage() {
-  const { data, user, login, usingApi, sessionReady, dataError } = useApp();
+  const { user, login, usingApi, sessionReady, dataError } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const location = useLocation();
   const home = user ? isAdmin(user.role) ? '/' : user.role === 'DISENO' ? '/design' : user.role === 'IMPRESION' ? '/printing' : '/workshop' : '/';
   const requested = (location.state as { from?: string } | null)?.from;
@@ -38,8 +36,6 @@ export function LoginPage() {
       {(error || dataError) && <p className="form-alert" role="alert">{error || dataError}</p>}
       <Button type="submit" className="login-submit" disabled={pending}>{pending ? 'Ingresando…' : 'Ingresar al sistema'}<ArrowRight size={18}/></Button>
     </form>
-    <div className="login-review"><span className="demo-dot"/><p>{usingApi ? 'Acceso con tu cuenta del servidor' : 'Entorno local de revisión · datos de ejemplo'}</p></div>
-    {!usingApi && <><button className="login-help" type="button" aria-expanded={showHelp} onClick={() => setShowHelp(!showHelp)}>Ver accesos de revisión <span>{showHelp ? '−' : '+'}</span></button>{showHelp && <div className="login-accounts"><p>Contraseña de las cuentas locales: <strong>{DEMO_PASSWORD}</strong></p>{data.users.filter(u => u.active).map(u => <button type="button" key={u.id} onClick={() => { setEmail(u.email); setPassword(DEMO_PASSWORD); setError(''); }}><span>{ROLE_LABELS[u.role]}</span><small>{u.email}</small><ArrowRight size={14}/></button>)}<p>Estos accesos son ficticios y solo permiten revisar las pantallas. No inician sesión en el servidor.</p></div>}</>}
     {usingApi && <p className="muted">Si no tienes acceso, solicita una cuenta a la persona encargada de Administración.</p>}
   </div></div></main><footer className="login-footer">© {new Date().getFullYear()} INTERMEDIOS PUBLICIDAD & ARQUITECTURA</footer></div>;
 }

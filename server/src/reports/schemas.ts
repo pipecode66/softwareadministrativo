@@ -33,6 +33,24 @@ export const portfolioSchema = z.object({
   pageSize: z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().max(100)).default(50),
 }).strict();
 
+export const certificateQuerySchema = z.object({
+  cutoff: reportDate,
+  page: z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().max(1_000_000)).default(1),
+  pageSize: z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().max(100)).default(50),
+}).strict();
+
+export const certificateUpdateSchema = z.object({
+  orderId: z.uuid(),
+  expectedVersion: z.number().int().positive(),
+  certificates: z.object({
+    reteFuente: z.boolean(),
+    reteIva: z.boolean(),
+    ica: z.boolean(),
+  }).strict(),
+}).strict();
+
 export type SalesQuery = z.infer<typeof salesSchema>;
 export type PortfolioQuery = z.infer<typeof portfolioSchema>;
 export type MaterialQuery = z.infer<typeof materialSchema>;
+export type CertificateQuery = z.infer<typeof certificateQuerySchema>;
+export type CertificateUpdate = z.infer<typeof certificateUpdateSchema>;

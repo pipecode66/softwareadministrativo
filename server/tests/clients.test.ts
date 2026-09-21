@@ -48,9 +48,11 @@ function get(path = '/clients', session = admin) {
   return request(app).get(`${API}${path}`).set('Cookie', session.cookie);
 }
 
-function post(payload: unknown, session = admin) {
+function post(payload: unknown, session = admin, defaultPhone = true) {
+  const body = defaultPhone && payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+    ? { phone: '3001234567', ...payload } : payload;
   return request(app).post(`${API}/clients`).set('Origin', ORIGIN)
-    .set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send(payload as object);
+    .set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send(body as object);
 }
 
 function patch(id: string, payload: unknown, session = admin) {
@@ -88,7 +90,7 @@ describe('Clientes: registros persistidos y búsqueda', () => {
     expect(created.status).toBe(201);
     const client = created.body.client;
     expect(client).toEqual({
-      id: expect.any(String), name: 'Cliente Central', identification: 'NIT 900123456', phone: '+57 300 123 4567',
+      id: expect.any(String), name: 'Cliente Central', identification: 'NIT 900123456', phone: '+57 300 123 4567', specialPayment: false,
       createdAt: expect.any(String),
     });
     expect(new Date(client.createdAt).toISOString()).toBe(client.createdAt);
@@ -98,17 +100,42 @@ describe('Clientes: registros persistidos y búsqueda', () => {
     const changed = await patch(client.id, { name: '  Cliente Norte  ' });
     expect(changed.status).toBe(200);
     expect(changed.body.client).toEqual({ ...client, name: 'Cliente Norte' });
-    const cleared = await patch(client.id, { identification: '', phone: ' ' });
-    expect(cleared.body.client).toMatchObject({ name: 'Cliente Norte', identification: '', phone: '', createdAt: client.createdAt });
+    const cleared = await patch(client.id, { identification: '' });
+    expect(cleared.body.client).toMatchObject({ name: 'Cliente Norte', identification: '', phone: '+57 300 123 4567', createdAt: client.createdAt });
   });
 
-  it('permite omitir identificación y teléfono, sin inventar valores ni imponer unicidad no acordada', async () => {
+  it('permite omitir identificación sin imponer unicidad de nombre', async () => {
     const first = await post({ name: 'Cliente sin contacto' });
     const second = await post({ name: 'Cliente sin contacto' });
     expect(first.status).toBe(201);
     expect(second.status).toBe(201);
-    expect(first.body.client).toMatchObject({ identification: '', phone: '' });
+    expect(first.body.client).toMatchObject({ identification: '', phone: '3001234567', specialPayment: false });
     expect(first.body.client.id).not.toBe(second.body.client.id);
+  });
+
+  it('exige nombre y celular para clientes nuevos, conserva los clientes antiguos sin celular', async () => {
+    const missing = await post({ name: 'Sin celular' }, admin, false);
+    expect([400, 422]).toContain(missing.status);
+    expect((await get()).body.total).toBe(0);
+
+    const oldId = randomUUID();
+    await db.query('INSERT INTO clients (id, name) VALUES ($1, $2)', [oldId, 'Cliente histórico']);
+    const oldClient = await get(`/clients/${oldId}`);
+    expect(oldClient.body.client).toMatchObject({ phone: '', specialPayment: false });
+    expect((await patch(oldId, { name: 'Nombre nuevo' })).status).toBe(422);
+    const completed = await patch(oldId, { phone: '3102223344' });
+    expect(completed.status).toBe(200);
+    expect(completed.body.client).toMatchObject({ name: 'Cliente histórico', phone: '3102223344' });
+  });
+
+  it('persiste y permite cambiar la condición Especial sin alterar nombre ni teléfono', async () => {
+    const created = await post({ name: 'Cliente Especial', specialPayment: true });
+    expect(created.status).toBe(201);
+    expect(created.body.client.specialPayment).toBe(true);
+    expect((await get()).body.items[0].specialPayment).toBe(true);
+    const changed = await patch(created.body.client.id, { specialPayment: false });
+    expect(changed.status).toBe(200);
+    expect(changed.body.client).toMatchObject({ specialPayment: false, phone: '3001234567' });
   });
 
   it('lista por nombre y conserva total y página aunque la página solicitada esté vacía', async () => {
@@ -193,11 +220,56 @@ describe('Clientes: permisos y sesiones', () => {
 
   it('Diseño puede crear clientes y consultar el directorio', async () => {
     const actor = await actorWithRole('DISENO');
-    const created = await post({ name: 'Cliente nuevo de diseño' }, actor);
+    const created = await post({ name: 'Cliente nuevo de diseño', specialPayment: true }, actor);
     expect(created.status).toBe(201);
-    expect((await get('/clients', actor)).status).toBe(200);
-    expect((await get(`/clients/${created.body.client.id}`, actor)).status).toBe(200);
+    const listed = await get('/clients', actor);
+    expect(listed.status).toBe(200);
+    expect(listed.body.items[0]).toMatchObject({ specialPayment: true, phone: '3001234567' });
+    for (const item of [created.body.client, listed.body.items[0], (await get(`/clients/${created.body.client.id}`, actor)).body.client]) {
+      expect(item).not.toHaveProperty('balance');
+      expect(item).not.toHaveProperty('payments');
+      expect(item).not.toHaveProperty('paid');
+    }
     expect((await get()).body.total).toBe(1);
+  });
+
+  it('Diseño consulta todo el historial operativo del cliente sin totales ni datos financieros', async () => {
+    const designer = await actorWithRole('DISENO');
+    const created = await post({ name: 'Cliente con historial', specialPayment: true });
+    const firstId = randomUUID();
+    const secondId = randomUUID();
+    await db.query(`
+      INSERT INTO orders (id,client_id,description,value,document_type,category,route,requires_installation,
+        status,created_by,creation_key,creation_fingerprint,financial_rule,rete_fuente,rete_iva,ica)
+      VALUES
+        ($1,$3,'Trabajo anterior',100000,'REM','Otras','WORKSHOP_ONLY',false,
+          'NEW',$4,$5,$7,'NEW',0,0,0),
+        ($2,$3,'Trabajo facturado',1000000,'FACT','Proyecto','WORKSHOP_ONLY',false,
+          'NEW',$4,$6,$7,'NEW',40000,28500,7000)
+    `, [firstId, secondId, created.body.client.id, admin.user.id, randomUUID(), randomUUID(), 'a'.repeat(64)]);
+    await db.query(`INSERT INTO payments (id,order_id,date,amount,method,recorded_by,request_key)
+      VALUES ($1,$2,current_date,10000,'EFECTIVO',$3,$4)`,
+    [randomUUID(), secondId, admin.user.id, randomUUID()]);
+
+    const designFirstPage = await get(`/clients/${created.body.client.id}/orders?page=1&pageSize=1`, designer);
+    expect(designFirstPage.status).toBe(200);
+    expect(designFirstPage.body).toMatchObject({ page: 1, pageSize: 1, hasMore: true });
+    expect(designFirstPage.body).not.toHaveProperty('total');
+    expect(designFirstPage.body).not.toHaveProperty('summary');
+    const designOrder = designFirstPage.body.items[0];
+    expect(designOrder).toMatchObject({ clientId: created.body.client.id });
+    for (const field of ['value', 'reteFuente', 'reteIva', 'ica', 'payments', 'financials', 'certificates']) {
+      expect(designOrder).not.toHaveProperty(field);
+    }
+    expect((await get(`/clients/${created.body.client.id}/orders?page=2&pageSize=1`, designer)).body.hasMore).toBe(false);
+
+    const administrative = await get(`/clients/${created.body.client.id}/orders`);
+    expect(administrative.status).toBe(200);
+    expect(administrative.body).toMatchObject({ total: 2, hasMore: false,
+      summary: { orders: 2, received: 10000, balance: 1204500 } });
+    expect(administrative.body.items.find((item: { id: string }) => item.id === secondId))
+      .toMatchObject({ value: 1000000, payments: [{ amount: 10000, method: 'EFECTIVO' }],
+        financials: { collectible: 1114500, balance: 1104500 } });
   });
 
   it.each(['IMPRESION', 'TALLER'] as Role[])('%s no obtiene el directorio ni fichas de contacto', async role => {
@@ -207,6 +279,7 @@ describe('Clientes: permisos y sesiones', () => {
     const denied = await get(`/clients/${created.body.client.id}`, actor);
     expect(denied.status).toBe(403);
     expect(denied.text).not.toContain('3001234567');
+    expect((await get(`/clients/${created.body.client.id}/orders`, actor)).status).toBe(403);
     expect((await post({ name: 'No permitido' }, actor)).status).toBe(403);
     expect((await patch(created.body.client.id, { name: 'No permitido' }, actor)).status).toBe(403);
   });
@@ -235,7 +308,7 @@ describe('Clientes: permisos y sesiones', () => {
       if (reason === 'role') await db.query("UPDATE users SET role = 'IMPRESION' WHERE id = $1", [auth.user.id]);
       if (reason === 'password') await db.query('UPDATE users SET must_change_password = true WHERE id = $1', [auth.user.id]);
       if (reason === 'csrf') auth.csrfToken = '0'.repeat(64);
-      await expect(createClient(db, auth, { name: 'No debe guardarse', identification: '', phone: '' }))
+      await expect(createClient(db, auth, { name: 'No debe guardarse', identification: '', phone: '', specialPayment: false }))
         .rejects.toMatchObject({ status: ['role', 'password'].includes(reason) ? 403 : 401 });
       const count = await db.query<{ total: number }>('SELECT count(*)::integer AS total FROM clients');
       expect(count.rows[0].total).toBe(0);
@@ -257,10 +330,11 @@ describe('Clientes: validación y límites', () => {
   it.each([
     {}, { name: '' }, { name: '   ' }, { name: null }, { name: 123 }, { name: 'x'.repeat(181) },
     { name: 'Cliente', identification: 'x'.repeat(61) }, { name: 'Cliente', identification: null },
-    { name: 'Cliente', phone: 'x'.repeat(41) }, { name: 'Cliente', phone: 123 },
+    { name: 'Cliente', phone: 'x'.repeat(41) }, { name: 'Cliente', phone: 123 }, { name: 'Cliente', phone: ' ' },
+    { name: 'Cliente', specialPayment: 'yes' },
     { name: 'Cliente', id: missingId }, { name: 'Cliente', createdAt: '2021-01-01' }, { name: 'Cliente', active: true },
   ])('rechaza creación inválida o asignación de campos internos: %j', async payload => {
-    const response = await post(payload);
+    const response = await post(payload, admin, false);
     expect([400, 422]).toContain(response.status);
     expect((await get()).body.total).toBe(0);
   });
@@ -270,7 +344,7 @@ describe('Clientes: validación y límites', () => {
     expect(response.status).toBe(201);
   });
 
-  it.each([{}, { name: ' ' }, { phone: null }, { id: missingId }, { createdAt: '2021-01-01' }, { updated_at: '2021-01-01' }])(
+  it.each([{}, { name: ' ' }, { phone: null }, { phone: ' ' }, { specialPayment: 'yes' }, { id: missingId }, { createdAt: '2021-01-01' }, { updated_at: '2021-01-01' }])(
     'rechaza actualización vacía, inválida o con campos internos: %j', async payload => {
       const created = await post({ name: 'Original' });
       expect([400, 422]).toContain((await patch(created.body.client.id, payload)).status);

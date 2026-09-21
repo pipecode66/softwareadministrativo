@@ -1,7 +1,7 @@
 import type { AppData, WorkOrder, WorkStatus } from '../domain/types';
 import { CATEGORIES, MATERIALS, financials, today } from '../domain/utils';
 
-export const DEMO_PASSWORD = 'Intermedios2026!';
+export const LOCAL_REVIEW_PASSWORD = 'Intermedios2026!';
 export function makeSeed(): AppData {
   const date = today();
   const day = Number(date.slice(-2));

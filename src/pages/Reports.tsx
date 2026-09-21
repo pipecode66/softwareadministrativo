@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Banknote, ChartNoAxesCombined, ReceiptText, Wallet } from 'lucide-react';
+import { Banknote, ChartNoAxesCombined, FileCheck2, ReceiptText, Wallet } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useApp } from '../data/AppContext';
 import { PeriodFilter } from '../components/PeriodFilter';
-import { Card, CardHeader, DataTable, EmptyState, Field, KpiCard, PageHeader } from '../components/ui';
+import { Card, CardHeader, DataTable, EmptyState, Field, KpiCard, PageHeader, Pagination } from '../components/ui';
+import type { CertificateReport } from '../data/api';
 import type { Category, DateRange, DocumentType, WorkOrder } from '../domain/types';
 import { CATEGORIES, currentMonthRange, dateOnly, financials, formatCOP, formatNumber, inRange, isCalendarDate, roundMoney } from '../domain/utils';
 import './analytics.css';
@@ -17,6 +18,12 @@ export function reportSummary(orders: WorkOrder[], range: DateRange, category: C
   const sales = relevant.filter(order => inRange(order.createdAt, range));
   const paymentsInPeriod = (source: WorkOrder[]) => sumMoney(source.flatMap(order => order.payments.filter(payment => inRange(payment.date, range)).map(payment => payment.amount)));
   const debtAtCutoff = (source: WorkOrder[]) => sumMoney(source.filter(order => dateOnly(order.createdAt) <= range.to).map(order => financials(order, range.to).balance));
+  const debtWithoutIvaAtCutoff = (source: WorkOrder[]) => sumMoney(source.filter(order => dateOnly(order.createdAt) <= range.to).map(order => {
+    const money = financials(order, range.to);
+    return Math.max(0, money.balance - money.iva);
+  }));
+  const balance = debtAtCutoff(relevant);
+  const balanceWithoutIva = debtWithoutIvaAtCutoff(relevant);
   const categories = CATEGORIES.filter(name => category === 'ALL' || name === category).map(name => {
     const categorySales = sales.filter(order => order.category === name);
     const categorySource = relevant.filter(order => order.category === name);
@@ -26,7 +33,11 @@ export function reportSummary(orders: WorkOrder[], range: DateRange, category: C
     const list = sales.filter(order => order.documentType === type).map(order => financials(order));
     return { type, count: list.length, base: sumMoney(list.map(money => money.base)), iva: sumMoney(list.map(money => money.iva)), gross: sumMoney(list.map(money => money.gross)), retentions: sumMoney(list.map(money => money.retentions)), collectible: sumMoney(list.map(money => money.collectible)) };
   });
-  return { sales, received: paymentsInPeriod(relevant), base: sumMoney(sales.map(order => order.value)), factGross: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => financials(order).gross)), balance: debtAtCutoff(relevant), categories, documents };
+  return { sales, received: paymentsInPeriod(relevant), base: sumMoney(sales.map(order => order.value)),
+    factBase: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => order.value)),
+    iva: sumMoney(sales.map(order => financials(order).iva)),
+    factGross: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => financials(order).gross)),
+    balance, balanceWithoutIva, ivaDue: sumMoney([balance, -balanceWithoutIva]), categories, documents };
 }
 
 export function periodBuckets(range: DateRange) {
@@ -87,6 +98,70 @@ export function CategoryChart({ orders, categoryRows }: { orders: WorkOrder[]; c
   </div>;
 }
 
+function CertificatesPanel({ cutoff }: { cutoff: string }) {
+  const { data, usingApi, loadCertificateReport, setCertificates, toast } = useApp();
+  const [page, setPage] = useState(1);
+  const [revision, setRevision] = useState(0);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [remote, setRemote] = useState<CertificateReport | null>(null);
+  useEffect(() => { setPage(1); }, [cutoff]);
+  useEffect(() => {
+    if (!usingApi) { setRemote(null); return; }
+    let active = true;
+    void loadCertificateReport({ cutoff, page, pageSize: 10 })
+      .then(report => { if (active) setRemote(report); })
+      .catch(error => { if (active) toast(error instanceof Error ? error.message : 'No se pudieron consultar los certificados.', 'error'); });
+    return () => { active = false; };
+  }, [cutoff, page, revision, usingApi]);
+  const localItems = data.orders.filter(order => order.documentType === 'FACT' && dateOnly(order.createdAt) <= cutoff && financials(order).retentions > 0)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.number - b.number)
+    .map(order => ({
+      orderId: order.id, number: order.number, clientId: order.clientId,
+      clientName: data.clients.find(client => client.id === order.clientId)?.name ?? 'Cliente',
+      documentType: 'FACT' as const, financialRule: order.financialRule ?? 'LEGACY' as const,
+      createdAt: order.createdAt, version: order.version ?? 1,
+      reteFuente: order.reteFuente, reteIva: order.reteIva, ica: order.ica,
+      pendingReteFuente: order.certificates?.reteFuente ? 0 : order.reteFuente,
+      pendingReteIva: order.certificates?.reteIva ? 0 : order.reteIva,
+      pendingIca: order.certificates?.ica ? 0 : order.ica,
+      iva: financials(order).iva, collectible: financials(order).collectible,
+      collectibleWithoutIva: financials(order).collectible - financials(order).iva,
+      paid: financials(order, cutoff).paid, balance: financials(order, cutoff).balance,
+      balanceWithoutIva: Math.max(0, financials(order, cutoff).balance - financials(order).iva),
+      certificates: { reteFuente: Boolean(order.certificates?.reteFuente), reteIva: Boolean(order.certificates?.reteIva), ica: Boolean(order.certificates?.ica) },
+    }));
+  const items = usingApi ? (remote?.items ?? []) : localItems.slice((page - 1) * 10, page * 10);
+  const total = usingApi ? (remote?.total ?? 0) : localItems.length;
+  const outstanding = usingApi ? { reteFuente: remote?.pendingReteFuente ?? 0, reteIva: remote?.pendingReteIva ?? 0, ica: remote?.pendingIca ?? 0 } : {
+    reteFuente: sumMoney(localItems.map(item => item.pendingReteFuente)), reteIva: sumMoney(localItems.map(item => item.pendingReteIva)), ica: sumMoney(localItems.map(item => item.pendingIca)),
+  };
+  async function toggle(item: CertificateReport['items'][number], key: 'reteFuente' | 'reteIva' | 'ica') {
+    if (savingId) return;
+    setSavingId(item.orderId);
+    try {
+      await setCertificates(item.orderId, item.version, { ...item.certificates, [key]: !item.certificates[key] });
+      setRemote(null);
+      setRevision(value => value + 1);
+      toast('Control de certificado actualizado.', 'success');
+    } catch (error) { toast(error instanceof Error ? error.message : 'No se pudo actualizar el certificado.', 'error'); }
+    finally { setSavingId(null); }
+  }
+  const certificateCell = (item: CertificateReport['items'][number], key: 'reteFuente' | 'reteIva' | 'ica') => item[key] > 0 ?
+    <label className="analytics-certificate-control"><input type="checkbox" checked={item.certificates[key]} disabled={Boolean(savingId)} onChange={() => { void toggle(item, key); }} aria-label={`Certificado ${key === 'reteFuente' ? 'RETEFUENTE' : key === 'reteIva' ? 'RETE IVA' : 'ICA'} recibido para OT #${item.number}`} /><span>{formatCOP(item[key])}</span><small>{item.certificates[key] ? 'Recibido' : 'Pendiente'}</small></label> : <span className="muted">—</span>;
+  return <><div className="metrics-grid">
+    <KpiCard label="RETEFUENTE pendiente" value={formatCOP(outstanding.reteFuente)} icon={FileCheck2} tone="blue" meta="Certificado aún no recibido" />
+    <KpiCard label="RETE IVA pendiente" value={formatCOP(outstanding.reteIva)} icon={FileCheck2} tone="slate" meta="Certificado aún no recibido" />
+    <KpiCard label="ICA pendiente" value={formatCOP(outstanding.ica)} icon={FileCheck2} tone="amber" meta="Certificado aún no recibido" />
+  </div><Card><CardHeader title="Certificados de retención" description={`Pendientes de recibir para FACT creadas hasta ${cutoff}. El estado de recibido es actual; no es una fotografía histórica.`} />
+    {items.length ? <><DataTable rows={items} rowKey={item => item.orderId} columns={[
+      { key: 'order', label: 'Orden / cliente', render: item => <div><strong>OT #{String(item.number).padStart(4, '0')}</strong><span className="cell-subtitle">{item.clientName}</span></div> },
+      { key: 'reteFuente', label: 'RETEFUENTE 4 %', render: item => certificateCell(item, 'reteFuente') },
+      { key: 'reteIva', label: 'RETE IVA 2,85 %', render: item => certificateCell(item, 'reteIva') },
+      { key: 'ica', label: 'ICA 7×1000', render: item => certificateCell(item, 'ica') },
+    ]} renderCard={item => <div className="analytics-mobile-record"><strong>OT #{String(item.number).padStart(4, '0')} · {item.clientName}</strong><div className="analytics-certificate-mobile"><span>RETEFUENTE</span>{certificateCell(item, 'reteFuente')}<span>RETE IVA</span>{certificateCell(item, 'reteIva')}<span>ICA</span>{certificateCell(item, 'ica')}</div></div>} /><Pagination page={page} pageSize={10} total={total} onChange={setPage} /></> : <EmptyState title="Sin retenciones en este corte" description="Las órdenes FACT con retenciones aparecerán aquí para controlar sus certificados." />}
+  </Card></>;
+}
+
 export function ReportsPage() {
   const { data, usingApi, loadSalesReport, toast } = useApp();
   const [range, setRange] = useState<DateRange>(currentMonthRange);
@@ -96,6 +171,7 @@ export function ReportsPage() {
   useEffect(() => {
     if (!usingApi) { setRemoteReport(null); return; }
     let active = true;
+    setRemoteReport(null);
     void loadSalesReport({ from: range.from, to: range.to, category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document })
       .then(report => { if (active) setRemoteReport(report); })
       .catch(error => { if (active) toast(error instanceof Error ? error.message : 'No se pudo cargar el reporte.', 'error'); });
@@ -104,19 +180,24 @@ export function ReportsPage() {
   const local = reportSummary(data.orders, range, category, document);
   const report = remoteReport ? {
     ...local,
-    received: remoteReport.totals.received, base: remoteReport.totals.base, factGross: remoteReport.totals.factGross, balance: remoteReport.totals.balance,
+    received: remoteReport.totals.received, base: remoteReport.totals.base, factBase: remoteReport.totals.factBase,
+    iva: remoteReport.totals.iva, factGross: remoteReport.totals.factGross,
+    balance: remoteReport.totals.balanceWithIva, balanceWithoutIva: remoteReport.totals.balanceWithoutIva, ivaDue: remoteReport.totals.ivaDue,
     categories: remoteReport.categories.map(row => ({ name: row.category, count: row.count, base: row.base, iva: row.iva, received: row.received, balance: row.balance })),
     documents: remoteReport.documents.map(row => ({ type: row.documentType, count: row.count, base: row.base, iva: row.iva, gross: row.gross, retentions: row.retentions, collectible: row.collectible })),
   } : local;
-  const { sales, received, base, factGross, balance, categories, documents } = report;
+  const { sales, received, base, factBase, iva, balance, balanceWithoutIva, ivaDue, categories, documents } = report;
   return <div className="page-stack analytics-page">
     <PageHeader eyebrow="ANÁLISIS COMERCIAL" title="Reportes de ventas" description="Ventas, recaudo y cartera: cada indicador con su fecha y criterio de cálculo." />
     <Card><div className="analytics-filters"><PeriodFilter value={range} onChange={setRange} /><div className="analytics-filter-pair"><Field label="Categoría" htmlFor="reports-category"><select id="reports-category" className="select" value={category} onChange={event => setCategory(event.target.value as Category | 'ALL')}><option value="ALL">Todas las categorías</option>{CATEGORIES.map(name => <option key={name}>{name}</option>)}</select></Field><Field label="Documento" htmlFor="reports-document"><select id="reports-document" className="select" value={document} onChange={event => setDocument(event.target.value as DocumentType | 'ALL')}><option value="ALL">REM y FACT</option><option>REM</option><option>FACT</option></select></Field></div></div></Card>
     <div className="metrics-grid">
-      <KpiCard label="Ventas · valor base" value={formatCOP(base)} icon={ChartNoAxesCombined} tone="orange" meta={`${sales.length} órdenes creadas en el período`} />
-      <KpiCard label="FACT · total con IVA" value={formatCOP(factGross)} icon={ReceiptText} tone="blue" meta="Órdenes FACT del período, antes de retenciones" />
+      <KpiCard label="Ventas · valor base" value={formatCOP(base)} icon={ChartNoAxesCombined} tone="orange" meta={`${remoteReport?.totals.count ?? sales.length} órdenes creadas en el período`} />
+      <KpiCard label="FACT · ventas sin IVA" value={formatCOP(factBase)} icon={ReceiptText} tone="blue" meta="Solo valor base de las FACT del período" />
+      <KpiCard label="IVA · ventas FACT" value={formatCOP(iva)} icon={ReceiptText} tone="slate" meta="IVA de FACT creadas en el período" />
       <KpiCard label="Pagos recibidos" value={formatCOP(received)} icon={Banknote} tone="green" meta="Por fecha del pago, incluso de órdenes anteriores" />
-      <KpiCard label="Cartera al corte" value={formatCOP(balance)} icon={Wallet} tone="amber" meta={`Saldo acumulado hasta ${range.to}`} />
+      <KpiCard label="Cartera al corte con IVA" value={formatCOP(balance)} icon={Wallet} tone="amber" meta={`Saldo acumulado hasta ${range.to}`} />
+      <KpiCard label="Cartera al corte sin IVA" value={formatCOP(balanceWithoutIva)} icon={Wallet} tone="slate" meta="Cartera después de separar el IVA pendiente" />
+      <KpiCard label="IVA pendiente de cobro" value={formatCOP(ivaDue)} icon={Wallet} tone="blue" meta="Diferencia entre cartera con y sin IVA" />
     </div>
     <div className="analytics-main-grid"><Card><CardHeader title="Ventas en el tiempo" description="Fecha de creación de la OT · valores antes de IVA" /><SalesChart orders={sales} range={range} /></Card><Card><CardHeader title="Ventas por categoría" description="Participación sobre el valor base del período" /><CategoryChart orders={sales} categoryRows={categories} /></Card></div>
     <Card><CardHeader title="Desglose por categoría" description="Los pagos se agrupan por su propia fecha; la cartera incluye órdenes anteriores al período." /><DataTable rows={categories} rowKey={row => row.name} columns={[
@@ -127,7 +208,7 @@ export function ReportsPage() {
       { key: 'received', label: 'Pagos del período', render: row => formatCOP(row.received) },
       { key: 'balance', label: 'Cartera al corte', render: row => <strong className="analytics-amber">{formatCOP(row.balance)}</strong> },
     ]} renderCard={row => <div className="analytics-mobile-record"><strong>{row.name} <span className="muted">· {row.count} OT</span></strong><dl><div><dt>Ventas base</dt><dd>{formatCOP(row.base)}</dd></div><div><dt>IVA</dt><dd>{formatCOP(row.iva)}</dd></div><div><dt>Pagos del período</dt><dd>{formatCOP(row.received)}</dd></div><div><dt>Cartera al corte</dt><dd>{formatCOP(row.balance)}</dd></div></dl></div>} /></Card>
-    <Card><CardHeader title="Control REM / FACT" description="Órdenes creadas en el período seleccionado. Los importes de retención son manuales." /><DataTable rows={documents} rowKey={row => row.type} columns={[
+    <Card><CardHeader title="Control REM / FACT" description="Órdenes creadas en el período seleccionado. Las retenciones de OT nuevas se descuentan del valor base; las históricas conservan su regla original." /><DataTable rows={documents} rowKey={row => row.type} columns={[
       { key: 'type', label: 'Documento', render: row => <strong>{row.type} · {row.count} OT</strong> },
       { key: 'base', label: 'Valor base', render: row => formatCOP(row.base) },
       { key: 'iva', label: 'IVA', render: row => formatCOP(row.iva) },
@@ -135,6 +216,7 @@ export function ReportsPage() {
       { key: 'retentions', label: 'Retenciones', render: row => formatCOP(row.retentions) },
       { key: 'collectible', label: 'Total cobrable', render: row => <strong>{formatCOP(row.collectible)}</strong> },
     ]} renderCard={row => <div className="analytics-mobile-record"><strong>{row.type} · {row.count} órdenes</strong><dl><div><dt>Valor base</dt><dd>{formatCOP(row.base)}</dd></div><div><dt>IVA</dt><dd>{formatCOP(row.iva)}</dd></div><div><dt>Total con IVA</dt><dd>{formatCOP(row.gross)}</dd></div><div><dt>Retenciones</dt><dd>{formatCOP(row.retentions)}</dd></div><div><dt>Total cobrable</dt><dd>{formatCOP(row.collectible)}</dd></div></dl></div>} /></Card>
+    <CertificatesPanel cutoff={range.to} />
     <p className="analytics-footnote">FACT es una clasificación de control interno. Esta aplicación no emite facturas electrónicas ni está conectada con la DIAN.</p>
   </div>;
 }

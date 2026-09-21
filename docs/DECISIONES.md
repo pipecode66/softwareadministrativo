@@ -1,15 +1,29 @@
-# Decisiones y diferencias de las fuentes
+# Decisiones vigentes
 
-1. **Prioridad:** instrucciones directas del usuario > sugerencias del PDF > HTML decorativo. La petición autoriza corregir el diseño aunque el PDF diga no reinterpretarlo.
-2. **Numeración (confirmada 2026-09-14):** el usuario respondió «Automático desde 1». Sustituye la captura manual provisional: servidor asigna número único desde 1, sin continuidad histórica ni número elegido por cliente HTTP. Ajustar formulario/API y pruebas; no reiniciar una secuencia con datos existentes.
-3. **Retenciones:** el usuario confirmó el 2026-09-15 que son valores agregados al total por cobrar. Para FACT, el cobrable es base + IVA 19 % + RETE FUENTE + RETE IVA + ICA. Son importes manuales de operación y no representan una liquidación tributaria ni emisión electrónica.
-4. **Material:** cinco nombres expresos, un detalle por OT, dimensiones en metros y área a tres decimales, según PDF. Consumo al completar impresión; cola no cuenta como consumo.
-5. **Valor:** formulario valida >0 según documento. Reglas finales deberán validarse también en servidor.
-6. **Reportes:** ventas por creación OT (base), FACT bruto base+IVA, recaudo por fecha individual de pago, cartera al corte. No sumas estáticas ni doble conteo de abonos.
-7. **Datos locales:** solo ejemplos ficticios para revisar UI. Persistencia en navegador y sincronización entre pestañas del mismo navegador, no entre usuarios/equipos. Login local identificado como tal; no almacena contraseñas de clientes.
-8. **Stack:** React/TypeScript/Vite y React Router, CSS con tokens compartidos, Lucide SVG, Manrope/Inter locales y Recharts. CSS compilado local sin Tailwind CDN; conserva lenguaje visual con menor duplicación. Documentación consultada: https://vite.dev/guide/ y https://reactrouter.com/start/declarative/installation .
-9. **Permisos:** Diseño ve sus propias OT y selecciona clientes existentes; edición por administración antes de producción. Impresión/Taller sin finanzas. Configuración de cuentas solo adminmaster, limitada a interfaz local.
-10. **Precisión y períodos:** cálculo monetario compartido en centavos, IVA redondeado a dos decimales; no se admiten pagos/valores que redondeen a cero. Se validan fechas de calendario reales. El modo Mes comprende el mes calendario completo, incluido su último día; la zona horaria comercial es America/Bogota.
-11. **Accesibilidad y adaptación:** navegación móvil, foco contenido y restaurado en modales, etiquetas de campos, tablas convertidas en tarjetas y alternativas escritas a gráficos. Los gráficos actualizan sus valores sin animación. Se verificó Chromium; no equivale a una certificación de accesibilidad ni a pruebas en Safari/iOS físicos.
-12. **Flujo productivo confirmado (2026-09-15):** Diseño crea la OT y queda pendiente de revisión administrativa; Administración la aprueba y la envía a Impresión o Taller según la ruta. Administración consulta el avance, pero solo Impresión finaliza impresión y solo Taller inicia/finaliza Taller. Instalación puede registrarla Administración o Taller; ningún otro perfil puede completarla.
-13. **Avisos operativos (2026-09-15):** el frontend API consulta cambios cada 10 segundos y muestra avisos cuando una OT entra a revisión administrativa, Impresión o Taller. Es una actualización periódica entre equipos, no un canal WebSocket persistente.
+1. Las instrucciones directas del usuario prevalecen sobre el PDF, los HTML originales y decisiones históricas.
+2. El servidor asigna el número de OT automáticamente desde 1. Nunca se captura desde el cliente HTTP ni se reinicia con OT conservadas.
+3. Una OT nueva de un cliente normal exige abono inicial. Un cliente marcado Especial puede iniciar sin abono; el estado Especial permanece mientras tenga saldo y deja de aplicar al quedar pagada.
+4. Los medios admitidos son Efectivo, Bancolombia y Davivienda. Los pagos históricos sin clasificación permanecen como LEGACY.
+5. Para nuevas FACT: IVA = 19 % de la base; si base > $524.000, RETE FUENTE = 4 %, RETE IVA = 2,85 % e ICA = 7/1000. Cobrable = base + IVA − retenciones. Debajo del umbral los valores automáticos son cero, pero Administración puede registrar valores manuales.
+6. Las OT ya existentes conservan financial_rule=LEGACY para evitar alterar saldos al aplicar migraciones. La limpieza autorizada puede retirarlas después de respaldo y verificación.
+7. Los certificados de RETE FUENTE, RETE IVA e ICA se registran por separado. Marcar un certificado reduce su métrica pendiente, no vuelve a modificar el saldo de caja.
+8. La cartera con y sin IVA imputa los pagos primero al componente sin IVA; el IVA pendiente es la diferencia entre ambos saldos.
+9. El multiabono opera solo sobre las OT elegidas por Administración y distribuye de menor a mayor saldo, con desempate determinista. No reparte sobre OT ajenas al cliente ni permite exceder la deuda seleccionada.
+10. La OT principal conserva toda la información comercial. Productos y actividades internas no tienen un segundo valor de venta y no duplican reportes ni cartera.
+11. Las áreas vigentes son Diseño, Impresión, Taller y Externo. Externo sustituye a Imprenta para nuevas OT, no utiliza medidas/materiales internos y puede convivir en una OT con productos destinados a otras áreas.
+12. Diseño debe anteceder a Impresión dentro del mismo producto. Administración asigna diseñadores y un diseñador puede tomar una tarea libre.
+13. Los materiales vigentes son Panaflex, V. Corte, V. Impresión y Banner. Se permiten varios por producto y su consumo se contabiliza al completar Impresión.
+14. Diseño crea clientes y OT y puede indicar su abono inicial. En el historial de un cliente ve todas las OT operativas, pero no totales, pagos, saldos, retenciones ni certificados.
+15. Solo Administración edita la información comercial y opera pagos, multiabonos, certificados y reportes. Impresión y Taller reciben exclusivamente información operativa.
+16. La instalación es opcional. Si no se requiere, la OT finaliza al completar todas sus actividades; si se requiere, queda pendiente hasta registrar la instalación.
+17. Las fechas de negocio usan America/Bogota. Los importes se calculan en centavos y las áreas en m² con hasta tres decimales.
+18. La depuración del 21/09/2026 elimina únicamente datos comerciales anteriores a 2026-09-21 00:00 America/Bogota, preserva usuarios y no se ejecuta automáticamente en migraciones o despliegues.
+19. No se afirma despliegue, migración o limpieza de PostgreSQL remoto sin evidencia de conexión, respaldo y resultado.
+
+## Decisiones sustituidas
+
+- La regla del 15/09 que sumaba retenciones al cobrable fue sustituida por la solicitud del 20/09 para nuevas FACT. Solo se conserva como LEGACY para datos previos.
+- El modelo de un material por OT fue sustituido por varios productos y materiales.
+- El paso obligatorio de Diseño por aprobación administrativa fue sustituido por creación directa y actividades internas; Administración conserva edición y control.
+- Imprenta quedó como valor técnico legado para poder leer registros antiguos, pero no se ofrece para nuevas OT ni se muestra como opción vigente.
+- Vinilo fue retirado del catálogo de materiales; puede aparecer libremente en una descripción escrita por el usuario, pero no en métricas o selectores.

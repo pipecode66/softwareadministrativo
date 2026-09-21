@@ -1,8 +1,8 @@
 import { Router, type RequestHandler } from 'express';
 import type { Database } from '../db/types.js';
 import { ApiError } from '../errors.js';
-import { clientParamsSchema, createClientSchema, listClientsSchema, updateClientSchema } from './schemas.js';
-import { CLIENT_READ_ROLES, CLIENT_WRITE_ROLES, createClient, getClient, listClients, updateClient } from './service.js';
+import { clientParamsSchema, createClientSchema, listClientOrdersSchema, listClientsSchema, updateClientSchema } from './schemas.js';
+import { CLIENT_READ_ROLES, CLIENT_WRITE_ROLES, createClient, getClient, listClientOrders, listClients, updateClient } from './service.js';
 
 /** Mount after requireAuth, requirePasswordReady and requireCsrf. */
 export function createClientsRouter(db: Database): Router {
@@ -17,7 +17,7 @@ export function createClientsRouter(db: Database): Router {
 
   const requireWriteRole: RequestHandler = (req, _res, next) => {
     if (!CLIENT_WRITE_ROLES.includes(req.auth!.user.role)) {
-      throw new ApiError(403, 'FORBIDDEN', 'Solo Administración puede registrar o editar clientes.');
+      throw new ApiError(403, 'FORBIDDEN', 'Solo Administración y Diseño pueden registrar o editar clientes.');
     }
     next();
   };
@@ -29,6 +29,11 @@ export function createClientsRouter(db: Database): Router {
   router.get('/:id', async (req, res) => {
     const { id } = clientParamsSchema.parse(req.params);
     res.json({ client: await getClient(db, id) });
+  });
+
+  router.get('/:id/orders', async (req, res) => {
+    const { id } = clientParamsSchema.parse(req.params);
+    res.json(await listClientOrders(db, req.auth!, id, listClientOrdersSchema.parse(req.query)));
   });
 
   router.post('/', requireWriteRole, async (req, res) => {

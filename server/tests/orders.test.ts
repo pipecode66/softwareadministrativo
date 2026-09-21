@@ -97,7 +97,7 @@ function edit(order: OrderView, overrides: Record<string, unknown>, session = ad
 }
 
 function payment(order: OrderView, amount: number, session = admin, options: Record<string, unknown> = {}) {
-  return post(`/orders/${order.id}/payments`, { date: dateOnly(), amount, requestId: randomUUID(), ...options }, session);
+  return post(`/orders/${order.id}/payments`, { date: dateOnly(), amount, method: 'EFECTIVO', requestId: randomUUID(), ...options }, session);
 }
 
 function transition(order: OrderView, action: string, session = admin, details: Record<string, unknown> = {}) {
@@ -122,7 +122,7 @@ beforeEach(async () => {
   admin = await login();
   actors = new Map([['ADMINMASTER', admin]]);
   clientId = randomUUID();
-  await db.query('INSERT INTO clients (id,name,identification,phone) VALUES ($1,$2,$3,$4)',
+  await db.query('INSERT INTO clients (id,name,identification,phone,special_payment) VALUES ($1,$2,$3,$4,true)',
     [clientId, 'Cliente Andino', 'NIT-900888777', '+57 300 987 6543']);
 });
 
@@ -189,14 +189,14 @@ describe('OT: creación automática e idempotencia', () => {
 
   it.each(['ADMIN_GENERAL', 'DISENO'] as Role[])('%s puede crear, respetando revisión de Diseño', async role => {
     const created = await create({}, await actor(role));
-    expect(created.status).toBe(role === 'DISENO' ? 'PENDING_ADMIN_REVIEW' : 'NEW');
+    expect(created.status).toBe('NEW');
     expect((await get(`/orders/${created.id}`)).status).toBe(200);
   });
 
-  it('acepta la ruta Impresión como recorrido de producción y excluye Vinilo de los materiales', async () => {
-    const created = await create({ route: 'IMPRENTA', printing: { material: 'Panaflex', length: 1.5, width: 1 } });
+  it('acepta la ruta EXTERNO sin impresión y excluye Vinilo de los materiales', async () => {
+    const created = await create({ route: 'EXTERNO', printing: undefined });
     expect(created.status).toBe('NEW');
-    expect((await createRequest({ ...input({ route: 'IMPRENTA', printing: { material: 'Vinilo', length: 1, width: 1 } }), requestId: randomUUID() })).status).toBe(400);
+    expect((await createRequest({ ...input({ route: 'PRINT_ONLY', printing: { material: 'Vinilo', length: 1, width: 1 } }), requestId: randomUUID() })).status).toBe(400);
   });
 
   it.each(['IMPRESION', 'TALLER'] as Role[])('%s no puede crear órdenes', async role => {
@@ -214,10 +214,10 @@ describe('OT: creación automática e idempotencia', () => {
 });
 
 describe('OT: finanzas y abonos', () => {
-  it('FACT suma base, IVA y retenciones manuales; REM mantiene solo la base', async () => {
+  it('FACT nueva resta retenciones y suma IVA; REM mantiene solo la base', async () => {
     const fact = await create({ documentType: 'FACT', reteFuente: 5000, reteIva: 3000, ica: 2000 });
     expect(fact.financials).toEqual({ base: 100000, iva: 19000, gross: 119000, retentions: 10000,
-      collectible: 129000, paid: 0, balance: 129000, paymentStatus: 'PENDING' });
+      collectible: 109000, paid: 0, balance: 109000, paymentStatus: 'SPECIAL' });
     expect((await create()).financials).toMatchObject({ iva: 0, retentions: 0, collectible: 100000 });
   });
 
@@ -268,7 +268,7 @@ describe('OT: finanzas y abonos', () => {
     const results = await Promise.all([payment(order, 70), payment(order, 70, await actor('ADMIN_GENERAL'))]);
     expect(results.map(result => result.status).sort()).toEqual([201, 409]);
     const saved = (await get(`/orders/${order.id}`)).body.order;
-    expect(saved.financials).toMatchObject({ paid: 70, balance: 30, paymentStatus: 'PARTIAL' });
+    expect(saved.financials).toMatchObject({ paid: 70, balance: 30, paymentStatus: 'SPECIAL' });
     expect(saved.payments).toHaveLength(1);
   });
 
@@ -471,6 +471,7 @@ describe('OT: alcance de datos y filtros', () => {
     const paid = await create({ documentType: 'FACT', category: 'Carro Vallas' });
     await payment(partial, 10000);
     await payment(paid, 119000);
+    await db.query('UPDATE clients SET special_payment=false WHERE id=$1',[clientId]);
     for (const [status, id] of [['PENDING', pending.id], ['PARTIAL', partial.id], ['PAID', paid.id]]) {
       const list = await get(`/orders?paymentStatus=${status}`);
       expect(list.status).toBe(200);
@@ -574,5 +575,81 @@ describe('Cálculos y fechas de negocio', () => {
     expect(calendarDate('2024-02-29')).toBe(true);
     expect(calendarDate('2026-02-29')).toBe(false);
     expect(calendarDate('0000-01-01')).toBe(false);
+  });
+});
+
+describe('Cambios financieros y ruta externa', () => {
+  it('exige abono inicial con método a clientes normales y permite exención especial', async () => {
+    await db.query('UPDATE clients SET special_payment=false WHERE id=$1',[clientId]);
+    const missing = await createRequest({ ...input(), requestId:randomUUID() });
+    expect(missing.status).toBe(400);
+    expect(missing.body.error.code).toBe('INITIAL_PAYMENT_REQUIRED');
+    const designer = await actor('DISENO');
+    const created = await createRequest({ ...input(), initialPayment:{date:dateOnly(),amount:25000,method:'BANCOLOMBIA'}, requestId:randomUUID() },designer);
+    expect(created.status).toBe(201);
+    expect(created.body.order.status).toBe('NEW');
+    const viewed = await get(`/orders/${created.body.order.id}`);
+    expect(viewed.body.order.financials).toMatchObject({paid:25000,balance:75000,paymentStatus:'PARTIAL'});
+    expect(viewed.body.order.payments[0]).toMatchObject({amount:25000,method:'BANCOLOMBIA',recordedBy:designer.user.id});
+  });
+
+  it('calcula retenciones automáticas solo sobre FACT mayor de $524.000 y admite override', async () => {
+    const threshold = await create({documentType:'FACT',value:524000,reteFuente:undefined,reteIva:undefined,ica:undefined});
+    expect(threshold.financials).toMatchObject({retentions:0,collectible:623560});
+    const over = await create({documentType:'FACT',value:524001,reteFuente:undefined,reteIva:undefined,ica:undefined});
+    expect(over.financials).toMatchObject({retentions:39562.08,iva:99560.19,collectible:583999.11});
+    const changed = await edit(over,{reteFuente:100,reteIva:undefined,ica:50},admin,
+      input({documentType:'FACT',value:524001,reteFuente:undefined,reteIva:undefined,ica:undefined}));
+    expect(changed.status).toBe(200);
+    expect(changed.body.order.financials).toMatchObject({retentions:15084.03,collectible:608477.16});
+    const manual = await create({documentType:'FACT',value:100000,reteFuente:100,reteIva:50,ica:25});
+    expect(manual.financials).toMatchObject({retentions:175,collectible:118825});
+  });
+
+  it('conserva la regla LEGACY y sus saldos al editar una orden histórica', async () => {
+    const order = await create({documentType:'FACT',reteFuente:5000,reteIva:3000,ica:2000});
+    await db.query("UPDATE orders SET financial_rule='LEGACY' WHERE id=$1",[order.id]);
+    const before = (await get(`/orders/${order.id}`)).body.order;
+    expect(before.financials.collectible).toBe(129000);
+    const edited = await edit(before,{description:'Ajuste descriptivo',reteFuente:undefined,reteIva:undefined,ica:undefined},admin,
+      input({documentType:'FACT',reteFuente:undefined,reteIva:undefined,ica:undefined}));
+    expect(edited.status).toBe(200);
+    expect(edited.body.order).toMatchObject({financialRule:'LEGACY',reteFuente:5000,reteIva:3000,ica:2000});
+    expect(edited.body.order.financials.collectible).toBe(129000);
+  });
+
+  it('mantiene EXTERNO en su propia etapa hasta que Administración lo finalice', async () => {
+    let order = await create({route:'EXTERNO',printing:undefined});
+    order = await move(order,'send');
+    expect(order.status).toBe('IN_EXTERNAL');
+    expect((await get('/orders',await actor('IMPRESION'))).body.total).toBe(0);
+    expect((await get('/orders',await actor('TALLER'))).body.total).toBe(0);
+    expect((await transition(order,'finishExternal',await actor('TALLER'))).status).toBe(404);
+    order = await move(order,'finishExternal');
+    expect(order.status).toBe('COMPLETED');
+  });
+
+  it('reparte un pago grupal por saldo ascendente y acepta reintento sin duplicar', async () => {
+    const first = await create({value:300});
+    const second = await create({value:100});
+    const third = await create({value:200});
+    const payload = {clientId,selectedOrderIds:[first.id,third.id,second.id],date:dateOnly(),amount:350,method:'DAVIVIENDA',requestId:randomUUID()};
+    const posted = await post('/orders/bulk-payments',payload);
+    expect(posted.status).toBe(201);
+    expect(posted.body).toMatchObject({amount:350,remaining:0,replayed:false,allocations:[
+      {orderId:second.id,amount:100},{orderId:third.id,amount:200},{orderId:first.id,amount:50},
+    ]});
+    const replay = await post('/orders/bulk-payments',payload);
+    expect(replay.status).toBe(200);
+    expect((await db.query('SELECT id FROM payments WHERE bulk_batch_id=$1',[posted.body.batchId])).rows).toHaveLength(3);
+    expect((await get(`/orders/${first.id}`)).body.order.financials.balance).toBe(250);
+    expect((await post('/orders/bulk-payments',{...payload,amount:400})).status).toBe(409);
+  });
+
+  it('rechaza pagos grupales que excedan la cartera seleccionada', async () => {
+    const order = await create({value:100});
+    const failed = await post('/orders/bulk-payments',{clientId,selectedOrderIds:[order.id],date:dateOnly(),amount:101,method:'EFECTIVO',requestId:randomUUID()});
+    expect(failed.status).toBe(409);
+    expect((await db.query('SELECT id FROM bulk_payment_batches')).rows).toHaveLength(0);
   });
 });

@@ -1,4 +1,4 @@
-import type { Client, OrderAction, OrderInput, Role, User, WorkOrder } from '../domain/types';
+import type { Client, OrderAction, OrderActivity, OrderInput, OrderProduct, OrderProductInput, PaymentMethod, Role, User, WorkOrder } from '../domain/types';
 
 export const usingApi = import.meta.env.VITE_USE_API !== 'false';
 const API = '/api/v1';
@@ -138,7 +138,7 @@ export async function apiListClients(): Promise<Client[]> {
   return [...new Map(items.map(item => [item.id, item])).values()];
 }
 
-export async function apiSaveClient(input: Pick<Client, 'name' | 'identification' | 'phone'>, id?: string): Promise<Client> {
+export async function apiSaveClient(input: Pick<Client, 'name' | 'identification' | 'phone' | 'specialPayment'>, id?: string): Promise<Client> {
   const body = await request<{ client: Client }>(id ? `/clients/${encodeURIComponent(id)}` : '/clients', {
     method: id ? 'PATCH' : 'POST', body: JSON.stringify(input),
   });
@@ -149,13 +149,22 @@ type RestrictedOrder = Omit<WorkOrder, 'value' | 'reteFuente' | 'reteIva' | 'ica
 function asOrder(order: RestrictedOrder): WorkOrder {
   // Production roles never receive financial data. Zero defaults only support
   // the existing shared UI model; those roles must not display financial views.
-  return { ...order, value: order.value ?? 0, reteFuente: order.reteFuente ?? 0, reteIva: order.reteIva ?? 0, ica: order.ica ?? 0, payments: order.payments ?? [] };
+  return { ...order, serverVisible: true, value: order.value ?? 0, reteFuente: order.reteFuente ?? 0, reteIva: order.reteIva ?? 0, ica: order.ica ?? 0, payments: order.payments ?? [] };
 }
 function orderFields(input: OrderInput) {
   return { clientId: input.clientId, description: input.description, value: input.value,
     documentType: input.documentType, category: input.category, route: input.route,
     requiresInstallation: input.requiresInstallation, printing: input.printing,
     reteFuente: input.reteFuente, reteIva: input.reteIva, ica: input.ica };
+}
+function productFields(products: OrderProductInput[] | undefined) {
+  return products?.map(product => ({ description: product.description, quantity: product.quantity,
+    unitValue: product.unitValue, ...(product.length !== undefined ? { length: product.length, width: product.width } : {}),
+    specifications: product.specifications ?? '',
+    materials: product.materials.map(material => ({ material: material.material, length: material.length, width: material.width })),
+    activities: product.activities.map(activity => ({ area: activity.area,
+      ...(activity.assignedUserId ? { assignedUserId: activity.assignedUserId } : {}) })),
+  }));
 }
 export async function apiListOrders(): Promise<{ orders: WorkOrder[]; clients: Client[] }> {
   const items: WorkOrder[] = [], clients: Client[] = [];
@@ -168,34 +177,76 @@ export async function apiListOrders(): Promise<{ orders: WorkOrder[]; clients: C
   }
   return { orders: [...new Map(items.map(item => [item.id, item])).values()], clients: [...new Map(clients.map(item => [item.id, item])).values()] };
 }
+export interface ClientOrderHistoryPage {
+  items: WorkOrder[]; page: number; pageSize: number; hasMore: boolean;
+  total?: number;
+  summary?: { orders: number; received: number; balance: number };
+}
+export async function apiClientOrderHistory(clientId: string, page = 1, pageSize = 100): Promise<ClientOrderHistoryPage> {
+  const body = await request<Omit<ClientOrderHistoryPage, 'items'> & { items: RestrictedOrder[] }>(
+    `/clients/${encodeURIComponent(clientId)}/orders?${queryString({ page, pageSize })}`,
+  );
+  return { ...body, items: body.items.map(asOrder) };
+}
 export async function apiCreateOrder(input: OrderInput, requestId: string): Promise<WorkOrder> {
-  const body = await request<{ order: RestrictedOrder }>('/orders', { method: 'POST', body: JSON.stringify({ ...orderFields(input), requestId }) });
+  const { reteFuente: _reteFuente, reteIva: _reteIva, ica: _ica, ...fields } = orderFields(input);
+  const retentions = input.documentType === 'FACT' && (input.reteFuente || input.reteIva || input.ica)
+    ? { reteFuente: input.reteFuente, reteIva: input.reteIva, ica: input.ica } : {};
+  const body = await request<{ order: RestrictedOrder }>('/orders', { method: 'POST', body: JSON.stringify({ ...fields,
+    ...retentions, ...(input.initialPayment ? { initialPayment: input.initialPayment } : {}),
+    ...(input.products ? { products: productFields(input.products) } : {}), requestId }) });
   return asOrder(body.order);
 }
 export async function apiUpdateOrder(id: string, input: OrderInput, expectedVersion: number): Promise<WorkOrder> {
-  const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ ...orderFields(input), expectedVersion }) });
+  const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ ...orderFields(input),
+    ...(input.products ? { products: productFields(input.products) } : {}), expectedVersion }) });
   return asOrder(body.order);
 }
-export async function apiAddPayment(id: string, payment: { date: string; amount: number }, requestId: string): Promise<WorkOrder> {
+export type NewPayment = { date: string; amount: number; method: Exclude<PaymentMethod, 'LEGACY'> };
+export async function apiAddPayment(id: string, payment: NewPayment, requestId: string): Promise<WorkOrder> {
   const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}/payments`, { method: 'POST', body: JSON.stringify({ ...payment, requestId }) });
   return asOrder(body.order);
+}
+export interface BulkPaymentResult { batchId: string; clientId: string; amount: number; allocations: Array<{ orderId: string; amount: number }>; remaining: number; replayed: boolean }
+export function apiBulkPayment(input: { clientId: string; selectedOrderIds: string[] } & NewPayment, requestId: string): Promise<BulkPaymentResult> {
+  return request<BulkPaymentResult>('/orders/bulk-payments', { method: 'POST', body: JSON.stringify({ ...input, requestId }) });
 }
 export async function apiTransitionOrder(id: string, action: OrderAction, expectedVersion: number, details?: { date?: string; note?: string }): Promise<WorkOrder> {
   const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}/transitions`, { method: 'POST', body: JSON.stringify({ action, expectedVersion, ...details }) });
   return asOrder(body.order);
 }
+export function apiWorkOrder(id: string): Promise<{ products: OrderProduct[] }> {
+  return request<{ products: OrderProduct[] }>(`/work/orders/${encodeURIComponent(id)}`);
+}
+export function apiListActivities(query: { orderId?: string; area?: import('../domain/types').WorkArea; page?: number; pageSize?: number } = {}) {
+  return request<{ items: OrderActivity[]; page: number; pageSize: number; total: number }>(`/work/activities?${queryString(query)}`);
+}
+export function apiDesignerLoad() {
+  return request<{ items: Array<{ id: string; name: string; pending: number; inProgress: number; total: number }>; unassigned: number }>('/work/designers/load');
+}
+export function apiChangeActivity(id: string, action: 'claim' | 'start' | 'complete' | 'assign', assignedUserId?: string) {
+  return request<{ activity: OrderActivity }>(`/work/activities/${encodeURIComponent(id)}/${action}`, {
+    method: action === 'assign' ? 'PATCH' : 'POST', body: JSON.stringify(assignedUserId ? { assignedUserId } : {}),
+  }).then(result => result.activity);
+}
 
 export interface SalesReport {
   from: string; to: string; groupBy: 'day' | 'month';
-  totals: { count: number; base: number; iva: number; factGross: number; retentions: number; collectible: number; received: number; balance: number };
-  categories: Array<{ category: string; count: number; base: number; iva: number; factGross: number; retentions: number; collectible: number; received: number; balance: number }>;
-  documents: Array<{ documentType: 'REM' | 'FACT'; count: number; base: number; iva: number; gross: number; retentions: number; collectible: number }>;
-  timeline: Array<{ period: string; count: number; base: number; iva: number; factGross: number; retentions: number; collectible: number; received: number }>;
+  totals: { count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; collectibleWithoutIva: number; received: number; balance: number; balanceWithIva: number; balanceWithoutIva: number; ivaDue: number };
+  categories: Array<{ category: string; count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; received: number; balance: number; balanceWithoutIva: number; ivaDue: number }>;
+  documents: Array<{ documentType: 'REM' | 'FACT'; count: number; base: number; factBase: number; iva: number; gross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number }>;
+  timeline: Array<{ period: string; count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; received: number }>;
 }
 export interface PortfolioReport {
-  cutoff: string; page: number; pageSize: number; total: number; totalBalance: number; totalPaid: number; totalCollectible: number;
-  clients: Array<{ clientId: string; clientName: string; count: number; balance: number; paid: number; collectible: number }>;
-  items: Array<{ order: { id: string; number: number; clientId: string; status: string; createdAt: string; closedAt?: string }; clientName: string; balance: number; paid: number; collectible: number }>;
+  cutoff: string; page: number; pageSize: number; total: number; totalBalance: number; totalBalanceWithIva: number; totalBalanceWithoutIva: number; ivaDue: number; totalPaid: number; totalCollectible: number; totalCollectibleWithoutIva: number;
+  certificates: { statusAsOf: 'current'; reteFuente: number; reteIva: number; ica: number };
+  clients: Array<{ clientId: string; clientName: string; count: number; balance: number; balanceWithoutIva: number; ivaDue: number; paid: number; collectible: number; collectibleWithoutIva: number }>;
+  items: Array<{ order: { id: string; number: number; clientId: string; status: string; createdAt: string; closedAt?: string; documentType: 'REM' | 'FACT'; financialRule: 'LEGACY' | 'NEW' }; clientName: string; balance: number; balanceWithoutIva: number; ivaDue: number; paid: number; collectible: number; collectibleWithoutIva: number; iva: number; reteFuente: number; reteIva: number; ica: number; pendingReteFuente: number; pendingReteIva: number; pendingIca: number; certificates: { reteFuente: boolean; reteIva: boolean; ica: boolean } }>;
+}
+export interface CertificateReport {
+  cutoff: string; certificateStatusAsOf: 'current'; page: number; pageSize: number; total: number;
+  pendingReteFuente: number; pendingReteIva: number; pendingIca: number;
+  items: Array<{ orderId: string; number: number; clientId: string; clientName: string; documentType: 'FACT'; financialRule: 'LEGACY' | 'NEW'; createdAt: string; version: number; reteFuente: number; reteIva: number; ica: number; pendingReteFuente: number; pendingReteIva: number; pendingIca: number; iva: number; collectible: number; collectibleWithoutIva: number; paid: number; balance: number; balanceWithoutIva: number; certificates: { reteFuente: boolean; reteIva: boolean; ica: boolean } }>;
 }
 export interface MaterialReport {
   from: string; to: string; groupBy: 'day' | 'month'; totalOrders: number; totalM2: number;
@@ -212,6 +263,12 @@ export function apiSalesReport(query: { from: string; to: string; groupBy?: 'day
 }
 export function apiPortfolioReport(query: { cutoff: string; page?: number; pageSize?: number; category?: string; documentType?: 'REM' | 'FACT' }): Promise<PortfolioReport> {
   return request<PortfolioReport>(`/reports/portfolio?${queryString(query)}`);
+}
+export function apiCertificateReport(query: { cutoff: string; page?: number; pageSize?: number }): Promise<CertificateReport> {
+  return request<CertificateReport>(`/reports/certificates?${queryString(query)}`);
+}
+export function apiSetCertificates(input: { orderId: string; expectedVersion: number; certificates: { reteFuente: boolean; reteIva: boolean; ica: boolean } }): Promise<{ orderId: string; version: number; certificates: { reteFuente: boolean; reteIva: boolean; ica: boolean } }> {
+  return request('/reports/certificates', { method: 'POST', body: JSON.stringify(input) });
 }
 export function apiMaterialReport(query: { from: string; to: string; groupBy?: 'day' | 'month'; material?: string }): Promise<MaterialReport> {
   return request<MaterialReport>(`/reports/materials?${queryString(query)}`);

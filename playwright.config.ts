@@ -3,6 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.spec.ts',
+  testIgnore: '**/api-e2e.spec.ts',
   fullyParallel: true,
   workers: 2,
   timeout: 90_000,

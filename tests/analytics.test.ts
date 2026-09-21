@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { monthEnd, periodMode } from '../src/components/PeriodFilter';
 import { materialConsumption } from '../src/pages/Materials';
-import { portfolioAtCutoff } from '../src/pages/Portfolio';
+import { bulkAllocationPreview, portfolioAtCutoff } from '../src/pages/Portfolio';
 import { periodBuckets, reportSummary, sumMoney } from '../src/pages/Reports';
 import { MATERIALS } from '../src/domain/utils';
 import type { DateRange, WorkOrder } from '../src/domain/types';
@@ -31,7 +31,22 @@ describe('Criterios de reportes y cartera', () => {
   it('conserva FACT bruto antes de retenciones y desglosa el total cobrable', () => {
     const report = reportSummary(orders, september);
     expect(report.factGross).toBe(238_000);
+    expect(report.factBase).toBe(200_000);
+    expect(report.iva).toBe(38_000);
+    expect(report.balanceWithoutIva).toBe(238_000);
+    expect(report.ivaDue).toBe(38_000);
     expect(report.documents.find(row => row.type === 'FACT')).toEqual({ type: 'FACT', count: 1, base: 200_000, iva: 38_000, gross: 238_000, retentions: 18_000, collectible: 256_000 });
+  });
+
+  it('separa el IVA pendiente de una FACT nueva con retenciones descontadas', () => {
+    const newer = order({ id: 'newer', documentType: 'FACT', financialRule: 'NEW', value: 1_000_000,
+      reteFuente: 40_000, reteIva: 28_500, ica: 7_000, createdAt: '2026-09-10T12:00:00-05:00', payments: [payment('2026-09-15', 100_000)] });
+    const report = reportSummary([newer], september);
+    expect(report.factBase).toBe(1_000_000);
+    expect(report.iva).toBe(190_000);
+    expect(report.balance).toBe(1_014_500);
+    expect(report.balanceWithoutIva).toBe(824_500);
+    expect(report.ivaDue).toBe(190_000);
   });
 
   it('aplica la misma categoría y documento a todos los indicadores y tablas', () => {
@@ -72,6 +87,28 @@ describe('Criterios de reportes y cartera', () => {
     expect(portfolioAtCutoff([old, current], '2026-10-01').map(row => [row.order.id, row.money.balance])).toEqual([['current', 36_000]]);
     expect(portfolioAtCutoff([old], '2026-08-14')[0].money.balance).toBe(100_000);
     expect(portfolioAtCutoff([old], '2026-08-15')[0].money.balance).toBe(75_000);
+  });
+});
+
+describe('Pago grupal', () => {
+  it('aplica primero a las OT de menor saldo y deja la más costosa pendiente', () => {
+    const preview = bulkAllocationPreview([
+      { id: 'costosa', number: 3, balance: 500_000 },
+      { id: 'barata', number: 1, balance: 100_000 },
+      { id: 'media', number: 2, balance: 200_000 },
+    ], 250_000);
+    expect(preview.map(item => [item.id, item.allocated, item.remaining])).toEqual([
+      ['barata', 100_000, 0], ['media', 150_000, 50_000], ['costosa', 0, 500_000],
+    ]);
+  });
+
+  it('desempata por número de OT y asigna centavos sin pérdidas', () => {
+    const preview = bulkAllocationPreview([
+      { id: 'b', number: 2, balance: 0.30 }, { id: 'a', number: 1, balance: 0.30 },
+    ], 0.45);
+    expect(preview.map(item => [item.id, item.allocated, item.remaining])).toEqual([
+      ['a', 0.30, 0], ['b', 0.15, 0.15],
+    ]);
   });
 });
 

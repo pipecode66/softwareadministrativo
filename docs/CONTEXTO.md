@@ -1,28 +1,38 @@
 # Contexto del proyecto
 
-## Solicitud actual (2026-09-14)
+## Objetivo
 
-El usuario autorizó desarrollar backend por tramos comenzando por Administración, conservando el frontend y guardando continuidad. Después usó Cursor con Grok y solicitó revisar sus cambios y continuar el flujo hacia completar backend. Auditar lo existente, conservar avances útiles, verificar con pruebas y separar claramente revisión local, endpoints reales e integración comprobada. **Confirmó numeración automática de OT desde 1 en esta continuación.**
+Intermedios Gestión centraliza clientes, ventas, cartera y producción publicitaria para una sola sede y hasta 15 usuarios. Los roles son ADMINMASTER, ADMIN_GENERAL, DISENO, IMPRESION y TALLER. Las fuentes de Downloads y el PDF son referencias de solo lectura; las instrucciones directas del usuario prevalecen.
 
-## Solicitud inicial (2026-09-12)
+## Flujo vigente
 
-Revisar las dos entregas del frontend, contrastar el PDF, corregir diseño, responsive y comportamiento e implementar el frontend completo en este workspace. Guardar contexto durable para reanudar tras límites de sesión. No publicar externamente ni implementar todavía backend productivo.
+Administración y Diseño crean OT. El servidor asigna el consecutivo automáticamente. La creación actual usa una OT comercial principal y uno o más productos; cada producto genera actividades internas en Diseño, Impresión, Taller o Externo, sin crear ventas adicionales.
 
-Fuentes originales (no modificar):
-- `C:/Users/juanitou/Downloads/FRONTEND 1RA PARTE` (15 pantallas HTML/PNG y DESIGN.md).
-- `C:/Users/juanitou/Downloads/FRONTEND PARTE FINAL` (login, detalle móvil, impresión OT).
-- `C:/Users/juanitou/Downloads/Documento_Tecnico_Intermedios_Gestion_v1.0.pdf` (20 páginas).
+Una actividad de Diseño debe completarse antes de la actividad de Impresión del mismo producto. Administración puede asignarla a un diseñador; los diseñadores también pueden tomar tareas disponibles. Impresión y Taller actualizan únicamente sus actividades. Externo representa trabajo de terceros y no solicita medidas ni materiales internos. La instalación es opcional.
 
-## Alcance actualizado del cliente
+Administración edita OT antes de iniciar actividades, registra pagos, certificados y multiabonos. Diseño crea clientes y consulta su historial operativo, pero no recibe totales de órdenes, pagos, saldos, retenciones ni certificados. Impresión y Taller tampoco reciben importes comerciales.
 
-Aplicación web adaptable para una empresa/sede, hasta 15 usuarios. Roles ADMINMASTER, ADMIN_GENERAL, DISENO, IMPRESION y TALLER. Administración/Diseño crean OT, Diseño requiere revisión administrativa. Rutas solo impresión, solo taller, impresión→taller; instalación simple por Administración/Taller, sin usuarios instaladores. Estados productivos y de pago independientes.
+## Datos comerciales
 
-OT con cliente, descripción, valor obligatorio, REM/FACT, categoría comercial, ruta, impresión cuando aplica. Sin urgencias. El usuario pidió retirar consecutivo automático e iniciar desde 1; no continuidad histórica. Varios pagos por OT con fecha y monto, cartera con saldo positivo incluso con trabajo terminado. FACT añade IVA 19%; retenciones RETE FUENTE, RETE IVA 15, ICA 7×1000 manuales/opcionales. Clasificación FACT no emite factura electrónica.
+- Cliente: nombre y celular obligatorios; identificación opcional para REM y requerida para FACT; indicador Especial para permitir OT sin abono inicial.
+- OT: valor base mayor que cero, REM/FACT, categoría SuperGiros, Carro Vallas, Proyecto u Otras, instalación opcional.
+- Pago: fecha, valor y método Efectivo, Bancolombia o Davivienda.
+- Multiabono: la administradora selecciona las OT; el servidor aplica el valor a sus saldos de menor a mayor.
+- Productos: descripción, cantidad, valor unitario, especificaciones y, cuando corresponda, dimensiones.
+- Materiales: Panaflex, V. Corte, V. Impresión y Banner, con largo, ancho y m².
 
-Reportes de ventas/cobros/cartera por fecha, mes, rango de fechas y rango de meses. Cuatro categorías: SuperGiros, Carro Vallas, Proyecto, Otras. Cinco materiales: Panaflex, Vinilo, V. Corte, V. Impresión, Banner. Largo×ancho mostrado también en m²; estadísticas solo m² por material para administración.
+Para una FACT nueva se calcula IVA 19 % sobre el valor base. Si la base es estrictamente mayor a $524.000, se proponen automáticamente RETE FUENTE 4 %, RETE IVA 2,85 % e ICA 7/1000. Administración puede editar los importes permitidos. El cobrable nuevo es base + IVA − retenciones. Las OT anteriores a esta regla quedan marcadas LEGACY para no reescribir saldos históricos durante la migración.
 
-Incluye clientes, filtros de estado y pagos, vista imprimible, último cambio operativo, capacitación/manual/código y garantía posterior según contrato. No: exportación Excel/CSV, inventario, contabilidad, DIAN, pasarelas, notificaciones, maquinaria, adjuntos, GPS, firmas digitales, offline, migración histórica o varias sedes. Los controles de ejemplo que contradicen esto se retiran.
+## Reportes
 
-## Frontend entregable de esta etapa
+Administración consulta ventas por fecha, mes o rango, filtradas por categoría y REM/FACT. FACT e IVA aparecen separados. Cartera muestra saldos al corte con IVA, sin IVA e IVA pendiente. Los certificados recibidos restan de la métrica pendiente de cada retención, no del efectivo ya cobrado. El consumo de materiales cuenta m² únicamente cuando finaliza Impresión.
 
-React+TypeScript+Vite, navegación por roles, pantallas conectadas con datos de ejemplo locales, validaciones y acciones de interfaz, componentes compartidos, tablas→tarjetas móviles, impresión Carta. Repositorio de datos separado para futura API. El sistema productivo requiere backend y permisos server-side; el frontend local no sustituye esa etapa.
+## Fuera de alcance
+
+No incluye urgencias, inventario, exportación Excel/CSV, contabilidad integral, emisión DIAN, pasarela de pagos, archivos adjuntos, GPS, firma digital, modo sin conexión, varias sedes ni cuentas independientes de instaladores.
+
+## Estado técnico
+
+Frontend React/TypeScript/Vite y backend Express/TypeScript con PostgreSQL productivo o PGlite en desarrollo. Autenticación por cookie HttpOnly, CSRF, Argon2, roles server-side, idempotencia en operaciones sensibles y control de versión de OT. Vercel utiliza el adaptador api/ y PostgreSQL externo.
+
+La versión del 21/09/2026 está implementada y verificada localmente, pero esta sesión no comprobó ni modificó el despliegue o la base remota. Consultar docs/ESTADO.md para el punto exacto y docs/LIMPIEZA_DATOS_2026-09-21.md para la depuración autorizada.

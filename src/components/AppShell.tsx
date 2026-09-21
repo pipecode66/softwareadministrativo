@@ -14,13 +14,7 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const admin = isAdmin(user?.role);
-  const nav: NavItem[] = admin && user?.role === 'ADMINMASTER' ? [
-    {to:'/',label:'Inicio',icon:LayoutDashboard,group:'Estadísticas'},
-    {to:'/reports',label:'Reportes',icon:ChartNoAxesCombined,group:'Estadísticas'},
-    {to:'/orders',label:'Órdenes',icon:ClipboardList,group:'Gestión'},
-    {to:'/clients',label:'Clientes',icon:Users,group:'Gestión'},
-    {to:'/settings/users',label:'Usuarios',icon:Settings2,group:'Sistema'},
-  ] : admin ? [
+  const nav: NavItem[] = admin ? [
     {to:'/',label:'Inicio',icon:LayoutDashboard,group:'Administración'},
     {to:'/operation',label:'Operación',icon:PanelsTopLeft,group:'Administración'},
     {to:'/orders',label:'Órdenes',icon:ClipboardList,group:'Administración'},
@@ -35,6 +29,7 @@ export function AppShell() {
   ] : user?.role === 'DISENO' ? [
     {to:'/design',label:'Mi bandeja',icon:PencilRuler,group:'Diseño'},
     {to:'/orders',label:'Mis órdenes',icon:ClipboardList,group:'Diseño'},
+    {to:'/clients',label:'Clientes',icon:Users,group:'Diseño'},
     {to:'/orders/new',label:'Nueva orden',icon:Plus,group:'Diseño'},
   ] : [{to:user?.role === 'IMPRESION' ? '/printing' : '/workshop',label:user?.role === 'IMPRESION' ? 'Bandeja de impresión' : 'Bandeja de taller',icon:user?.role === 'IMPRESION' ? Printer : Hammer,group:'Producción'}];
   const active = nav.find(item => item.to === location.pathname);
@@ -56,7 +51,7 @@ export function AppShell() {
   function profile() { return <div className="sidebar-profile"><span className="avatar">{initials(user?.name || '')}</span><div><strong>{user?.name}</strong><span>{user && ROLE_LABELS[user.role]}</span>{usingApi && <Link to="/change-password">Cambiar contraseña</Link>}</div><button className="icon-button" onClick={() => void signOut()} disabled={signingOut} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>; }
   return <div className="app-shell"><a href="#main-content" className="skip-link">Ir al contenido</a><aside className="app-sidebar"><Link to={admin ? '/' : nav[0].to} className="brand-link" aria-label="Intermedios Gestión, inicio"><img src="/logo.svg" alt="Intermedios Gestión · Pub & Arq" /></Link>{navigation()}{profile()}</aside>
     <header className="app-topbar"><div className="topbar-leading"><button className="icon-button menu-toggle" aria-label="Abrir menú" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Menu size={22} /></button><div className="breadcrumb"><span>Intermedios</span><ChevronRight size={14} /><strong>{breadcrumb}</strong></div><img className="mobile-brand" src="/logo.svg" alt="Intermedios Gestión" /></div><div className="topbar-actions">{canCreate(user?.role) && <><form className="global-search" onSubmit={search}><Search size={16} aria-hidden="true"/><label className="sr-only" htmlFor="global-search">Buscar una orden</label><input id="global-search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar OT, cliente o descripción…" /><button type="submit" className="icon-button" aria-label="Realizar búsqueda"><ArrowUpRight size={16}/></button></form><Link to="/orders/new" className="btn btn-primary topbar-new" aria-label="Crear nueva orden"><Plus size={17}/><span>Nueva OT</span></Link></>}<span className="topbar-avatar" aria-label={`${user?.name}, ${user ? ROLE_LABELS[user.role] : ''}`}>{initials(user?.name || '')}</span></div></header>
-    <main id="main-content" tabIndex={-1} className="app-content"><div className="demo-strip"><span className="demo-dot"/>{usingApi ? 'Datos del servidor' : 'Revisión del frontend'}<span className="demo-divider">·</span><span>{usingApi ? 'Sin datos de demostración' : 'Datos de ejemplo en este navegador'}</span>{usingApi && <button className="btn btn-ghost" disabled={dataLoading} onClick={() => void refreshData().catch(() => {})}>{dataLoading ? 'Actualizando…' : 'Actualizar datos'}</button>}</div>{dataError && <p className="form-alert" role="alert">{dataError} Los datos visibles pueden estar desactualizados.</p>}<div key={location.pathname + location.search}><Outlet /></div><footer className="app-footer"><span>INTERMEDIOS GESTIÓN</span><span>Publicidad & Arquitectura</span></footer></main>
+    <main id="main-content" tabIndex={-1} className="app-content">{usingApi && <div className="data-refresh-strip"><button className="btn btn-ghost" disabled={dataLoading} onClick={() => void refreshData().catch(() => {})}>{dataLoading ? 'Actualizando…' : 'Actualizar datos'}</button></div>}{dataError && <p className="form-alert" role="alert">{dataError} Los datos visibles pueden estar desactualizados.</p>}<div key={location.pathname + location.search}><Outlet /></div><footer className="app-footer"><span>INTERMEDIOS GESTIÓN</span><span>Publicidad & Arquitectura</span></footer></main>
     <Modal open={menuOpen} onClose={() => setMenuOpen(false)} title="Intermedios Gestión"><div className="mobile-menu">{navigation()}{profile()}</div></Modal>
   </div>;
 }

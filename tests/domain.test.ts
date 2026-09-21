@@ -8,7 +8,7 @@ const roles: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO', 'IMPRESION', 'T
 const user = (role: Role = 'ADMIN_GENERAL', overrides: Partial<User> = {}): User => ({ id: `user-${role}`, name: role, email: `${role}@example.test`, role, active: true, ...overrides });
 const input = (overrides: Partial<OrderInput> = {}): OrderInput => ({ number: 1, clientId: 'client-1', description: '  Trabajo publicitario  ', value: 100000, documentType: 'REM', category: 'Otras', route: 'PRINT_WORKSHOP', requiresInstallation: false, printing: { material: 'Panaflex', length: 2.5, width: 1.2 }, reteFuente: 0, reteIva: 0, ica: 0, ...overrides });
 const order = (overrides: Partial<WorkOrder> = {}): WorkOrder => ({ ...input(), id: 'order-1', createdAt: '2026-01-15T18:00:00.000Z', updatedAt: '2026-01-15T18:00:00.000Z', createdBy: user('DISENO').id, payments: [], status: 'NEW', ...overrides });
-const data = (orders: WorkOrder[] = []): AppData => ({ version: 1, users: roles.map(role => user(role)), clients: [{ id: 'client-1', name: 'Cliente de prueba', identification: '', phone: '', createdAt: '2026-01-01' }], orders });
+const data = (orders: WorkOrder[] = []): AppData => ({ version: 1, users: roles.map(role => user(role)), clients: [{ id: 'client-1', name: 'Cliente de prueba', identification: '123456', phone: '3001234567', createdAt: '2026-01-01' }], orders });
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(NOW)); });
 afterEach(() => { vi.useRealTimers(); });
@@ -49,9 +49,9 @@ describe('Cálculos de dinero y cartera', () => {
 });
 
 describe('Validación y creación de órdenes', () => {
-  it.each(['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO'] as Role[])('%s puede crear; Diseño requiere revisión', role => {
+  it.each(['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO'] as Role[])('%s puede crear sin revisión obligatoria', role => {
     const result = createWorkOrder(data(), user(role), input());
-    expect(result).toMatchObject({ number: 1, description: 'Trabajo publicitario', createdBy: user(role).id, createdAt: NOW, updatedAt: NOW, payments: [], status: role === 'DISENO' ? 'PENDING_ADMIN_REVIEW' : 'NEW' });
+    expect(result).toMatchObject({ number: 1, description: 'Trabajo publicitario', createdBy: user(role).id, createdAt: NOW, updatedAt: NOW, payments: [], status: 'NEW' });
     expect(result.id).toBeTruthy();
   });
   it.each(['IMPRESION', 'TALLER'] as Role[])('%s no puede crear órdenes', role => {
@@ -63,7 +63,7 @@ describe('Validación y creación de órdenes', () => {
   it.each([0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])('rechaza número OT inválido %s', number => {
     expect(() => validateInput(data(), input({ number }))).toThrow(/entero/);
   });
-  it('requiere captura manual y única; no genera el siguiente número', () => {
+  it('conserva unicidad en órdenes antiguas sin productos', () => {
     expect(() => createWorkOrder(data([order()]), user(), input())).toThrow(/Ya existe/);
     expect(createWorkOrder(data([order()]), user(), input({ number: 15 })).number).toBe(15);
   });
@@ -86,8 +86,8 @@ describe('Validación y creación de órdenes', () => {
     expect(() => validateInput(data(), input({ documentType: 'FACT', value: 1, reteFuente: 0.395, reteIva: 0.395, ica: 0.395 }))).not.toThrow();
     expect(() => validateInput(data(), input({ documentType: 'FACT', value: 1, reteFuente: 1.2 }))).not.toThrow();
   });
-  it('limpia retenciones de REM y material de Solo Taller', () => {
-    const result = createWorkOrder(data(), user(), input({ route: 'WORKSHOP_ONLY', reteFuente: 500, reteIva: 500, ica: 500 }));
+  it('limpia retenciones de REM y no exige material en Solo Taller', () => {
+    const result = createWorkOrder(data(), user(), input({ route: 'WORKSHOP_ONLY', printing: undefined, reteFuente: 500, reteIva: 500, ica: 500 }));
     expect(result).toMatchObject({ reteFuente: 0, reteIva: 0, ica: 0, printing: undefined });
   });
   it('no exige material para Solo Taller', () => {
@@ -105,6 +105,19 @@ describe('Validación y creación de órdenes', () => {
   });
   it.each(CATEGORIES)('admite la categoría %s', category => {
     expect(() => validateInput(data(), input({ category }))).not.toThrow();
+  });
+  it('crea OT multiproducto con consecutivo, abono inicial y retenciones nuevas', () => {
+    const products = [{ description: 'Banner', quantity: 1, unitValue: 600000, specifications: '',
+      materials: [{ material: 'Banner' as const, length: 2, width: 1 }],
+      activities: [{ area: 'DESIGN' as const }, { area: 'PRINTING' as const }] }];
+    const result = createWorkOrder(data([order()]), user('DISENO'), input({
+      number: 0, description: 'Banner', value: 600000, route: 'PRINT_ONLY', printing: undefined,
+      documentType: 'FACT', products, initialPayment: { date: today(), amount: 100000, method: 'BANCOLOMBIA' },
+    }));
+    expect(result).toMatchObject({ number: 2, status: 'IN_PRODUCTION', financialRule: 'NEW',
+      reteFuente: 24000, reteIva: 17100, ica: 4200,
+      payments: [{ amount: 100000, method: 'BANCOLOMBIA' }] });
+    expect(financials(result)).toMatchObject({ iva: 114000, collectible: 668700, balance: 568700, paymentStatus: 'PARTIAL' });
   });
 });
 
@@ -337,8 +350,9 @@ describe('Fechas, medidas y búsqueda', () => {
   it('normaliza tildes y mayúsculas sin quitar el número OT', () => {
     expect(normalize('IMPRESIÓN ÁÉÍÓÚ 0001')).toBe('impresion aeiou 0001');
   });
-  it('valida nombre de cliente sin exigir contacto opcional', () => {
+  it('exige nombre y celular, con identificación opcional', () => {
     expect(() => validateClient({ name: ' ', identification: '', phone: '' })).toThrow(/nombre/);
-    expect(() => validateClient({ name: 'Cliente', identification: '', phone: '' })).not.toThrow();
+    expect(() => validateClient({ name: 'Cliente', identification: '', phone: '' })).toThrow(/celular/);
+    expect(() => validateClient({ name: 'Cliente', identification: '', phone: '3001234567' })).not.toThrow();
   });
 });

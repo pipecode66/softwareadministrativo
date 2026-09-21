@@ -14,7 +14,8 @@
     "api": "npm --prefix server run dev",
     "api:test": "npm --prefix server run test",
     "api:migrate": "npm --prefix server run db:migrate",
-    "api:bootstrap": "npm --prefix server run db:bootstrap"
+    "api:bootstrap": "npm --prefix server run db:bootstrap",
+    "api:cleanup-tests": "npm --prefix server run db:cleanup-tests --"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

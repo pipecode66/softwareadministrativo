@@ -93,6 +93,20 @@
 .analytics-payment-balance { display: flex; justify-content: space-between; align-items: center; gap: 1rem; background: #f1f5f9; border-radius: 9px; padding: 1rem; font-size: .83rem; }
 .analytics-payment-balance strong { color: #a45108; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
 .analytics-error { color: #b91c1c; padding: .85rem; border-radius: 8px; background: #fef2f2; font-size: .8rem; }
+.analytics-certificate-control { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .35rem; font-size: .76rem; cursor: pointer; }
+.analytics-certificate-control input, .analytics-bulk-row input { width: 17px; height: 17px; accent-color: #ea580c; flex-shrink: 0; }
+.analytics-certificate-control span { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.analytics-certificate-control small { color: #64748b; }
+.analytics-certificate-mobile { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .55rem 1rem; width: 100%; align-items: center; }
+.analytics-bulk-list { border: 1px solid #e2e8f0; border-radius: 10px; padding: .5rem .8rem; max-height: 250px; overflow: auto; min-width: 0; }
+.analytics-bulk-list legend { padding: 0 .3rem; color: #475569; font-size: .8rem; font-weight: 650; }
+.analytics-bulk-row { display: flex; gap: .6rem; align-items: center; padding: .65rem 0; border-bottom: 1px solid #f1f5f9; font-size: .78rem; cursor: pointer; }
+.analytics-bulk-row:last-child { border-bottom: 0; }
+.analytics-bulk-row span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.analytics-bulk-row strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.analytics-bulk-preview { display: flex; flex-direction: column; gap: .55rem; padding: .8rem; background: #f8fafc; border-radius: 9px; font-size: .77rem; max-height: 200px; overflow: auto; }
+.analytics-bulk-preview > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .35rem 1rem; font-variant-numeric: tabular-nums; }
+.analytics-debt-clients li > button { margin-top: .8rem; }
 @media (max-width: 1200px) {
   .analytics-main-grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
   .analytics-stations { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -129,5 +143,8 @@
   .analytics-debt-clients li > div:first-child { flex-wrap: wrap; }
   .analytics-finished-debt { flex-direction: column; align-items: flex-start; }
   .analytics-payment-balance { flex-wrap: wrap; }
+  .analytics-bulk-row { flex-wrap: wrap; }
+  .analytics-bulk-row strong { margin-left: 1.45rem; }
+  .analytics-certificate-control span { white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) { .analytics-station { transition: none; } .analytics-station:hover { transform: none; } }

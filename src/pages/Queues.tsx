@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Check, CheckCircle2, ClipboardCheck, Clock3, Hammer, MapPin, Plus, Printer, Ruler, Workflow } from 'lucide-react';
 import { useApp } from '../data/AppContext';
-import type { OrderAction, Role, WorkOrder } from '../domain/types';
+import { apiChangeActivity, apiListActivities, usingApi } from '../data/api';
+import type { OrderAction, OrderActivity, Role, WorkArea, WorkOrder } from '../domain/types';
 import { areaOf, dateOnly, formatDate, formatMeasure, formatNumber, isAdmin, normalize, ROUTE_LABELS, today, visibleOrders } from '../domain/utils';
 import { Button, Card, DataTable, EmptyState, Field, KpiCard, Modal, PageHeader, Pagination, SearchInput, WorkBadge } from '../components/ui';
 import './operations.css';
@@ -11,7 +12,8 @@ export type QueueDepartment = 'DISENO' | 'IMPRESION' | 'TALLER';
 
 export function workflowAction(order: WorkOrder, role?: Role): { action: OrderAction; label: string } | null {
   const admin = isAdmin(role);
-  if ((order.status === 'NEW' || order.status === 'PENDING_ADMIN_REVIEW') && admin) return { action: 'send', label: 'Aprobar y enviar' };
+  if ((order.status === 'NEW' || order.status === 'PENDING_ADMIN_REVIEW') && admin) return { action: 'send', label: 'Enviar a producción' };
+  if (order.status === 'IN_EXTERNAL' && admin) return { action: 'finishExternal', label: 'Finalizar externo' };
   if (order.status === 'IN_PRINTING' && role === 'IMPRESION') return { action: 'finishPrinting', label: 'Finalizar impresión' };
   if (order.status === 'IN_WORKSHOP' && role === 'TALLER') return order.workshopStartedAt ? { action: 'finishWorkshop', label: 'Finalizar taller' } : { action: 'startWorkshop', label: 'Iniciar taller' };
   if (order.status === 'PENDING_INSTALLATION' && (admin || role === 'TALLER')) return { action: 'install', label: 'Registrar instalación' };
@@ -19,13 +21,14 @@ export function workflowAction(order: WorkOrder, role?: Role): { action: OrderAc
 }
 
 function actionDescription(order: WorkOrder, action: OrderAction) {
-  if (action === 'send') return order.route === 'WORKSHOP_ONLY' ? 'La orden aprobada pasará a la bandeja de Taller.' : 'La orden aprobada pasará a la bandeja de Impresión.';
+  if (action === 'send') return order.route === 'WORKSHOP_ONLY' ? 'La orden pasará a la bandeja de Taller.' : order.route === 'EXTERNO' ? 'La orden pasará al trabajo Externo.' : 'La orden pasará a la bandeja de Impresión.';
   if (action === 'startWorkshop') return 'La orden quedará en proceso de fabricación dentro de Taller.';
   if (action === 'finishPrinting') {
     if (order.route === 'PRINT_WORKSHOP') return 'La impresión quedará terminada y la orden pasará a Taller.';
     return order.requiresInstallation ? 'La impresión quedará terminada y la orden pasará a pendiente de instalación.' : 'La impresión y el trabajo quedarán terminados.';
   }
   if (action === 'finishWorkshop') return order.requiresInstallation ? 'El trabajo de Taller quedará terminado y la orden pasará a pendiente de instalación.' : 'El trabajo quedará terminado.';
+  if (action === 'finishExternal') return order.requiresInstallation ? 'El trabajo Externo quedará terminado y la orden pasará a pendiente de instalación.' : 'El trabajo Externo quedará terminado.';
   return 'Se registrará la instalación realizada y la orden quedará instalada.';
 }
 
@@ -67,12 +70,91 @@ export function OrderActionDialog({ order, action, label, onClose }: { order: Wo
 }
 
 const queueCopy = {
-  DISENO: { title: 'Bandeja de Diseño', eyebrow: 'Preparación / Diseño', description: 'Tus órdenes y su avance después de la revisión administrativa.', icon: ClipboardCheck },
-  IMPRESION: { title: 'Bandeja de Impresión', eyebrow: 'Producción / Impresión', description: 'Trabajos aprobados, materiales y medidas para imprimir.', icon: Printer },
+  DISENO: { title: 'Bandeja de Diseño', eyebrow: 'Preparación / Diseño', description: 'Tus tareas de diseño, archivos y avance de las OT.', icon: ClipboardCheck },
+  IMPRESION: { title: 'Bandeja de Impresión', eyebrow: 'Producción / Impresión', description: 'Trabajos enviados, materiales y medidas para imprimir.', icon: Printer },
   TALLER: { title: 'Bandeja de Taller', eyebrow: 'Producción / Taller', description: 'Fabricación e instalaciones pendientes, en un solo lugar.', icon: Hammer },
 };
 
 function isFinished(order: WorkOrder) { return order.status === 'COMPLETED' || order.status === 'INSTALLED'; }
+
+const areaForDepartment: Record<QueueDepartment, WorkArea> = {
+  DISENO: 'DESIGN', IMPRESION: 'PRINTING', TALLER: 'WORKSHOP',
+};
+const activityStatusLabel = { PENDING: 'Pendiente', IN_PROGRESS: 'En proceso', COMPLETED: 'Terminada' } as const;
+
+function CompositeActivityQueue({ department }: { department: QueueDepartment }) {
+  const { user, data, refreshData, toast } = useApp();
+  const [items, setItems] = useState<OrderActivity[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState('');
+  const [error, setError] = useState('');
+  const [revision, setRevision] = useState(0);
+  const pageSize = 12;
+  const area = areaForDepartment[department];
+
+  useEffect(() => {
+    let active = true;
+    async function load(silent: boolean) {
+      if (!silent) setLoading(true);
+      try {
+        const result = await apiListActivities({ area, page, pageSize });
+        if (!active) return;
+        setItems(result.items);
+        setTotal(result.total);
+        setError('');
+        if (page > 1 && page > Math.ceil(result.total / pageSize)) setPage(Math.max(1, Math.ceil(result.total / pageSize)));
+      } catch (cause) {
+        if (active) setError(cause instanceof Error ? cause.message : 'No fue posible cargar las actividades.');
+      } finally { if (active) setLoading(false); }
+    }
+    void load(false);
+    const timer = window.setInterval(() => void load(true), 10_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [area, page, revision]);
+
+  async function change(activity: OrderActivity, action: 'claim' | 'start' | 'complete') {
+    if (!activity.id || busyId) return;
+    setBusyId(activity.id);
+    setError('');
+    try {
+      await apiChangeActivity(activity.id, action);
+      setRevision(value => value + 1);
+      await refreshData();
+      toast(action === 'claim' ? 'Tarea tomada.' : action === 'start' ? 'Actividad iniciada.' : 'Actividad finalizada.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No fue posible actualizar la actividad.');
+    } finally { setBusyId(''); }
+  }
+
+  return <Card className="ops-activity-section">
+    <div className="ops-activity-header"><div><span className="eyebrow">Trabajo por producto</span><h2>Actividades de {department === 'DISENO' ? 'Diseño' : department === 'IMPRESION' ? 'Impresión' : 'Taller'}</h2><p className="muted">Cada producto conserva su propio recorrido. El importe comercial permanece en la OT principal.</p></div><span className="ops-area-chip">{total} actividades</span></div>
+    {error && <p className="notice notice-warning" role="alert">{error}</p>}
+    {loading && !items.length ? <p className="muted ops-activity-loading">Cargando actividades…</p> : !items.length ? <EmptyState title="No hay actividades en esta área" description="Los trabajos por producto aparecerán aquí al crear una OT que los incluya." /> : <>
+      <div className="ops-activity-grid">{items.map(activity => {
+        const owner = data.users.find(person => person.id === activity.assignedUserId);
+        const canClaim = department === 'DISENO' && user?.role === 'DISENO' && !activity.assignedUserId && activity.status === 'PENDING';
+        const canOperate = user?.role === department && (department !== 'DISENO' || activity.assignedUserId === user.id);
+        const materials = activity.materials ?? [];
+        return <article key={activity.id} className={`ops-activity-card is-${activity.status?.toLowerCase() || 'pending'}`}>
+          <div className="ops-activity-top"><Link className="link cell-title" to={`/orders/${activity.orderId}`}>OT #{String(activity.orderNumber ?? '').padStart(4, '0')}</Link><span className="ops-area-chip">{activityStatusLabel[activity.status || 'PENDING']}</span></div>
+          <h3>{activity.productDescription || 'Trabajo sin descripción'}</h3>
+          {activity.specifications && <p className="ops-activity-specs">{activity.specifications}</p>}
+          {department === 'DISENO' && <p className="muted ops-small">Responsable: {owner?.name || (activity.assignedUserId ? 'Diseñador asignado' : 'Sin asignar')}</p>}
+          {materials.length > 0 && <div className="ops-activity-materials">{materials.map((material, index) => <span key={material.id || index}>{material.material} · {formatMeasure(material.length)} × {formatMeasure(material.width)} m · {formatMeasure(material.areaM2 ?? areaOf(material))} m²</span>)}</div>}
+          {activity.ready === false && activity.status === 'PENDING' && <p className="ops-activity-wait">Espera la actividad anterior de este producto.</p>}
+          <div className="ops-activity-actions"><Link className="link ops-detail-link" to={`/orders/${activity.orderId}`}>Ver OT <ArrowRight size={14} /></Link>
+            {canClaim && <Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void change(activity, 'claim')}>Tomar tarea</Button>}
+            {canOperate && activity.status === 'PENDING' && activity.ready !== false && <Button type="button" disabled={!!busyId} onClick={() => void change(activity, 'start')}>Iniciar</Button>}
+            {canOperate && activity.status === 'IN_PROGRESS' && <Button type="button" disabled={!!busyId} onClick={() => void change(activity, 'complete')}>Finalizar</Button>}
+          </div>
+        </article>;
+      })}</div>
+      <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
+    </>}
+  </Card>;
+}
 
 export function QueuePage({ department }: { department: QueueDepartment }) {
   return <QueueContents key={department} department={department} />;
@@ -118,7 +200,7 @@ function QueueContents({ department }: { department: QueueDepartment }) {
   };
   const tabs = [
     { value: 'active', label: department === 'DISENO' ? 'Órdenes activas' : 'Trabajo pendiente', count: active.length },
-    ...(department !== 'IMPRESION' ? [{ value: 'waiting', label: department === 'DISENO' ? 'En revisión' : 'Por iniciar', count: waiting.length }] : []),
+    ...(department !== 'IMPRESION' ? [{ value: 'waiting', label: department === 'DISENO' ? 'Por iniciar' : 'Por iniciar', count: waiting.length }] : []),
     ...(department === 'TALLER' ? [{ value: 'installation', label: 'Por instalar', count: installation.length }] : []),
     ...(showFinished ? [{ value: 'finished', label: department === 'IMPRESION' ? 'Impresión finalizada' : 'Terminadas', count: finished.length }] : []),
     { value: 'all', label: 'Todas', count: queueOrders.length },
@@ -126,12 +208,12 @@ function QueueContents({ department }: { department: QueueDepartment }) {
 
   return <div className={`page-stack ops-queue ops-department-${department.toLowerCase()}`}>
     <PageHeader eyebrow={copy.eyebrow} title={copy.title} description={copy.description} actions={department === 'DISENO' ? <Link className="ops-button-link" to="/orders/new"><Plus size={17} /> Nueva OT</Link> : undefined} />
+    {usingApi && <CompositeActivityQueue department={department} />}
     <div className="grid-3">
-      <KpiCard label={department === 'DISENO' ? 'Pendientes de revisión' : department === 'IMPRESION' ? 'Por imprimir' : 'Trabajos en Taller'} value={department === 'TALLER' ? active.filter(order => order.status === 'IN_WORKSHOP').length : waiting.length} icon={copy.icon} meta={department === 'DISENO' ? 'Esperando aprobación administrativa' : 'Órdenes disponibles en tu bandeja'} tone={department === 'DISENO' ? 'amber' : department === 'TALLER' ? 'blue' : 'orange'} />
+      <KpiCard label={department === 'DISENO' ? 'OT por enviar' : department === 'IMPRESION' ? 'Por imprimir' : 'Trabajos en Taller'} value={department === 'TALLER' ? active.filter(order => order.status === 'IN_WORKSHOP').length : waiting.length} icon={copy.icon} meta={department === 'DISENO' ? 'Órdenes aún sin distribuir' : 'Órdenes disponibles en tu bandeja'} tone={department === 'DISENO' ? 'amber' : department === 'TALLER' ? 'blue' : 'orange'} />
       <KpiCard label={department === 'IMPRESION' ? 'Superficie por imprimir' : department === 'TALLER' ? 'Pendientes de instalación' : 'En producción'} value={department === 'IMPRESION' ? `${formatNumber(active.reduce((sum, order) => sum + areaOf(order.printing), 0), 3)} m²` : department === 'TALLER' ? installation.length : active.length - waiting.length} icon={department === 'IMPRESION' ? Ruler : department === 'TALLER' ? MapPin : Workflow} meta={department === 'IMPRESION' ? 'Área total de los trabajos pendientes' : department === 'TALLER' ? 'Confirmación a cargo de Taller o Administración' : 'Trabajos aprobados y en curso'} tone="blue" />
       {showFinished ? <KpiCard label={department === 'IMPRESION' ? 'Impresiones terminadas' : 'Trabajos terminados'} value={finished.length} icon={CheckCircle2} meta="Trabajos finalizados de esta bandeja" tone="green" /> : <KpiCard label={department === 'IMPRESION' ? 'Materiales requeridos' : 'Por iniciar fabricación'} value={department === 'IMPRESION' ? new Set(active.map(order => order.printing?.material).filter(Boolean)).size : waiting.length} icon={department === 'IMPRESION' ? Printer : Clock3} meta={department === 'IMPRESION' ? 'Tipos de material en los trabajos pendientes' : 'Órdenes disponibles para iniciar en Taller'} tone="slate" />}
     </div>
-    {department === 'DISENO' && <div className="notice ops-review-notice"><ClipboardCheck size={21} /><p>Las órdenes creadas por Diseño pasan por revisión de Administración antes de entrar a producción.</p></div>}
     <Card>
       <div className="ops-queue-toolbar"><div className="ops-filter-tabs" role="group" aria-label="Estado de los trabajos">{tabs.map(tab => <button key={tab.value} type="button" className={`ops-filter-tab ${filter === tab.value ? 'active' : ''}`} aria-pressed={filter === tab.value} onClick={() => { setFilter(tab.value); setPage(1); }}>{tab.label}<span>{tab.count}</span></button>)}</div><SearchInput value={search} onChange={value => { setSearch(value); setPage(1); }} label="Buscar trabajos" placeholder="Buscar OT, cliente o material…" /></div>
       {!filtered.length ? <EmptyState title="No hay trabajos en esta vista" description={search ? 'Prueba otro número, cliente o descripción.' : 'Las órdenes aparecerán cuando lleguen a esta etapa.'} action={search || filter !== 'all' ? <Button variant="secondary" onClick={() => { setSearch(''); setFilter('all'); setPage(1); }}>Ver todos los trabajos</Button> : undefined} /> : <><DataTable columns={[

@@ -1,103 +1,71 @@
 # Estado de continuidad
 
-Actualizado: 2026-09-16. **Backend administrativo validado: Diseño puede crear clientes, la ruta Imprenta ya forma parte del flujo y Vinilo quedó fuera de los materiales válidos y de los reportes.**
+Actualizado: 2026-09-21.
 
-## Punto de control 2026-09-16
+## Resultado del tramo
 
-- Revisión de negocio unificada con la última decisión del usuario: Diseño cuenta con permiso de creación de clientes; la ruta `IMPRENTA` es válida; `Vinilo` no se acepta como material ni se reporta en métricas de materiales.
-- El frontend y el backend ya reflejan esta combinación en rutas, formularios y validaciones; el resto de la lógica continúa intentando consumir el mismo conjunto de datos del servidor con la misma semántica.
-- Comprobación objetivo: `npm --prefix server test -- --run tests/clients.test.ts tests/orders.test.ts`.
-- Pendientes documentados: ampliar validación de pagos multiabono y consolidar la revisión completa de reportes con los datos finales del negocio.
+La implementación solicitada el 20/09 quedó integrada localmente en la rama feature/solicitudes-septiembre-2026, iniciada en ccb3e94. Incluye frontend, endpoints, permisos, migraciones y pruebas; no se ha mezclado ni publicado en main desde esta sesión.
 
-### Comando para continuar
+- Clientes: nombre y celular obligatorios; identificación opcional salvo FACT; modalidad Especial; alta e historial para Diseño con privacidad financiera.
+- Pagos: abono inicial con Efectivo/Bancolombia/Davivienda, abonos posteriores y multiabono transaccional por OT seleccionadas, de menor a mayor saldo.
+- Finanzas: nuevas FACT con IVA 19 % y retenciones automáticas descontadas cuando la base supera $524.000; edición administrativa; certificados independientes.
+- Reportes: venta FACT sin IVA, tarjeta IVA, retenciones pendientes, cartera con y sin IVA y consumo por cuatro materiales.
+- Producción: OT principal con varios productos, materiales y actividades internas sin duplicar ventas; Diseño, Impresión, Taller y Externo; instalación opcional.
+- Diseño: asignación o toma de tareas y vista de carga por diseñador; Diseño precede a Impresión.
+- Interfaz: Externo elimina medidas/materiales internos, navegación por rol corregida, textos de demostración retirados y responsive comprobado entre 320 y 1440 px.
+- API: los perfiles de producción no reciben valores comerciales; edición, pagos, certificados y multiabono permanecen restringidos a Administración.
 
-`npm --prefix server test -- --run tests/clients.test.ts tests/orders.test.ts`
+Archivos principales:
 
-## Punto de control 2026-09-15
+- server/migrations/004_finance.sql a 007_product_dimensions.sql
+- server/src/orders/, server/src/reports/, server/src/clients/ y server/src/work/
+- src/pages/NewOrderEditor.tsx, Clients.tsx, Portfolio.tsx, Reports.tsx, Queues.tsx y OrderDetail.tsx
+- tests/finance.spec.ts, tests/api-e2e.spec.ts y pruebas del servidor
 
-- Flujo productivo ajustado por regla del usuario: Diseño crea en revisión; Administración aprueba/envía y consulta estados; solo Impresión finaliza impresión; solo Taller inicia/finaliza taller; Instalación puede completarse por Administración o Taller.
-- El frontend API muestra avisos entre equipos mediante consulta periódica de órdenes cada 10 segundos para revisión, Impresión y Taller. No es WebSocket en tiempo real estricto.
-- Comprobado tras el cambio: `npm --prefix server test -- --run tests/orders.test.ts` (91 pruebas aprobadas).
-- El reporte de Materiales muestra los m² con punto decimal y sin agrupación de miles (`8.75 m²`), evitando que `8,750` se interprete como ocho mil setecientos cincuenta.
-- Comprobado tras el ajuste visual: `npm run typecheck` y `npm test -- --run tests/domain.test.ts` (129 pruebas aprobadas).
+## Verificación final
 
-- `AppContext` carga usuarios, clientes y OT desde la API cuando `VITE_USE_API` está activo; creación, edición, pagos y transiciones de OT usan los endpoints del servidor con idempotencia y control de versión.
-- El servidor publica `/api/v1/reports/sales`, `/api/v1/reports/portfolio` y `/api/v1/reports/materials`, restringidos a Administración y protegidos por sesión real.
-- Comprobado: `npm run typecheck`, `npm --prefix server run typecheck` y `npm --prefix server test` (222 pruebas aprobadas).
-- Regla confirmada por el usuario: las retenciones son valores agregados al total cobrable. FACT calcula base + IVA 19 % + retenciones; REM no incorpora retenciones.
-- Las pruebas locales tenían expectativas históricas de descuento y se actualizaron para coincidir con el backend.
-- `Reports`, `Dashboard`, `Portfolio` y `Materials` consultan reportes server-side en sesiones API; el modo local conserva los datos ficticios para revisión.
-- `npm run test:e2e:api` levanta migraciones, Adminmaster ficticio, API PGlite aislada y Vite con `VITE_USE_API=true`; login real y `/api/v1/reports/sales` respondieron correctamente (1 prueba aprobada).
-- `api/[...path].ts` adapta Express al runtime serverless de Vercel, reutilizando el pool PostgreSQL entre invocaciones; `vercel.json` mantiene el fallback SPA sin interceptar `/api/*`.
-- Las dependencias runtime del backend están también en el `package.json` raíz porque Vercel instala y empaqueta el proyecto desde esa carpeta.
-- PostgreSQL local está instalado, el servicio `postgresql-x64-17` está activo y el puerto 5432 responde. No existe `DATABASE_URL` en el workspace y no se proporcionaron credenciales, por lo que todavía no se verificó una conexión autenticada ni se ejecutaron migraciones sobre esa base.
+- npm run typecheck: aprobado.
+- npm test: 146/146.
+- npm run build: aprobado.
+- npm --prefix server run typecheck: aprobado.
+- npm --prefix server test: 252/252 en 7 archivos.
+- npm run test:e2e: 29/29, incluidos 320, 390, 768, 1024 y 1440 px.
+- npm run test:e2e:api: 2/2; inicia sesión real, consulta reportes y crea cliente más OT FACT compuesta con abono.
+- git diff --check: sin errores de espacios.
 
-### Comando para continuar
+Las pruebas usan bases PGlite aisladas o el adaptador local; no escriben en PostgreSQL productivo.
 
-Configurar en Vercel `DATABASE_MODE=postgres`, `DATABASE_URL` de Supabase y `APP_ORIGINS`; ejecutar las migraciones de Supabase antes del primer despliegue y ampliar la E2E API con creación de cliente y OT.
+## Limpieza anterior al 21/09/2026
 
-## Punto de control actual — backend
+Se implementó la utilidad segura en:
 
-- Existe `server/`: Express/TypeScript, migración de usuarios/sesiones, Argon2, cookies HttpOnly, CSRF, permisos de cuentas y pruebas de acceso. Todavía se están verificando en esta continuación.
-- Se encontraron `server/src/app.ts`, `main.ts`, adaptador `src/data/api.ts`, scripts `api:*` y proxy Vite. Sin historial Git no se puede atribuir con certeza cada línea a Cursor o a la sesión previa.
-- Defecto detectado: autenticación/usuarios por API mezclados con OT/clientes/pagos en localStorage. Login no aguardaba la promesa y mostraba accesos ficticios también en modo servidor. Corrección en curso; no usar este estado intermedio para operación real.
-- **Confirmación del usuario recibida en esta continuación: OT automática desde 1.** Servidor asignará el número, no el navegador. Sustituye la captura manual provisional.
-- Regla confirmada: las retenciones manuales se agregan al total cobrable de FACT.
-- Trabajo en paralelo: auditoría acceso/arranque, módulo Clientes, separación del frontend de revisión y sesión real. Root continúa órdenes y documentación.
-- No se ha desplegado ni comprobado PostgreSQL externo. Pruebas aisladas con PGlite en memoria, nunca contra datos del cliente.
+- server/src/maintenance/cleanup-test-data.ts
+- server/src/cli/cleanup-test-data.ts
+- server/tests/cleanup-test-data.test.ts
+- docs/LIMPIEZA_DATOS_2026-09-21.md
 
-### Retomar si se interrumpe esta continuación
+La herramienta hace vista previa obligatoria, usa un token ligado al destino y a la instantánea, bloquea cambios concurrentes y elimina en una transacción OT, pagos, eventos, productos, materiales, actividades, lotes y clientes anteriores al corte. Conserva usuarios y sesiones. Si no queda ninguna OT, el siguiente consecutivo es 1; si quedan OT del día, continúa desde el máximo conservado + 1 sin renumerarlas.
 
-Leer AGENTS y los tres documentos de contexto; inspeccionar archivos reales antes de repetir tareas. `npm --prefix server run typecheck`, `npm run api:test`, `npm run typecheck`, `npm test`. No ejecutar bootstrap con claves ficticias ni reinicializar bases existentes. Revisar nuevos módulos y actualizar este checkpoint al finalizar las comprobaciones.
+No se ejecutó contra la base desplegada: en el equipo no hay DATABASE_URL ni sesión Vercel autenticada. La vista previa contra la PGlite local terminó de forma segura antes de escribir porque esa base antigua aún no tiene las migraciones 004–007. No se eliminó ningún dato local ni remoto.
 
-## Ya realizado
-- Workspace inicialmente vacío, sin AGENTS.md heredado.
-- Inventario de 18 HTML/PNG y lectura de las 20 páginas del PDF.
-- Detectados shell fijo sin responsive, enlaces `#`, cifras inconsistentes, IVA incorrecto en formulario _1 y acciones excluidas.
-- Contexto y decisiones documentados; proyecto React/TypeScript/Vite iniciado.
+## Paso productivo pendiente
 
-## Integrado
-- Componentes compartidos, shell, navegación por perfil, login local y usuarios.
-- Adaptador AppContext/repository con persistencia local y modelos/cálculos compartidos.
-- Clientes, operación, bandejas, dashboard, cartera, reportes y materiales.
-- Órdenes: listado, formulario, edición previa a producción, detalle, pagos y ficha impresa Carta.
-- Estilos globales y responsive, navegación móvil, tablas convertidas en tarjetas.
-- README y guía de revisión con accesos locales, comandos, módulos y límites.
+Antes de considerar el cambio publicado:
 
-## Resultado final de comprobaciones
-- `npm test`: **141 pruebas aprobadas** en dos archivos (dominio y analítica).
-- `npm run test:e2e`: **23 pruebas aprobadas** en Chromium, última ejecución 55,9 s. Incluye pagos, precisión decimal, rutas productivas, instalación/cierre, roles, búsquedas, filtros, usuarios y menú por teclado.
-- `npm run build` y `npm run typecheck`: correctos con todos los cambios finales.
-- Prueba de apertura de la compilación con `npm run preview`: login, Inicio, Reportes, Materiales, creación de OT y ficha impresa, sin errores JavaScript capturados.
-- Responsive: 14 rutas en 320, 390, 768, 1024 y 1440 px, sin desbordamientos ni errores JavaScript en ese recorrido.
-- Capturas reales de pantallas de escritorio/móvil inspeccionadas. Revisión adicional encontró y corrigió desbordamiento de nombres largos en detalle y Cartera; regresión con nombre sin espacios de 115 caracteres aprobada en siete rutas.
-- Menú y modal de pago a 320 px: dentro del ancho; foco atrapado en modal y restaurado con Escape.
-- PDF Carta de ejemplo: una página de 612 × 792 puntos; con descripción extensa y 40 pagos se generan tres páginas y se conserva el contenido.
-- Corregida carrera de redirección al entrar a una ruta protegida desde login.
-- Correcciones de fechas inexistentes, redondeos y período inicial de mes calendario completo comprobadas. Se añadieron pruebas de febrero normal/bisiesto, diciembre y cambio de día en Bogotá.
-- Máximo de 15 usuarios activos, rechazo de usuario inactivo y protección de la cuenta propia comprobados en navegador.
-- Se corrigió una expectativa errónea del test de longitud de nombre (115 caracteres, no 110); la suite completa se volvió a ejecutar satisfactoriamente.
+1. Obtener un respaldo verificable de PostgreSQL/Supabase y detener escrituras.
+2. Cargar de forma segura las variables reales, sin pegarlas en el chat ni en Git.
+3. Ejecutar npm --prefix server run db:migrate.
+4. Ejecutar la vista previa:
 
-## Archivos de referencia para continuar
-- `README.md`: instalación, acceso, alcance, estructura y comandos de pruebas.
-- `docs/GUIA_REVISION.md`: recorrido de las pantallas, pagos y reportes.
-- `docs/AUDITORIA.md`: problemas de las referencias, correcciones y límites de la evidencia.
-- `tests/domain.test.ts`, `tests/analytics.test.ts`, `tests/frontend.spec.ts`: pruebas reproducibles.
-- `vitest.config.ts` separa pruebas unitarias de e2e; `playwright.config.ts` configura el navegador aislado.
+   npm run api:cleanup-tests -- --cutoff=2026-09-21
 
-## Pendientes históricos al cerrar frontend (sustituidos por checkpoint superior)
-1. Revisar estas pantallas con el usuario y recoger ajustes de presentación o del flujo real.
-2. Continuar la integración server-side de reportes y ampliar pruebas del frontend con sesión real.
-3. Acordar e implementar el backend por módulos, comenzando por Administración: autenticación, autorización server-side, API, persistencia central y respaldos. Mantener componentes y reglas comprobadas, sustituyendo el adaptador local.
-4. Al conectar servidor, probar errores de red, concurrencia, actualización entre equipos y permisos reales. Ampliar pruebas a navegadores/dispositivos acordados; esta revisión fue en Chromium.
+5. Verificar destino, cantidades y próximo número; ejecutar con el token mostrado.
+6. Publicar la aplicación, comprobar login/OT/reportes y conservar el respaldo.
 
-El frontend de revisión quedó integrado; esto no equivale a backend completo ni a aplicativo listo para producción. El desarrollo de servidor empezó después de ese cierre.
+No publicar esta rama antes de aplicar las migraciones: el código nuevo depende de las tablas y columnas 004–007.
 
-## Entorno de pruebas
-- Servidor local: http://127.0.0.1:5173/ (`npm run dev`). No desplegado externamente.
-- Playwright MCP no arrancó Chrome; la descarga de Chromium actual agotó tiempo. Se usó Chromium instalado con `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, comando completo en README.
-- Herramientas/capturas de inspección en `.local/` son artefactos ignorados, no datos de clientes. Las pruebas usan navegadores aislados.
-- Las fuentes originales en Downloads no se modificaron.
+## Comando para retomar
 
-## Retomar
-Leer AGENTS.md, CONTEXTO.md, DECISIONES.md y este documento. Inspeccionar archivos existentes. Ejecutar `npm install` si falta node_modules, `npm run typecheck`, `npm test`, `npm run dev`. No reiniciar desde cero ni modificar fuentes de Downloads.
+git status --short --branch; npm run typecheck; npm test; npm --prefix server run typecheck; npm --prefix server test
+
+Después, autenticar el entorno productivo o configurar DATABASE_URL de manera local y seguir docs/LIMPIEZA_DATOS_2026-09-21.md. No ejecutar db:bootstrap porque los usuarios existentes deben conservarse.

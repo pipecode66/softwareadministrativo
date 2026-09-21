@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, ClipboardCheck, Hammer, MapPin, Plus, Printer, Workflow } from 'lucide-react';
 import { useApp } from '../data/AppContext';
+import { apiDesignerLoad, usingApi } from '../data/api';
 import type { OrderAction, WorkOrder, WorkStatus } from '../domain/types';
 import { areaOf, formatDate, formatMeasure, isAdmin, normalize, ROUTE_LABELS } from '../domain/utils';
 import { Button, Card, EmptyState, KpiCard, PageHeader, SearchInput } from '../components/ui';
@@ -9,11 +10,35 @@ import { OrderActionDialog, workflowAction } from './Queues';
 import './operations.css';
 
 const stages: { key: string; title: string; description: string; statuses: WorkStatus[]; icon: typeof ClipboardCheck; link: string }[] = [
-  { key: 'review', title: 'Revisión', description: 'Validación administrativa', statuses: ['NEW', 'PENDING_ADMIN_REVIEW'], icon: ClipboardCheck, link: '/orders' },
+  { key: 'review', title: 'Por enviar', description: 'Distribución administrativa', statuses: ['NEW', 'PENDING_ADMIN_REVIEW'], icon: ClipboardCheck, link: '/orders' },
+  { key: 'production', title: 'Por producto / Externo', description: 'Actividades en varias áreas', statuses: ['IN_PRODUCTION', 'IN_EXTERNAL'], icon: Workflow, link: '/orders' },
   { key: 'printing', title: 'Impresión', description: 'Producción gráfica', statuses: ['IN_PRINTING'], icon: Printer, link: '/printing' },
   { key: 'workshop', title: 'Taller', description: 'Fabricación y ensamble', statuses: ['IN_WORKSHOP'], icon: Hammer, link: '/workshop' },
   { key: 'installation', title: 'Instalación', description: 'Trabajos listos para instalar', statuses: ['PENDING_INSTALLATION'], icon: MapPin, link: '/workshop' },
 ];
+
+function DesignerLoadPanel() {
+  const [load, setLoad] = useState<Awaited<ReturnType<typeof apiDesignerLoad>> | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    async function refresh() {
+      try {
+        const result = await apiDesignerLoad();
+        if (active) { setLoad(result); setError(''); }
+      } catch (cause) {
+        if (active) setError(cause instanceof Error ? cause.message : 'No fue posible consultar la carga de Diseño.');
+      }
+    }
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+  return <Card className="ops-designer-load"><div className="ops-activity-header"><div><span className="eyebrow">Distribución de trabajo</span><h2>Carga de Diseño</h2><p className="muted">Actividades asignadas, pendientes y en proceso por diseñador.</p></div><Link className="link ops-detail-link" to="/design">Abrir bandeja <ArrowRight size={14} /></Link></div>
+    {error && <p className="notice notice-warning" role="alert">{error}</p>}
+    {!load && !error ? <p className="muted ops-activity-loading">Cargando carga de trabajo…</p> : load && <><p className="ops-designer-unassigned">{load.unassigned} tareas de Diseño sin asignar</p><div className="ops-designer-grid">{load.items.map(designer => <div key={designer.id} className="ops-designer-card"><strong>{designer.name}</strong><span>{designer.pending} pendientes · {designer.inProgress} en proceso</span><b>{designer.total} activas</b></div>)}</div></>}
+  </Card>;
+}
 
 export function OperationPage() {
   const { data, user } = useApp();
@@ -30,8 +55,9 @@ export function OperationPage() {
 
   return <div className="page-stack">
     <PageHeader eyebrow="Control operativo" title="Operación" description="Cada orden en su etapa. Una vista compartida de todo el trabajo." actions={<Link className="ops-button-link" to="/orders/new"><Plus size={17} /> Nueva OT</Link>} />
-    <div className="grid-3"><KpiCard label="Órdenes en curso" value={active.length} icon={Workflow} meta="Desde revisión hasta instalación" tone="orange" /><KpiCard label="Por revisar" value={active.filter(order => ['NEW', 'PENDING_ADMIN_REVIEW'].includes(order.status)).length} icon={ClipboardCheck} meta="Pendientes de aprobación" tone="amber" /><KpiCard label="Trabajos terminados" value={finished} icon={CheckCircle2} meta="Finalizados o instalados" tone="green" /></div>
-    <Card className="ops-board-controls"><SearchInput value={search} onChange={setSearch} placeholder="Buscar OT, cliente o trabajo…" label="Buscar en operación" /><label className="ops-inline-field"><span className="ops-sr-only">Filtrar por recorrido</span><select className="select" value={routeFilter} onChange={event => setRouteFilter(event.target.value)}><option value="all">Todos los recorridos</option><option value="PRINT_ONLY">Solo Impresión</option><option value="WORKSHOP_ONLY">Solo Taller</option><option value="PRINT_WORKSHOP">Impresión y Taller</option></select></label><span className="muted ops-board-results" role="status">{filtered.length} órdenes visibles</span></Card>
+    <div className="grid-3"><KpiCard label="Órdenes en curso" value={active.length} icon={Workflow} meta="Desde el envío hasta instalación" tone="orange" /><KpiCard label="Por enviar" value={active.filter(order => ['NEW', 'PENDING_ADMIN_REVIEW'].includes(order.status)).length} icon={ClipboardCheck} meta="Pendientes de distribución" tone="amber" /><KpiCard label="Trabajos terminados" value={finished} icon={CheckCircle2} meta="Finalizados o instalados" tone="green" /></div>
+    {usingApi && <DesignerLoadPanel />}
+    <Card className="ops-board-controls"><SearchInput value={search} onChange={setSearch} placeholder="Buscar OT, cliente o trabajo…" label="Buscar en operación" /><label className="ops-inline-field"><span className="ops-sr-only">Filtrar por recorrido</span><select className="select" value={routeFilter} onChange={event => setRouteFilter(event.target.value)}><option value="all">Todos los recorridos</option><option value="PRINT_ONLY">Solo Impresión</option><option value="WORKSHOP_ONLY">Solo Taller</option><option value="PRINT_WORKSHOP">Impresión y Taller</option><option value="EXTERNO">Externo</option><option value="MULTI_AREA">Varias áreas</option></select></label><span className="muted ops-board-results" role="status">{filtered.length} órdenes visibles</span></Card>
     <div className="ops-board">
       {stages.map(stage => {
         const orders = filtered.filter(order => stage.statuses.includes(order.status));

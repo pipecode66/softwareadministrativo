@@ -3,13 +3,14 @@ import { z } from 'zod';
 const clientFields = {
   name: z.string().trim().min(1, 'Escribe el nombre del cliente.').max(180),
   identification: z.string().trim().max(60),
-  phone: z.string().trim().max(40),
+  phone: z.string().trim().min(1, 'Escribe el celular del cliente.').max(40),
+  specialPayment: z.boolean(),
 };
 
 export const createClientSchema = z.object({
   ...clientFields,
   identification: clientFields.identification.default(''),
-  phone: clientFields.phone.default(''),
+  specialPayment: clientFields.specialPayment.default(false),
 }).strict();
 
 export const updateClientSchema = z.object(clientFields).partial().strict()
@@ -26,6 +27,12 @@ export const listClientsSchema = z.object({
   q: z.string().trim().max(180).default(''),
 }).strict();
 
+export const listClientOrdersSchema = z.object({
+  page: pageNumber.default(1),
+  pageSize: pageSize.default(25),
+}).strict();
+
 export type CreateClientInput = z.infer<typeof createClientSchema>;
 export type UpdateClientInput = z.infer<typeof updateClientSchema>;
 export type ListClientsInput = z.infer<typeof listClientsSchema>;
+export type ListClientOrdersInput = z.infer<typeof listClientOrdersSchema>;

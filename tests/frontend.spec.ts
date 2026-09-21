@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { DEMO_PASSWORD, makeSeed } from '../src/data/seed';
-import { areaOf, dateOnly, financials, formatCOP, formatNumber, today } from '../src/domain/utils';
+import { LOCAL_REVIEW_PASSWORD, makeSeed } from '../src/data/seed';
+import { areaOf, dateOnly, financials, formatCOP, formatMeasure, formatNumber, today } from '../src/domain/utils';
 import type { AppData, WorkOrder } from '../src/domain/types';
 
 // Each test has an isolated browser context; no existing user browser data is changed.
@@ -14,9 +14,10 @@ test.beforeEach(async ({ context }) => {
 async function login(page: Page, email = 'adminmaster@intermedios.local') {
   await page.goto('/login');
   await page.getByLabel('Usuario o correo').fill(email);
-  await page.getByLabel('Contraseña', { exact: true }).fill(DEMO_PASSWORD);
+  await page.getByLabel('Contraseña', { exact: true }).fill(LOCAL_REVIEW_PASSWORD);
   await page.getByRole('button', { name: 'Ingresar al sistema' }).click();
   await expect(page).not.toHaveURL(/\/login$/);
+  await page.goto('/');
   await expect(page.locator('main h1')).toBeVisible();
 }
 
@@ -24,17 +25,19 @@ async function storedOrders(page: Page): Promise<WorkOrder[]> {
   return page.evaluate(key => (JSON.parse(localStorage.getItem(key)!) as AppData).orders, DATA_KEY);
 }
 
-async function fillOrder(page: Page, number = 101, route = 'PRINT_WORKSHOP') {
+async function fillOrder(page: Page, _number = 101, route = 'PRINT_WORKSHOP') {
   await page.goto('/orders/new');
-  await page.getByLabel('Número de OT *', { exact: true }).fill(String(number));
   await page.getByLabel('Cliente / Razón social *').selectOption('c-1');
-  await page.getByLabel('Descripción del trabajo *').fill('Aviso de prueba funcional con impresión e instalación.');
-  await page.getByLabel('Valor del trabajo antes de IVA (COP) *').fill('100000');
-  await page.locator(`input[name="route"][value="${route}"]`).check();
+  const product = page.locator('.order-product-card').first();
+  await product.getByLabel('Descripción del producto *').fill('Aviso de prueba funcional con producción.');
+  await product.getByLabel('Valor unitario antes de IVA (COP) *').fill('100000');
   if (route !== 'WORKSHOP_ONLY') {
-    await page.getByLabel('Largo (m) *').fill('2.5');
-    await page.getByLabel('Ancho (m) *').fill('1.2');
+    await product.getByRole('checkbox', { name: 'Impresión' }).check();
+    await product.getByLabel('Largo (m)').fill('2.5');
+    await product.getByLabel('Ancho (m)').fill('1.2');
   }
+  if (route !== 'PRINT_ONLY') await product.getByRole('checkbox', { name: 'Taller' }).check();
+  await page.getByLabel('Valor recibido (COP) *').fill('10000');
 }
 
 async function saveOrder(page: Page) {
@@ -64,44 +67,68 @@ test('acceso local: credenciales inválidas, sesión y protección sin sesión',
   await page.getByLabel('Contraseña', { exact: true }).fill('incorrecta');
   await page.getByRole('button', { name: 'Ingresar al sistema' }).click();
   await expect(page.getByRole('alert')).toBeVisible();
-  await page.getByLabel('Contraseña', { exact: true }).fill(DEMO_PASSWORD);
+  await page.getByLabel('Contraseña', { exact: true }).fill(LOCAL_REVIEW_PASSWORD);
   await page.getByRole('button', { name: 'Ingresar al sistema' }).click();
   await expect(page).toHaveURL(/\/reports$/);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Reportes de ventas' })).toBeVisible();
 });
 
-test('creación FACT: IVA adicional, retenciones manuales, área y validaciones', async ({ page }) => {
+test('creación FACT multiproducto: retenciones automáticas, varios materiales y área externa', async ({ page }) => {
   await login(page);
   await fillOrder(page);
-  await page.getByRole('radio', { name: /Facturación/ }).check();
-  await page.getByLabel('RETE FUENTE', { exact: true }).fill('1000');
-  await page.getByLabel('RETE IVA 15', { exact: true }).fill('200');
-  await page.getByLabel('ICA 7 × 1000', { exact: true }).fill('300');
-  await page.getByLabel('Valor del trabajo antes de IVA (COP) *').fill('');
+  await page.getByRole('radio', { name: /FACT/ }).check();
+  await page.locator('.order-product-card').first().getByLabel('Valor unitario antes de IVA (COP) *').fill('600000');
+  await page.locator('.order-product-card').first().getByRole('checkbox', { name: 'Diseño' }).check();
+  await page.locator('.order-product-card').first().getByRole('button', { name: 'Agregar material' }).click();
+  await page.locator('.order-product-card').first().getByLabel('Material 2', { exact: true }).selectOption('Banner');
+  await page.locator('.order-product-card').first().getByLabel('Largo (m)').last().fill('1');
+  await page.locator('.order-product-card').first().getByLabel('Ancho (m)').last().fill('2');
+  await page.getByRole('button', { name: 'Agregar otro producto' }).click();
+  const external = page.locator('.order-product-card').last();
+  await external.getByLabel('Descripción del producto *').fill('Servicio externo de montaje');
+  await external.getByLabel('Valor unitario antes de IVA (COP) *').fill('200000');
+  await external.getByRole('checkbox', { name: 'Externo' }).check();
+  await expect(external.getByText('Materiales de impresión')).toHaveCount(0);
+  await expect(external.getByLabel('Largo del producto (m)')).toHaveCount(0);
+  await expect(external.getByLabel('Ancho del producto (m)')).toHaveCount(0);
+  await external.getByLabel('Descripción del producto *').fill('');
   await page.getByRole('button', { name: 'Guardar orden de trabajo' }).click();
-  await expect(page.getByText('El valor es obligatorio y debe ser mayor que cero.', { exact: true })).toBeVisible();
-  await page.getByLabel('Valor del trabajo antes de IVA (COP) *').fill('0');
-  await page.getByRole('button', { name: 'Guardar orden de trabajo' }).click();
-  await expect(page.getByText('El valor es obligatorio y debe ser mayor que cero.', { exact: true })).toBeVisible();
-  await page.getByLabel('Valor del trabajo antes de IVA (COP) *').fill('100000');
-  await page.getByLabel('Número de OT *', { exact: true }).fill('1');
-  await page.getByRole('button', { name: 'Guardar orden de trabajo' }).click();
-  await expect(page.getByText('Este número de OT ya está registrado.', { exact: true })).toBeVisible();
-  await page.getByLabel('Número de OT *', { exact: true }).fill('101');
-  await expect(page.locator('.order-area-result')).toContainText('3,000 m²');
+  await expect(page.getByRole('alert')).toContainText('Producto 2: escribe una descripción.');
+  await external.getByLabel('Descripción del producto *').fill('Servicio externo de montaje');
   await saveOrder(page);
-  const order = (await storedOrders(page)).find(item => item.number === 101)!;
-  expect(order.status).toBe('NEW');
-  expect(order.printing).toEqual({ material: 'Panaflex', length: 2.5, width: 1.2 });
-  expect(financials(order)).toMatchObject({ iva: 19000, gross: 119000, retentions: 1500, collectible: 117500 });
-  await expect(page.locator('.order-balance-highlight')).toContainText(formatCOP(117500));
+  const order = (await storedOrders(page)).at(-1)!;
+  expect(order.status).toBe('IN_PRODUCTION');
+  expect(order.route).toBe('MULTI_AREA');
+  expect(order.products).toHaveLength(2);
+  expect(order.products![0].materials).toHaveLength(2);
+  expect(financials(order)).toMatchObject({ base: 800000, iva: 152000, retentions: 60400, collectible: 891600, balance: 881600 });
+  await expect(page.locator('.order-balance-highlight')).toContainText(formatCOP(881600));
+});
+
+test('editor multiproducto y materiales se adapta a 320 px', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 760 });
+  await login(page);
+  await fillOrder(page);
+  const first = page.locator('.order-product-card').first();
+  await first.getByRole('button', { name: 'Agregar material' }).click();
+  await first.getByLabel('Material 2', { exact: true }).selectOption('V. Impresión');
+  await first.getByLabel('Largo (m)', { exact: true }).last().fill('1.25');
+  await first.getByLabel('Ancho (m)', { exact: true }).last().fill('0.8');
+  await page.getByRole('button', { name: 'Agregar otro producto' }).click();
+  const second = page.locator('.order-product-card').last();
+  await second.getByLabel('Descripción del producto *').fill('Servicio externo con una descripción extensa que debe ajustarse dentro de la tarjeta móvil.');
+  await second.getByLabel('Valor unitario antes de IVA (COP) *').fill('250000');
+  await second.getByRole('checkbox', { name: 'Externo' }).check();
+  const dimensions = await page.evaluate(() => ({ viewport: innerWidth, body: document.body.scrollWidth, document: document.documentElement.scrollWidth }));
+  expect(dimensions.body).toBeLessThanOrEqual(dimensions.viewport + 1);
+  expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport + 1);
 });
 
 test('varios abonos persisten y no se acepta un pago superior al saldo', async ({ page }) => {
   await login(page);
   await fillOrder(page, 102, 'WORKSHOP_ONLY');
-  await expect(page.getByLabel('Largo (m) *')).toHaveCount(0);
+  await expect(page.locator('.order-product-card').getByText('Materiales de impresión')).toHaveCount(0);
   await saveOrder(page);
   await page.getByRole('button', { name: 'Registrar abono o pago', exact: true }).click();
   await page.getByRole('dialog').getByLabel('Valor del pago (COP) *').fill('100.009');
@@ -110,68 +137,55 @@ test('varios abonos persisten y no se acepta un pago superior al saldo', async (
   await page.getByRole('dialog').getByRole('button', { name: 'Cancelar', exact: true }).click();
   await addPayment(page, '30000');
   await addPayment(page, '25000');
-  await expect(page.locator('.order-balance-highlight')).toContainText(formatCOP(45000));
+  await expect(page.locator('.order-balance-highlight')).toContainText(formatCOP(35000));
   await page.getByRole('button', { name: 'Registrar abono o pago', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Valor del pago (COP) *').fill('45001');
+  await dialog.getByLabel('Valor del pago (COP) *').fill('35001');
   await dialog.getByRole('button', { name: 'Confirmar y registrar pago' }).click();
   await expect(dialog.getByRole('alert')).toContainText('El pago no puede superar');
   await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
   await page.reload();
-  await expect(page.locator('.order-balance-highlight')).toContainText(formatCOP(45000));
-  const order = (await storedOrders(page)).find(item => item.number === 102)!;
-  expect(order.payments.map(payment => payment.amount)).toEqual([30000, 25000]);
+  await expect(page.locator('.order-balance-highlight')).toContainText(formatCOP(35000));
+  const order = (await storedOrders(page)).at(-1)!;
+  expect(order.payments.map(payment => payment.amount)).toEqual([10000, 30000, 25000]);
   expect(order.printing).toBeUndefined();
   expect(financials(order).iva).toBe(0);
-  await addPayment(page, '45000');
+  await addPayment(page, '35000');
   await expect(page.locator('.order-balance-highlight')).toContainText('Pagada');
   await expect(page.getByRole('button', { name: 'Registrar abono o pago', exact: true })).toHaveCount(0);
 });
 
-test('flujo impresión, taller, instalación y cierre conserva la cartera pendiente', async ({ page }) => {
+test('orden histórica: instalación y cierre conservan el estado del trabajo', async ({ page }) => {
   await login(page);
-  await fillOrder(page, 103);
-  await page.getByRole('checkbox', { name: /requiere instalación/ }).check();
-  await saveOrder(page);
-  await advance(page, 'Aprobar y enviar');
-  expect((await storedOrders(page)).find(item => item.number === 103)!.status).toBe('IN_PRINTING');
-  await advance(page, 'Finalizar impresión');
-  expect((await storedOrders(page)).find(item => item.number === 103)!.printingCompletedAt).toBeTruthy();
-  await advance(page, 'Iniciar taller');
-  await advance(page, 'Finalizar taller');
-  expect((await storedOrders(page)).find(item => item.number === 103)!.status).toBe('PENDING_INSTALLATION');
+  await page.goto('/orders/ot-4');
   await page.getByRole('button', { name: 'Registrar instalación', exact: true }).click();
   await page.getByRole('dialog').getByLabel('Observaciones de instalación', { exact: true }).fill('Instalada según revisión del cliente.');
   await page.getByRole('dialog').getByRole('button', { name: 'Confirmar', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await advance(page, 'Cerrar orden');
-  const order = (await storedOrders(page)).find(item => item.number === 103)!;
+  const order = (await storedOrders(page)).find(item => item.id === 'ot-4')!;
   expect(order.status).toBe('INSTALLED');
   expect(order.closedAt).toBeTruthy();
-  expect(financials(order).balance).toBe(100000);
-  await page.goto('/portfolio');
-  await page.getByRole('searchbox').fill('0103');
-  await expect(page.getByRole('link', { name: 'OT #0103', exact: true }).filter({ visible: true })).toBeVisible();
 });
 
-test('ruta solo impresión finaliza sin pasar por taller', async ({ page }) => {
+test('ruta solo impresión crea una tarea sin paso por Taller', async ({ page }) => {
   await login(page);
   await fillOrder(page, 104, 'PRINT_ONLY');
   await saveOrder(page);
-  await advance(page, 'Aprobar y enviar');
-  await advance(page, 'Finalizar impresión');
-  expect((await storedOrders(page)).find(item => item.number === 104)!.status).toBe('COMPLETED');
-  await expect(page.getByRole('button', { name: 'Iniciar taller' })).toHaveCount(0);
+  const order = (await storedOrders(page)).at(-1)!;
+  expect(order.route).toBe('PRINT_ONLY');
+  expect(order.products?.[0].activities.map(activity => activity.area)).toEqual(['PRINTING']);
+  expect(order.status).toBe('IN_PRODUCTION');
 });
 
-test('Diseño crea para revisión y no accede a finanzas, impresión ni usuarios', async ({ page }) => {
+test('Diseño crea directamente y no accede a finanzas, impresión ni usuarios', async ({ page }) => {
   await login(page, 'diseno@intermedios.local');
   await expect(page).toHaveURL(/\/design$/);
   await fillOrder(page, 105, 'WORKSHOP_ONLY');
   await saveOrder(page);
-  expect((await storedOrders(page)).find(item => item.number === 105)!.status).toBe('PENDING_ADMIN_REVIEW');
+  expect((await storedOrders(page)).at(-1)!.status).toBe('IN_PRODUCTION');
   await expect(page.getByRole('heading', { name: 'Control financiero' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Aprobar y enviar' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Enviar a producción' })).toHaveCount(0);
   for (const route of ['/reports', '/portfolio', '/printing', '/settings/users']) {
     await page.goto(route);
     await expect(page.getByRole('heading', { name: 'Acceso restringido' })).toBeVisible();
@@ -212,11 +226,47 @@ test('directorio: nuevo cliente disponible al crear una OT', async ({ page }) =>
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Nombre o razón social').fill('Cliente e2e Café');
   await dialog.getByLabel('NIT o identificación').fill('TEST-101');
-  await dialog.getByLabel('Teléfono', { exact: true }).fill('3000000000');
+  await dialog.getByLabel('Celular *').fill('3000000000');
   await dialog.getByRole('button', { name: 'Guardar cliente' }).click();
   await expect(dialog).toHaveCount(0);
   await page.goto('/orders/new');
   await expect(page.getByLabel('Cliente / Razón social *').locator('option')).toContainText(['Cliente e2e Café · TEST-101']);
+});
+
+test('clientes: exige celular y conserva la condición Especial', async ({ page }) => {
+  await login(page);
+  await page.goto('/clients');
+  await page.getByRole('button', { name: 'Nuevo cliente', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Nombre o razón social *').fill('Cliente Especial e2e');
+  await dialog.getByRole('button', { name: 'Guardar cliente' }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Celular *').fill('3102223344');
+  await dialog.getByLabel('Cliente Especial: permite crear una OT sin abono inicial.').check();
+  await dialog.getByRole('button', { name: 'Guardar cliente' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Cliente Especial e2e' }).first()).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('link', { name: 'Cliente Especial e2e' }).first()).toBeVisible();
+  const stored = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).clients as Array<{name: string; phone: string; specialPayment?: boolean}>, DATA_KEY);
+  expect(stored.find(client => client.name === 'Cliente Especial e2e')).toMatchObject({ phone: '3102223344', specialPayment: true });
+});
+
+test('Diseño consulta historial de clientes sin indicadores ni saldos de cobro', async ({ page }) => {
+  await login(page, 'diseno@intermedios.local');
+  await page.goto('/clients');
+  await expect(page.getByRole('heading', { name: 'Directorio de clientes' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Clientes', exact: true })).toBeVisible();
+  await expect(page.getByText('Clientes con cartera')).toHaveCount(0);
+  await expect(page.getByRole('columnheader', { name: 'Saldo pendiente' })).toHaveCount(0);
+  await expect(page.getByRole('option', { name: 'Con saldo pendiente' })).toHaveCount(0);
+  await page.goto('/clients/c-1');
+  await expect(page.getByRole('heading', { name: 'Órdenes de trabajo' })).toBeVisible();
+  await expect(page.getByText('Pagos recibidos')).toHaveCount(0);
+  await expect(page.getByText('Órdenes registradas')).toHaveCount(0);
+  await expect(page.getByText('Saldo pendiente')).toHaveCount(0);
+  await expect(page.getByRole('columnheader', { name: 'Saldo' })).toHaveCount(0);
+  await expect(page.getByRole('option', { name: 'Con saldo pendiente' })).toHaveCount(0);
 });
 
 test('reportes: filtros por categoría/documento y cuatro tipos de período', async ({ page }) => {
@@ -252,7 +302,7 @@ test('ficha imprimible: contenido financiero coherente y sin navegación al impr
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.app-sidebar')).toBeHidden();
   await expect(page.locator('.app-topbar')).toBeHidden();
-  await expect(page.locator('.demo-strip')).toBeHidden();
+  await expect(page.locator('.data-refresh-strip')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Imprimir orden' })).toBeHidden();
   await expect(sheet).toBeVisible();
 });
@@ -283,17 +333,21 @@ test('materiales: impresión en cola no suma; finalizar añade sus m² una sola 
   await page.getByRole('button', { name: 'Día', exact: true }).click();
   await page.getByLabel('Material', { exact: true }).selectOption('Panaflex');
   const before = makeSeed().orders.filter(order => order.printing?.material === 'Panaflex' && order.printingCompletedAt && dateOnly(order.printingCompletedAt) === today()).reduce((sum, order) => sum + areaOf(order.printing), 0);
-  await expect(page.locator('.analytics-material-banner')).toContainText(`${formatNumber(before, 3)} m²`);
+  await expect(page.locator('.analytics-material-banner')).toContainText(`${formatMeasure(before)} m²`);
+  await page.getByRole('button', { name: 'Cerrar sesión' }).click();
+  await login(page, 'impresion@intermedios.local');
   await page.goto('/orders/ot-1');
   await advance(page, 'Finalizar impresión');
+  await page.getByRole('button', { name: 'Cerrar sesión' }).click();
+  await login(page);
   await page.goto('/materials');
   await page.getByRole('button', { name: 'Día', exact: true }).click();
   await page.getByLabel('Material', { exact: true }).selectOption('Panaflex');
-  await expect(page.locator('.analytics-material-banner')).toContainText(`${formatNumber(before + 3, 3)} m²`);
+  await expect(page.locator('.analytics-material-banner')).toContainText(`${formatMeasure(before + 3)} m²`);
   await page.reload();
   await page.getByRole('button', { name: 'Día', exact: true }).click();
   await page.getByLabel('Material', { exact: true }).selectOption('Panaflex');
-  await expect(page.locator('.analytics-material-banner')).toContainText(`${formatNumber(before + 3, 3)} m²`);
+  await expect(page.locator('.analytics-material-banner')).toContainText(`${formatMeasure(before + 3)} m²`);
 });
 
 test('usuarios: alta local, duplicado, cancelar y protección de la cuenta propia', async ({ page }) => {
@@ -395,7 +449,7 @@ test('límite de 15 usuarios activos y rechazo del acceso de una cuenta inactiva
   await page.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel('Usuario o correo', { exact: true }).fill('limite10@intermedios.local');
-  await page.getByLabel('Contraseña', { exact: true }).fill(DEMO_PASSWORD);
+  await page.getByLabel('Contraseña', { exact: true }).fill(LOCAL_REVIEW_PASSWORD);
   await page.getByRole('button', { name: 'Ingresar al sistema', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Usuario o contraseña incorrectos');
   await expect(page).toHaveURL(/\/login$/);

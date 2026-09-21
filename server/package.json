@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "db:migrate": "tsx --env-file-if-exists=.env src/cli/migrate.ts",
-    "db:bootstrap": "tsx --env-file-if-exists=.env src/cli/bootstrap.ts"
+    "db:bootstrap": "tsx --env-file-if-exists=.env src/cli/bootstrap.ts",
+    "db:cleanup-tests": "tsx --env-file-if-exists=.env src/cli/cleanup-test-data.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

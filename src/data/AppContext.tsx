@@ -2,29 +2,32 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { CheckCircle2, CircleAlert, X } from 'lucide-react';
 import type { AppData, Client, OrderAction, OrderInput, User, WorkOrder } from '../domain/types';
 import { createWorkOrder, editWorkOrder, recordPayment, transitionWorkOrder, validateClient } from '../domain/service';
-import { isAdmin, ROLE_LABELS } from '../domain/utils';
+import { financials, isAdmin, ROLE_LABELS } from '../domain/utils';
 import {
-  apiAddPayment, apiChangePassword, apiCreateOrder, apiCreateUser, apiListClients, apiListOrders, apiListUsers, apiLogin, apiLogout, apiResetPassword,
+  apiAddPayment, apiBulkPayment, apiCertificateReport, apiSetCertificates, apiChangePassword, apiCreateOrder, apiCreateUser, apiListClients, apiListOrders, apiListUsers, apiLogin, apiLogout, apiResetPassword,
   apiMaterialReport, apiPortfolioReport, apiSalesReport, apiSaveClient, apiSession, apiTransitionOrder, apiUpdateOrder, apiUpdateUser,
   ApiRequestError, forgetApiSession, usingApi,
 } from './api';
-import type { MaterialReport, PortfolioReport, SalesReport } from './api';
-import { DEMO_PASSWORD } from './seed';
+import type { BulkPaymentResult, CertificateReport, MaterialReport, NewPayment, PortfolioReport, SalesReport } from './api';
+import { LOCAL_REVIEW_PASSWORD } from './seed';
 import { parseData, readData, SESSION_KEY, STORAGE_KEY, writeData } from './repository';
 
-type ClientInput = Pick<Client, 'name' | 'identification' | 'phone'>;
+type ClientInput = Pick<Client, 'name' | 'identification' | 'phone' | 'specialPayment'>;
 export type UserInput = Pick<User, 'name' | 'email' | 'role' | 'active'> & { password?: string };
 interface AppContextValue {
   data: AppData; user: User | null; accounts: User[]; sessionReady: boolean; usingApi: boolean;
   dataLoading: boolean; dataError: string; refreshData: () => Promise<void>;
   loadSalesReport: (query: Parameters<typeof apiSalesReport>[0]) => Promise<SalesReport>;
   loadPortfolioReport: (query: Parameters<typeof apiPortfolioReport>[0]) => Promise<PortfolioReport>;
+  loadCertificateReport: (query: Parameters<typeof apiCertificateReport>[0]) => Promise<CertificateReport>;
   loadMaterialReport: (query: Parameters<typeof apiMaterialReport>[0]) => Promise<MaterialReport>;
+  setCertificates: (orderId: string, expectedVersion: number, certificates: { reteFuente: boolean; reteIva: boolean; ica: boolean }) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   createOrder: (input: OrderInput) => Promise<WorkOrder>; updateOrder: (id: string, input: OrderInput) => Promise<void>;
-  addPayment: (id: string, payment: { date: string; amount: number }) => Promise<void>;
+  addPayment: (id: string, payment: NewPayment) => Promise<void>;
+  bulkPayment: (input: { clientId: string; selectedOrderIds: string[] } & NewPayment, requestId: string) => Promise<BulkPaymentResult>;
   transitionOrder: (id: string, action: OrderAction, details?: { date?: string; note?: string }) => Promise<void>;
   saveClient: (input: ClientInput, id?: string) => Promise<Client>;
   saveUser: (input: UserInput, id?: string) => Promise<User>;
@@ -162,7 +165,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         else if (enteredWorkshop) toast(`La OT #${String(order.number).padStart(4, '0')} llegó a Taller.`);
       }
       setAccounts(users);
-      const mergedClients = [...new Map([...clients, ...remoteOrders.clients].map(client => [client.id, client])).values()];
+      const mergedClients = [...new Map([...remoteOrders.clients, ...clients].map(client => [client.id, client])).values()];
       replaceData({ ...dataRef.current, users, clients: mergedClients, orders: remoteOrders.orders });
     } catch (error) {
       if (epoch === sessionEpoch.current) setDataError(error instanceof Error ? error.message : 'No se pudieron cargar los datos del servidor.');
@@ -178,7 +181,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     data, user, accounts: usingApi ? accounts : data.users, sessionReady, usingApi, dataLoading, dataError, refreshData, refreshAccounts,
     loadSalesReport: query => remote(() => apiSalesReport(query)),
     loadPortfolioReport: query => remote(() => apiPortfolioReport(query)),
+    loadCertificateReport: query => remote(() => apiCertificateReport(query)),
     loadMaterialReport: query => remote(() => apiMaterialReport(query)), toast,
+    async setCertificates(orderId, expectedVersion, certificates) {
+      if (usingApi) {
+        const result = await remote(() => apiSetCertificates({ orderId, expectedVersion, certificates }));
+        replaceData({ ...dataRef.current, orders: dataRef.current.orders.map(order => order.id === orderId ? { ...order, version: result.version, certificates: result.certificates } : order) });
+        return;
+      }
+      modifyOrder(orderId, (order, _current, account) => {
+        if (!isAdmin(account.role)) throw new Error('Solo Administración puede registrar certificados.');
+        if (order.documentType !== 'FACT') throw new Error('Los certificados corresponden a FACT.');
+        if (order.version !== undefined && order.version !== expectedVersion) throw new Error('La orden cambió. Actualiza la página.');
+        if ((certificates.reteFuente && order.reteFuente <= 0) || (certificates.reteIva && order.reteIva <= 0) || (certificates.ica && order.ica <= 0)) throw new Error('No se puede marcar un certificado sin retención.');
+        return { ...order, certificates, version: (order.version ?? 1) + 1 };
+      });
+    },
     async login(email, password) {
       if (usingApi) {
         const epoch = ++sessionEpoch.current;
@@ -189,7 +207,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       const current = latest();
       const account = current.users.find(u => u.email.toLowerCase() === email.trim().toLowerCase() && u.active);
-      if (!account || password !== DEMO_PASSWORD) throw new Error('Usuario o contraseña incorrectos. Revisa los accesos de revisión.');
+      if (!account || password !== LOCAL_REVIEW_PASSWORD) throw new Error('Usuario o contraseña incorrectos.');
       sessionStorage.setItem(SESSION_KEY, account.id);
       dataRef.current = current; setData(current); setUserId(account.id);
     },
@@ -236,6 +254,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       modifyOrder(id, (order, _current, account) => recordPayment(account, order, payment));
     },
+    async bulkPayment(input, requestId) {
+      if (usingApi) {
+        const result = await remote(() => apiBulkPayment(input, requestId));
+        // The payment is already committed. A refresh failure must not invite a second charge.
+        await refreshData().catch(() => { /* The visible data error offers a manual refresh. */ });
+        return result;
+      }
+      const current = latest();
+      const account = actor(current);
+      if (!isAdmin(account.role)) throw new Error('Solo Administración puede registrar pagos.');
+      const selected = [...new Set(input.selectedOrderIds)];
+      if (!selected.length || selected.length !== input.selectedOrderIds.length) throw new Error('Selecciona órdenes sin repetir.');
+      if (!Number.isFinite(input.amount) || input.amount <= 0 || Math.abs(input.amount * 100 - Math.round(input.amount * 100)) > 0.000001) throw new Error('Ingresa un pago válido con máximo dos decimales.');
+      const chosen = selected.map(id => current.orders.find(order => order.id === id));
+      if (chosen.some(order => !order || order.clientId !== input.clientId)) throw new Error('Selecciona órdenes de un solo cliente.');
+      const sorted = (chosen as WorkOrder[]).map(order => ({ order, cents: Math.round(financials(order).balance * 100) })).sort((a, b) => a.cents - b.cents || a.order.number - b.order.number);
+      if (sorted.some(item => item.cents <= 0)) throw new Error('Una OT seleccionada ya está pagada.');
+      let remaining = Math.round(input.amount * 100);
+      if (remaining > sorted.reduce((sum, item) => sum + item.cents, 0)) throw new Error('El pago supera el saldo seleccionado.');
+      const updates = new Map<string, WorkOrder>();
+      const allocations: BulkPaymentResult['allocations'] = [];
+      for (const { order, cents } of sorted) {
+        if (!remaining) break;
+        const amount = Math.min(remaining, cents) / 100;
+        updates.set(order.id, recordPayment(account, order, { date: input.date, amount, method: input.method }));
+        allocations.push({ orderId: order.id, amount });
+        remaining -= Math.round(amount * 100);
+      }
+      commit({ ...current, orders: current.orders.map(order => updates.get(order.id) ?? order) });
+      return { batchId: crypto.randomUUID(), clientId: input.clientId, amount: input.amount, allocations, remaining: remaining / 100, replayed: false };
+    },
     async transitionOrder(id, action, details) {
       if (usingApi) {
         const order = dataRef.current.orders.find(item => item.id === id);
@@ -261,7 +310,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       validateClient(input);
       if (id && !current.clients.some(c => c.id === id)) throw new Error('No encontramos este cliente.');
       const existing = current.clients.find(c => c.id === id);
-      const client: Client = { id: id || crypto.randomUUID(), name: input.name.trim(), identification: input.identification.trim(), phone: input.phone.trim(), createdAt: existing?.createdAt || new Date().toISOString() };
+      const client: Client = { id: id || crypto.randomUUID(), name: input.name.trim(), identification: input.identification.trim(), phone: input.phone.trim(), specialPayment: Boolean(input.specialPayment), createdAt: existing?.createdAt || new Date().toISOString() };
       commit({ ...current, clients: id ? current.clients.map(c => c.id === id ? client : c) : [...current.clients, client] });
       return client;
     },
