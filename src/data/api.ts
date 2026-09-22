@@ -1,4 +1,4 @@
-import type { Client, OrderAction, OrderActivity, OrderInput, OrderProduct, OrderProductInput, PaymentMethod, Role, User, WorkOrder } from '../domain/types';
+import type { Client, OrderAction, OrderActivity, OrderInput, OrderProduct, OrderProductInput, PaymentMethod, ProductMaterial, Role, User, WorkOrder } from '../domain/types';
 
 export const usingApi = import.meta.env.VITE_USE_API !== 'false';
 const API = '/api/v1';
@@ -159,10 +159,10 @@ function orderFields(input: OrderInput) {
 }
 function productFields(products: OrderProductInput[] | undefined) {
   return products?.map(product => ({ description: product.description, quantity: product.quantity,
-    unitValue: product.unitValue, ...(product.length !== undefined ? { length: product.length, width: product.width } : {}),
-    specifications: product.specifications ?? '',
+    unitValue: product.unitValue,
     materials: product.materials.map(material => ({ material: material.material, length: material.length, width: material.width })),
     activities: product.activities.map(activity => ({ area: activity.area,
+      ...(activity.area === 'PRINTING' ? { printingType: activity.printingType ?? 'PRINT' } : {}),
       ...(activity.assignedUserId ? { assignedUserId: activity.assignedUserId } : {}) })),
   }));
 }
@@ -227,6 +227,27 @@ export function apiDesignerLoad() {
 export function apiChangeActivity(id: string, action: 'claim' | 'start' | 'complete' | 'assign', assignedUserId?: string) {
   return request<{ activity: OrderActivity }>(`/work/activities/${encodeURIComponent(id)}/${action}`, {
     method: action === 'assign' ? 'PATCH' : 'POST', body: JSON.stringify(assignedUserId ? { assignedUserId } : {}),
+  }).then(result => result.activity);
+}
+
+export interface OrderDraftRecord<T = unknown> { payload: T; createdAt: string; updatedAt: string }
+export function apiOrderDraft<T = unknown>(): Promise<{ draft: OrderDraftRecord<T> | null }> {
+  return request<{ draft: OrderDraftRecord<T> | null }>('/orders/draft');
+}
+export function apiSaveOrderDraft<T>(payload: T): Promise<{ draft: OrderDraftRecord<T> }> {
+  return request<{ draft: OrderDraftRecord<T> }>('/orders/draft', { method: 'PUT', body: JSON.stringify({ payload }) });
+}
+export function apiDeleteOrderDraft(): Promise<void> {
+  return request<void>('/orders/draft', { method: 'DELETE' });
+}
+export function apiSaveLaserMinutes(id: string, minutes: number): Promise<OrderActivity> {
+  return request<{ activity: OrderActivity }>(`/work/activities/${encodeURIComponent(id)}/laser`, {
+    method: 'PATCH', body: JSON.stringify({ minutes }),
+  }).then(result => result.activity);
+}
+export function apiUpdateDesignDetails(id: string, input: { description?: string; materials?: Array<Pick<ProductMaterial, 'material' | 'length' | 'width'>> }): Promise<OrderActivity> {
+  return request<{ activity: OrderActivity }>(`/work/activities/${encodeURIComponent(id)}/design-details`, {
+    method: 'PATCH', body: JSON.stringify(input),
   }).then(result => result.activity);
 }
 

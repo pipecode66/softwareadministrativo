@@ -13,17 +13,19 @@ export interface Client { id: string; name: string; identification: string; phon
 export interface Printing { material: Material; length: number; width: number }
 export interface Payment { id: string; date: string; amount: number; recordedBy: string; method?: PaymentMethod }
 export type WorkArea = 'DESIGN' | 'PRINTING' | 'WORKSHOP' | 'EXTERNAL';
+export type PrintingType = 'PRINT' | 'LASER';
 export interface ProductMaterial extends Printing { id?: string; areaM2?: number; consumedAt?: string | null }
 export interface OrderActivity {
   id?: string; orderId?: string; orderNumber?: number; productId?: string; productPosition?: number;
   productDescription?: string; position?: number; area: WorkArea;
   status?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'; assignedUserId?: string | null;
   ready?: boolean; startedAt?: string | null; completedAt?: string | null;
-  materials?: ProductMaterial[]; specifications?: string;
+  materials?: ProductMaterial[]; printingType?: PrintingType;
+  laserMinutes?: number | null; laserRate?: number; laserCharge?: number;
 }
 export interface OrderProduct {
   id?: string; position?: number; description: string; quantity: number; unitValue?: number;
-  lineTotal?: number; length?: number; width?: number; specifications?: string; materials: ProductMaterial[]; activities: OrderActivity[];
+  lineTotal?: number; materials: ProductMaterial[]; activities: OrderActivity[];
 }
 export type OrderProductInput = OrderProduct & { unitValue: number };
 export interface WorkOrder {

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createPgliteDatabase } from '../src/db/database.js';
 import { migrate } from '../src/db/migrate.js';
@@ -134,6 +135,28 @@ describe('limpieza transaccional de datos de prueba', () => {
     await executeTestDataCleanup(db, cutoff, plan);
     const newClient = await insertClient(atCutoff, 'Cliente operativo');
     expect((await insertOrder(newClient, atCutoff, 'Primera OT real')).number).toBe(1);
+  });
+
+  it('el SQL manual elimina la semana de prueba y conserva datos desde el corte', async () => {
+    const oldClient = await insertClient(beforeCutoff, 'Cliente del ensayo');
+    const retainedClient = await insertClient(atCutoff, 'Cliente de entrega');
+    const oldOrder = await insertOrder(oldClient, beforeCutoff, 'OT del ensayo');
+    const retainedOrder = await insertOrder(retainedClient, atCutoff, 'OT de entrega');
+    await addDependencies(oldOrder.id, oldClient, beforeCutoff);
+
+    const sql = await readFile(
+      new URL('../maintenance/borrar_datos_prueba_antes_2026-09-21.sql', import.meta.url),
+      'utf8',
+    );
+    await db.exec(sql);
+
+    expect((await db.query<{ id: string; number: number }>('SELECT id,number FROM orders')).rows)
+      .toEqual([{ id: retainedOrder.id, number: 2 }]);
+    expect((await db.query<{ name: string }>('SELECT name FROM clients')).rows)
+      .toEqual([{ name: 'Cliente de entrega' }]);
+    expect((await db.query('SELECT id FROM users')).rows).toHaveLength(1);
+    expect((await db.query('SELECT token_hash FROM sessions')).rows).toHaveLength(1);
+    expect((await insertOrder(retainedClient, atCutoff, 'Siguiente OT')).number).toBe(3);
   });
 
   it('rechaza una vista previa obsoleta y revierte sin eliminar nada', async () => {

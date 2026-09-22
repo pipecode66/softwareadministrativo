@@ -36,7 +36,13 @@ function DesignerLoadPanel() {
   }, []);
   return <Card className="ops-designer-load"><div className="ops-activity-header"><div><span className="eyebrow">Distribución de trabajo</span><h2>Carga de Diseño</h2><p className="muted">Actividades asignadas, pendientes y en proceso por diseñador.</p></div><Link className="link ops-detail-link" to="/design">Abrir bandeja <ArrowRight size={14} /></Link></div>
     {error && <p className="notice notice-warning" role="alert">{error}</p>}
-    {!load && !error ? <p className="muted ops-activity-loading">Cargando carga de trabajo…</p> : load && <><p className="ops-designer-unassigned">{load.unassigned} tareas de Diseño sin asignar</p><div className="ops-designer-grid">{load.items.map(designer => <div key={designer.id} className="ops-designer-card"><strong>{designer.name}</strong><span>{designer.pending} pendientes · {designer.inProgress} en proceso</span><b>{designer.total} activas</b></div>)}</div></>}
+    {!load && !error ? <p className="muted ops-activity-loading">Cargando carga de trabajo…</p> : load && <>
+      <div className="ops-designer-unassigned"><strong>{load.unassigned}</strong><span>{load.unassigned === 1 ? 'tarea de Diseño sin asignar' : 'tareas de Diseño sin asignar'}</span></div>
+      {load.items.length > 0 ? <div className="ops-designer-grid" aria-label="Carga por diseñador">{load.items.map(designer => <article key={designer.id} className="ops-designer-card">
+        <div className="ops-designer-card-header"><strong>{designer.name}</strong><span className="ops-designer-active">{designer.total} {designer.total === 1 ? 'activa' : 'activas'}</span></div>
+        <dl className="ops-designer-metrics"><div><dt>Pendientes</dt><dd>{designer.pending}</dd></div><div><dt>En proceso</dt><dd>{designer.inProgress}</dd></div></dl>
+      </article>)}</div> : <p className="muted ops-designer-empty">No hay diseñadores activos para distribuir trabajo.</p>}
+    </>}
   </Card>;
 }
 

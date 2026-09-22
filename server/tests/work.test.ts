@@ -59,10 +59,10 @@ function get(path: string, session = admin) {
 }
 
 const products = [
-  { description: 'Pieza impresa', quantity: 2, unitValue: 30000, length: 2, width: 1.5, specifications: 'A todo color',
+  { description: 'Pieza impresa a todo color', quantity: 2, unitValue: 30000,
     materials: [{ material: 'Banner', length: 2, width: 1.5 }, { material: 'Panaflex', length: 1, width: 2 }],
     activities: [{ area: 'DESIGN' }, { area: 'PRINTING' }, { area: 'WORKSHOP' }] },
-  { description: 'Pieza por proveedor', quantity: 1, unitValue: 40000, specifications: 'Coordinar entrega',
+  { description: 'Pieza por proveedor; coordinar entrega', quantity: 1, unitValue: 40000,
     materials: [], activities: [{ area: 'EXTERNAL' }] },
 ];
 
@@ -97,15 +97,15 @@ describe('Productos y trabajo interno', () => {
     const read = await get(`/work/orders/${order.id}`);
     expect(read.status).toBe(200);
     expect(read.body).toMatchObject({ orderNumber: 1, products: [
-      { description: 'Pieza impresa', quantity: 2, length: 2, width: 1.5, unitValue: 30000, lineTotal: 60000,
+      { description: 'Pieza impresa a todo color', quantity: 2, unitValue: 30000, lineTotal: 60000,
         materials: [{ material: 'Banner', areaM2: 3, consumedAt: null },
           { material: 'Panaflex', areaM2: 2, consumedAt: null }],
         activities: [{ area: 'DESIGN' }, { area: 'PRINTING' }, { area: 'WORKSHOP' }] },
-      { description: 'Pieza por proveedor', lineTotal: 40000, activities: [{ area: 'EXTERNAL' }] },
+      { description: 'Pieza por proveedor; coordinar entrega', lineTotal: 40000, activities: [{ area: 'EXTERNAL' }] },
     ] });
     const printPage = await get('/work/activities?area=PRINTING&pageSize=1');
     expect(printPage.body.total).toBe(1);
-    expect(printPage.body.items).toEqual([expect.objectContaining({ area: 'PRINTING' })]);
+    expect(printPage.body.items).toEqual([expect.objectContaining({ area: 'PRINTING', printingType: 'PRINT' })]);
     const rows = await db.query<{ total: string }>('SELECT sum(line_total) AS total FROM order_products WHERE order_id=$1', [order.id]);
     expect(Number(rows.rows[0].total)).toBe(100000);
     const today = dateOnly();
@@ -238,23 +238,42 @@ describe('Productos y trabajo interno', () => {
     expect((await db.query('SELECT id FROM order_products')).rows).toHaveLength(0);
   });
 
-  it('acepta Externo sin medidas y rechaza medidas internas completas o parciales', async () => {
+  it('retira campos de producto obsoletos y permite Externo junto con Impresión', async () => {
     const valid = await create({ requiresInstallation: false, value: 40000, route: 'EXTERNO', products: [products[1]] });
     expect((await get(`/work/orders/${valid.id}`)).body.products[0]).not.toHaveProperty('length');
+    expect((await get(`/work/orders/${valid.id}`)).body.products[0]).not.toHaveProperty('specifications');
     const invalid = await post('/orders', {
       clientId, description: 'Medida incompleta', value: 40000, documentType: 'REM',
       category: 'Proyecto', route: 'EXTERNO', requiresInstallation: false,
       products: [{ ...products[1], length: 2 }], requestId: randomUUID(),
     });
     expect(invalid.status).toBe(400);
-    expect(invalid.body.error.field).toContain('length');
+    expect(invalid.body.error.field).toContain('products.0');
     const externalDimensions = await post('/orders', {
       clientId, description: 'Externo con medidas internas', value: 40000, documentType: 'REM',
       category: 'Proyecto', route: 'EXTERNO', requiresInstallation: false,
       products: [{ ...products[1], length: 2, width: 3 }], requestId: randomUUID(),
     });
     expect(externalDimensions.status).toBe(400);
-    expect(externalDimensions.body.error.field).toContain('length');
+    expect(externalDimensions.body.error.field).toContain('products.0');
+    const obsoleteSpecifications = await post('/orders', {
+      clientId, description: 'Campo retirado', value: 40000, documentType: 'REM',
+      category: 'Proyecto', route: 'EXTERNO', requiresInstallation: false,
+      products: [{ ...products[1], specifications: 'Ya no aplica' }], requestId: randomUUID(),
+    });
+    expect(obsoleteSpecifications.status).toBe(400);
+    expect(obsoleteSpecifications.body.error.field).toContain('products.0');
+
+    const combined = await create({ value: 60000, route: 'MULTI_AREA', products: [{
+      description: 'Impresión con gestión externa', quantity: 1, unitValue: 60000,
+      materials: [{ material: 'Banner', length: 1, width: 1 }],
+      activities: [{ area: 'PRINTING', printingType: 'PRINT' }, { area: 'EXTERNAL' }],
+    }] });
+    expect((await get(`/work/orders/${combined.id}`)).body.products[0].activities)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ area: 'PRINTING', printingType: 'PRINT' }),
+        expect.objectContaining({ area: 'EXTERNAL' }),
+      ]));
   });
 });
 

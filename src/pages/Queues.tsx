@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Check, CheckCircle2, ClipboardCheck, Clock3, Hammer, MapPin, Plus, Printer, Ruler, Workflow } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, ClipboardCheck, Clock3, Hammer, MapPin, Pencil, Plus, Printer, Ruler, Trash2, Workflow } from 'lucide-react';
 import { useApp } from '../data/AppContext';
-import { apiChangeActivity, apiListActivities, usingApi } from '../data/api';
-import type { OrderAction, OrderActivity, Role, WorkArea, WorkOrder } from '../domain/types';
-import { areaOf, dateOnly, formatDate, formatMeasure, formatNumber, isAdmin, normalize, ROUTE_LABELS, today, visibleOrders } from '../domain/utils';
+import { apiChangeActivity, apiListActivities, apiSaveLaserMinutes, apiUpdateDesignDetails, apiWorkOrder, usingApi } from '../data/api';
+import type { Material, OrderAction, OrderActivity, Role, WorkArea, WorkOrder } from '../domain/types';
+import { areaOf, dateOnly, formatDate, formatMeasure, formatNumber, isAdmin, MATERIALS, normalize, ROUTE_LABELS, today, visibleOrders } from '../domain/utils';
 import { Button, Card, DataTable, EmptyState, Field, KpiCard, Modal, PageHeader, Pagination, SearchInput, WorkBadge } from '../components/ui';
 import './operations.css';
 
@@ -81,6 +81,7 @@ const areaForDepartment: Record<QueueDepartment, WorkArea> = {
   DISENO: 'DESIGN', IMPRESION: 'PRINTING', TALLER: 'WORKSHOP',
 };
 const activityStatusLabel = { PENDING: 'Pendiente', IN_PROGRESS: 'En proceso', COMPLETED: 'Terminada' } as const;
+type DesignMaterialDraft = { key: string; material: Material; length: string; width: string };
 
 function CompositeActivityQueue({ department }: { department: QueueDepartment }) {
   const { user, data, refreshData, toast } = useApp();
@@ -91,6 +92,12 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
   const [busyId, setBusyId] = useState('');
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [laserMinutes, setLaserMinutes] = useState<Record<string, string>>({});
+  const [editActivity, setEditActivity] = useState<OrderActivity | null>(null);
+  const [editDescription, setEditDescription] = useState('');
+  const [editMaterials, setEditMaterials] = useState<DesignMaterialDraft[]>([]);
+  const [editHasPrinting, setEditHasPrinting] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
   const pageSize = 12;
   const area = areaForDepartment[department];
 
@@ -128,6 +135,54 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
     } finally { setBusyId(''); }
   }
 
+  async function saveLaser(activity: OrderActivity) {
+    if (!activity.id || busyId) return;
+    const minutes = Number(laserMinutes[activity.id]);
+    if (!Number.isSafeInteger(minutes) || minutes < 1) { setError('Indica una cantidad entera de minutos mayor que cero.'); return; }
+    setBusyId(activity.id); setError('');
+    try {
+      await apiSaveLaserMinutes(activity.id, minutes);
+      setRevision(value => value + 1);
+      await refreshData();
+      toast('Tiempo de corte láser guardado.');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No fue posible guardar los minutos de corte láser.'); }
+    finally { setBusyId(''); }
+  }
+
+  async function openDesignEdit(activity: OrderActivity) {
+    if (!activity.orderId || !activity.productId || busyId) return;
+    setBusyId(activity.id || 'design-edit'); setError('');
+    try {
+      const result = await apiWorkOrder(activity.orderId);
+      const product = result.products.find(item => item.id === activity.productId);
+      if (!product) throw new Error('No encontramos el producto de esta actividad.');
+      const printing = product.activities.find(item => item.area === 'PRINTING');
+      setEditActivity(activity);
+      setEditDescription(product.description);
+      setEditHasPrinting(Boolean(printing && printing.printingType !== 'LASER'));
+      setEditMaterials(product.materials.map(material => ({ key: material.id || crypto.randomUUID(), material: material.material, length: String(material.length), width: String(material.width) })));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No fue posible abrir la edición del trabajo.'); }
+    finally { setBusyId(''); }
+  }
+
+  async function saveDesignEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editActivity?.id || editSaving) return;
+    if (!editDescription.trim()) { setError('La descripción del trabajo es obligatoria.'); return; }
+    if (editHasPrinting && !editMaterials.length) { setError('Agrega al menos un material para Impresión.'); return; }
+    const materials = editMaterials.map(item => ({ material: item.material, length: Number(item.length), width: Number(item.width) }));
+    if (editHasPrinting && materials.some(item => !Number.isFinite(item.length) || item.length <= 0 || item.length > 100000 || !Number.isFinite(item.width) || item.width <= 0 || item.width > 100000 || Math.abs(item.length * 1000 - Math.round(item.length * 1000)) > .0001 || Math.abs(item.width * 1000 - Math.round(item.width * 1000)) > .0001)) { setError('Cada material necesita largo y ancho válidos, mayores que cero y con máximo tres decimales.'); return; }
+    setEditSaving(true); setError('');
+    try {
+      await apiUpdateDesignDetails(editActivity.id, { description: editDescription.trim(), ...(editHasPrinting ? { materials } : {}) });
+      setEditActivity(null);
+      setRevision(value => value + 1);
+      await refreshData();
+      toast('Información técnica del trabajo guardada.');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No fue posible guardar la información del trabajo.'); }
+    finally { setEditSaving(false); }
+  }
+
   return <Card className="ops-activity-section">
     <div className="ops-activity-header"><div><span className="eyebrow">Trabajo por producto</span><h2>Actividades de {department === 'DISENO' ? 'Diseño' : department === 'IMPRESION' ? 'Impresión' : 'Taller'}</h2><p className="muted">Cada producto conserva su propio recorrido. El importe comercial permanece en la OT principal.</p></div><span className="ops-area-chip">{total} actividades</span></div>
     {error && <p className="notice notice-warning" role="alert">{error}</p>}
@@ -135,24 +190,36 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
       <div className="ops-activity-grid">{items.map(activity => {
         const owner = data.users.find(person => person.id === activity.assignedUserId);
         const canClaim = department === 'DISENO' && user?.role === 'DISENO' && !activity.assignedUserId && activity.status === 'PENDING';
-        const canOperate = user?.role === department && (department !== 'DISENO' || activity.assignedUserId === user.id);
+        const canOperate = isAdmin(user?.role) || user?.role === department && (department !== 'DISENO' || activity.assignedUserId === user.id);
+        const canEditDesign = department === 'DISENO' && user?.role === 'DISENO' && activity.assignedUserId === user.id && activity.status !== 'COMPLETED';
+        const isLaser = department === 'IMPRESION' && activity.printingType === 'LASER';
         const materials = activity.materials ?? [];
         return <article key={activity.id} className={`ops-activity-card is-${activity.status?.toLowerCase() || 'pending'}`}>
           <div className="ops-activity-top"><Link className="link cell-title" to={`/orders/${activity.orderId}`}>OT #{String(activity.orderNumber ?? '').padStart(4, '0')}</Link><span className="ops-area-chip">{activityStatusLabel[activity.status || 'PENDING']}</span></div>
           <h3>{activity.productDescription || 'Trabajo sin descripción'}</h3>
-          {activity.specifications && <p className="ops-activity-specs">{activity.specifications}</p>}
           {department === 'DISENO' && <p className="muted ops-small">Responsable: {owner?.name || (activity.assignedUserId ? 'Diseñador asignado' : 'Sin asignar')}</p>}
+          {isLaser && <div className="ops-laser-summary"><strong>Corte láser · $1.000 COP/min</strong><span>{activity.laserMinutes ? `${activity.laserMinutes} minutos registrados` : 'Tiempo pendiente por registrar'}</span></div>}
           {materials.length > 0 && <div className="ops-activity-materials">{materials.map((material, index) => <span key={material.id || index}>{material.material} · {formatMeasure(material.length)} × {formatMeasure(material.width)} m · {formatMeasure(material.areaM2 ?? areaOf(material))} m²</span>)}</div>}
           {activity.ready === false && activity.status === 'PENDING' && <p className="ops-activity-wait">Espera la actividad anterior de este producto.</p>}
           <div className="ops-activity-actions"><Link className="link ops-detail-link" to={`/orders/${activity.orderId}`}>Ver OT <ArrowRight size={14} /></Link>
             {canClaim && <Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void change(activity, 'claim')}>Tomar tarea</Button>}
+            {canEditDesign && <Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void openDesignEdit(activity)}><Pencil size={14} /> Editar trabajo</Button>}
+            {canOperate && isLaser && activity.status !== 'COMPLETED' && !!activity.id && <div className="ops-laser-entry"><input className="input" type="number" min="1" step="1" aria-label={`Minutos de corte láser para OT ${activity.orderNumber}`} value={laserMinutes[activity.id] ?? String(activity.laserMinutes ?? '')} onChange={event => setLaserMinutes(current => ({ ...current, [activity.id!]: event.target.value }))} /><span>min</span><Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void saveLaser(activity)}>Guardar</Button></div>}
             {canOperate && activity.status === 'PENDING' && activity.ready !== false && <Button type="button" disabled={!!busyId} onClick={() => void change(activity, 'start')}>Iniciar</Button>}
-            {canOperate && activity.status === 'IN_PROGRESS' && <Button type="button" disabled={!!busyId} onClick={() => void change(activity, 'complete')}>Finalizar</Button>}
+            {canOperate && activity.status === 'IN_PROGRESS' && <Button type="button" disabled={!!busyId || isLaser && !activity.laserMinutes} onClick={() => void change(activity, 'complete')}>Finalizar</Button>}
           </div>
         </article>;
       })}</div>
       <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
     </>}
+    <Modal open={Boolean(editActivity)} onClose={() => { if (!editSaving) setEditActivity(null); }} title="Editar información del trabajo">
+      <form className="stack" onSubmit={saveDesignEdit} noValidate>
+        <Field label="Descripción del trabajo *" htmlFor="design-work-description"><textarea id="design-work-description" className="textarea" rows={4} value={editDescription} onChange={event => setEditDescription(event.target.value)} /></Field>
+        {editHasPrinting && <div className="ops-design-material-editor"><div className="ops-design-material-heading"><strong>Materiales para Impresión</strong><Button type="button" variant="secondary" onClick={() => setEditMaterials(current => [...current, { key: crypto.randomUUID(), material: 'Panaflex', length: '', width: '' }])}><Plus size={14} /> Agregar material</Button></div>{editMaterials.map((material, index) => <div className="ops-design-material-row" key={material.key}><Field label={`Material ${index + 1}`} htmlFor={`design-material-${material.key}`}><select id={`design-material-${material.key}`} className="select" value={material.material} onChange={event => setEditMaterials(current => current.map(item => item.key === material.key ? { ...item, material: event.target.value as Material } : item))}>{MATERIALS.map(item => <option key={item} value={item}>{item}</option>)}</select></Field><Field label="Largo (m)" htmlFor={`design-length-${material.key}`}><input id={`design-length-${material.key}`} className="input" type="number" min="0.001" step="0.001" value={material.length} onChange={event => setEditMaterials(current => current.map(item => item.key === material.key ? { ...item, length: event.target.value } : item))} /></Field><Field label="Ancho (m)" htmlFor={`design-width-${material.key}`}><input id={`design-width-${material.key}`} className="input" type="number" min="0.001" step="0.001" value={material.width} onChange={event => setEditMaterials(current => current.map(item => item.key === material.key ? { ...item, width: event.target.value } : item))} /></Field><button type="button" className="ops-design-material-remove" aria-label={`Quitar material ${index + 1}`} onClick={() => setEditMaterials(current => current.filter(item => item.key !== material.key))}><Trash2 size={16} /></button></div>)}</div>}
+        {error && <p className="notice notice-warning" role="alert">{error}</p>}
+        <div className="actions"><Button type="button" variant="secondary" onClick={() => setEditActivity(null)} disabled={editSaving}>Cancelar</Button><Button type="submit" disabled={editSaving}><Check size={15} /> {editSaving ? 'Guardando…' : 'Guardar cambios'}</Button></div>
+      </form>
+    </Modal>
   </Card>;
 }
 

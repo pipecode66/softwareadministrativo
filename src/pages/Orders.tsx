@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowRight, CheckCheck, ClipboardList, FilterX, Plus, Wallet } from 'lucide-react';
+import { ArrowRight, CheckCheck, ClipboardList, FilterX, Plus, Trash2, Wallet } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { WorkOrder } from '../domain/types';
+import { deleteOrderDraft, loadOrderDraft, ORDER_DRAFT_EVENT, type OrderFormDraft } from '../data/orderDraft';
+import type { OrderDraftRecord } from '../data/api';
 import { canCreate, dateOnly, financials, formatCOP, formatDate, isAdmin, STATUS_LABELS, visibleOrders } from '../domain/utils';
 import { Button, Card, DataTable, DocumentBadge, EmptyState, Field, KpiCard, PageHeader, Pagination, PaymentBadge, SearchInput, WorkBadge } from '../components/ui';
 import './orders.css';
@@ -22,6 +24,9 @@ export function OrdersPage() {
   const [from, setFrom] = useState(params.get('from') || '');
   const [to, setTo] = useState(params.get('to') || '');
   const [page, setPage] = useState(1);
+  const [draft, setDraft] = useState<OrderDraftRecord<OrderFormDraft> | null>(null);
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [draftError, setDraftError] = useState('');
   const admin = isAdmin(user?.role);
   const clientId = params.get('client') || params.get('clientId');
   const orders = useMemo(() => user ? visibleOrders(user, data.orders) : [], [user, data.orders]);
@@ -68,6 +73,28 @@ export function OrdersPage() {
   ];
   const selectedClient = data.clients.find(client => client.id === clientId);
 
+  useEffect(() => {
+    if (!user || !canCreate(user.role)) { setDraft(null); return; }
+    let active = true;
+    const load = () => void loadOrderDraft<OrderFormDraft>(user.id).then(result => {
+      if (active) { setDraft(result); setDraftError(''); }
+    }).catch(reason => {
+      if (active) setDraftError(reason instanceof Error ? reason.message : 'No fue posible cargar el borrador.');
+    });
+    load();
+    window.addEventListener(ORDER_DRAFT_EVENT, load);
+    window.addEventListener('storage', load);
+    return () => { active = false; window.removeEventListener(ORDER_DRAFT_EVENT, load); window.removeEventListener('storage', load); };
+  }, [user?.id, user?.role]);
+
+  async function removeDraft() {
+    if (!user || draftBusy) return;
+    setDraftBusy(true); setDraftError('');
+    try { await deleteOrderDraft(user.id); setDraft(null); }
+    catch (reason) { setDraftError(reason instanceof Error ? reason.message : 'No fue posible eliminar el borrador.'); }
+    finally { setDraftBusy(false); }
+  }
+
   return <div className="page-stack orders-page">
     <PageHeader eyebrow="CONTROL DE PRODUCCIÓN" title="Órdenes de trabajo" description={user?.role === 'DISENO' ? 'Consulta el avance de los trabajos que has registrado.' : 'Cada trabajo, su recorrido y su estado en un solo lugar.'} actions={canCreate(user?.role) ? <Link className="btn btn-primary" to="/orders/new"><Plus size={18} /> Nueva orden</Link> : undefined} />
     <div className="metrics-grid">
@@ -76,6 +103,8 @@ export function OrdersPage() {
       {admin ? <KpiCard label="Cartera por recaudar" value={formatCOP(balances)} icon={Wallet} meta="Saldo de las órdenes visibles" tone="orange" /> : <KpiCard label="Trabajos terminados" value={orders.filter(completed).length} icon={CheckCheck} meta="Producción completada" tone="green" />}
     </div>
     <Card className="orders-list-card">
+      {draft && <section className="orders-draft" aria-label="Borrador de orden"><div className="orders-draft-copy"><span className="eyebrow">BORRADORES</span><strong>{draft.payload.products.find(product => product.description.trim())?.description || 'Orden de trabajo sin descripción'}</strong><span>{data.clients.find(item => item.id === draft.payload.clientId)?.name || 'Cliente por seleccionar'} · Guardado {formatDate(draft.updatedAt, true)}</span></div><div className="orders-draft-actions"><Link className="order-view-link" to="/orders/new" aria-label="Abrir borrador"><ArrowRight size={18} /></Link><button className="order-draft-delete" type="button" aria-label="Eliminar borrador" disabled={draftBusy} onClick={() => void removeDraft()}><Trash2 size={17} /></button></div></section>}
+      {draftError && <p className="notice notice-warning orders-draft-error" role="alert">{draftError}</p>}
       <div className="order-tabs" aria-label="Filtrar órdenes por situación">
         {tabs.map(item => <button key={item.id} type="button" className={`order-tab ${tab === item.id ? 'is-active' : ''}`} aria-pressed={tab === item.id} onClick={() => { setTab(item.id); setPage(1); }}>{item.label}<span>{item.count}</span></button>)}
       </div>

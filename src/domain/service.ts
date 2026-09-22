@@ -9,7 +9,12 @@ export function validateInput(data: AppData, input: OrderInput, exceptId?: strin
   assert(client, 'Selecciona un cliente registrado.');
   if (input.documentType === 'FACT') assert(client.identification.trim(), 'El cliente de una FACT necesita identificación.');
   assert(input.description.trim().length > 0, 'La descripción del trabajo es obligatoria.');
-  assert(Number.isFinite(input.value) && roundMoney(input.value) > 0 && input.value <= 999999999999, 'El valor del trabajo es obligatorio y debe ser mayor que cero.');
+  const deferredLaserValue = input.documentType === 'FACT' && Boolean(input.products?.length) && input.value === 0 && input.products!.every(product => {
+    const activities = product.activities;
+    return activities.some(activity => activity.area === 'PRINTING' && activity.printingType === 'LASER')
+      && activities.every(activity => activity.area === 'DESIGN' || activity.area === 'PRINTING');
+  });
+  assert(Number.isFinite(input.value) && (roundMoney(input.value) > 0 || deferredLaserValue) && input.value <= 999999999999, 'El valor del trabajo es obligatorio y debe ser mayor que cero, salvo cuando todo el cobro corresponda al corte láser.');
   assert(['REM','FACT'].includes(input.documentType), 'Selecciona REM o FACT.');
   assert(CATEGORIES.includes(input.category), 'Selecciona una categoría comercial.');
   assert(['PRINT_ONLY','IMPRENTA','EXTERNO','WORKSHOP_ONLY','PRINT_WORKSHOP','MULTI_AREA'].includes(input.route), 'Selecciona un recorrido válido.');
@@ -17,11 +22,16 @@ export function validateInput(data: AppData, input: OrderInput, exceptId?: strin
   assert(retentions.every(v => Number.isFinite(v) && v >= 0), 'Las retenciones deben ser importes positivos o cero.');
   assert(retentions.every(v => v <= 999999999999), 'Las retenciones superan el importe máximo permitido.');
   if (input.products) {
-    assert(input.products.length > 0 && input.products.every(product => product.description.trim() && product.quantity > 0 && product.unitValue >= 0 && product.activities.length), 'Cada producto necesita descripción, cantidad, valor y actividades.');
+    assert(input.products.length > 0 && input.products.every(product => product.description.trim() && Number.isSafeInteger(product.quantity) && product.quantity > 0 && product.unitValue >= 0 && product.activities.length), 'Cada producto necesita descripción, cantidad entera, valor y actividades.');
     assert(Math.round(input.products.reduce((sum, product) => sum + roundMoney(product.quantity * product.unitValue), 0) * 100) === Math.round(input.value * 100), 'La suma de productos debe coincidir con el valor de la OT.');
     assert(!input.printing, 'Las medidas de impresión se registran en cada producto.');
-    assert(input.products.every(product => product.activities.some(activity => activity.area === 'PRINTING') === (product.materials.length > 0)), 'Cada trabajo de impresión necesita material y solo impresión puede tenerlo.');
-    if (!client.specialPayment && !exceptId) assert(input.initialPayment, 'Este cliente requiere un abono inicial.');
+    assert(input.products.every(product => {
+      const printing = product.activities.find(activity => activity.area === 'PRINTING');
+      if (!printing) return product.materials.length === 0;
+      if ((printing.printingType ?? 'PRINT') === 'LASER') return product.materials.length === 0;
+      return product.materials.length > 0 || product.activities.some(activity => activity.area === 'DESIGN');
+    }), 'Los materiales corresponden únicamente a Impresión; el corte láser no los requiere.');
+    if (!client.specialPayment && !exceptId && input.value > 0) assert(input.initialPayment, 'Este cliente requiere un abono inicial.');
     if (input.initialPayment) assert(input.initialPayment.amount > 0 && ['EFECTIVO','BANCOLOMBIA','DAVIVIENDA'].includes(input.initialPayment.method), 'Indica el valor y medio del abono inicial.');
   } else if (!['WORKSHOP_ONLY','EXTERNO'].includes(input.route)) {
     assert(input.printing && MATERIALS.includes(input.printing.material), 'Selecciona el material de impresión.');

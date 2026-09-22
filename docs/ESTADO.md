@@ -1,71 +1,74 @@
 # Estado de continuidad
 
-Actualizado: 2026-09-21.
+Actualizado: 2026-09-22.
 
-## Resultado del tramo
+## Estado actual
 
-La implementación solicitada el 20/09 quedó integrada localmente en la rama feature/solicitudes-septiembre-2026, iniciada en ccb3e94. Incluye frontend, endpoints, permisos, migraciones y pruebas; no se ha mezclado ni publicado en main desde esta sesión.
+El nuevo tramo solicitado quedó implementado y verificado localmente sobre `main`. Al cerrar esta sesión debe quedar en un commit local único; no se ha autorizado ni realizado `push`, despliegue o ejecución de la migración nueva en Supabase.
 
-- Clientes: nombre y celular obligatorios; identificación opcional salvo FACT; modalidad Especial; alta e historial para Diseño con privacidad financiera.
-- Pagos: abono inicial con Efectivo/Bancolombia/Davivienda, abonos posteriores y multiabono transaccional por OT seleccionadas, de menor a mayor saldo.
-- Finanzas: nuevas FACT con IVA 19 % y retenciones automáticas descontadas cuando la base supera $524.000; edición administrativa; certificados independientes.
-- Reportes: venta FACT sin IVA, tarjeta IVA, retenciones pendientes, cartera con y sin IVA y consumo por cuatro materiales.
-- Producción: OT principal con varios productos, materiales y actividades internas sin duplicar ventas; Diseño, Impresión, Taller y Externo; instalación opcional.
-- Diseño: asignación o toma de tareas y vista de carga por diseñador; Diseño precede a Impresión.
-- Interfaz: Externo elimina medidas/materiales internos, navegación por rol corregida, textos de demostración retirados y responsive comprobado entre 320 y 1440 px.
-- API: los perfiles de producción no reciben valores comerciales; edición, pagos, certificados y multiabono permanecen restringidos a Administración.
+La base remota conocida tiene aplicadas manualmente las migraciones 004 a 007. Antes de publicar este tramo se debe ejecutar `server/migrations/008_laser_drafts.sql` en Supabase. La migración habilita RLS en `order_drafts`, por lo que debe elegirse la opción de ejecutar con RLS si el editor vuelve a consultarlo.
 
-Archivos principales:
+## Funcionalidades terminadas en este tramo
 
-- server/migrations/004_finance.sql a 007_product_dimensions.sql
-- server/src/orders/, server/src/reports/, server/src/clients/ y server/src/work/
-- src/pages/NewOrderEditor.tsx, Clients.tsx, Portfolio.tsx, Reports.tsx, Queues.tsx y OrderDetail.tsx
-- tests/finance.spec.ts, tests/api-e2e.spec.ts y pruebas del servidor
+- Impresión se divide por actividad en Impresión normal o Corte Láser.
+- Corte Láser usa una tarifa fija de $1.000 COP por minuto. Impresión y Administración pueden registrar minutos enteros; no se puede finalizar sin tiempo registrado.
+- Al completar Corte Láser se recompone el valor de la OT sin duplicar cargos. En FACT se actualiza el IVA sobre la nueva base y se conservan intactas las retenciones originales.
+- Una FACT formada únicamente por Corte Láser puede iniciar en $0 y sin abono; no se permite esa excepción para REM, Taller, Externo ni productos mixtos sin valor.
+- Cada creador conserva como máximo un borrador de OT. Solo su propietario puede consultarlo o eliminarlo; aparece primero en Historial de órdenes y no consume consecutivo.
+- El selector de clientes incorpora búsqueda por nombre, identificación o celular.
+- Se retiraron especificaciones y largo/ancho generales del producto. Las medidas siguen existiendo únicamente en los materiales de Impresión.
+- La cantidad de producto acepta enteros desde 1 y se presenta sin decimales falsos como `1,000`.
+- Las OT creadas por Diseño reciben automáticamente una actividad de Diseño en primera posición, asignada al mismo creador; el diseñador ya no selecciona su propia área.
+- El diseñador asignado puede editar la descripción del trabajo y los materiales/medidas destinados a Impresión antes de completar Diseño.
+- Externo puede combinarse dentro del mismo producto con Diseño, Impresión y Taller.
+- Administración puede iniciar y finalizar actividades de todas las áreas, respetando orden y requisitos productivos.
+- Se corrigió el layout responsive de la carga de diseñadores y de las tarjetas de las bandejas independientes; los datos ya no quedan concatenados.
 
-## Verificación final
+## Archivos principales
 
-- npm run typecheck: aprobado.
-- npm test: 146/146.
-- npm run build: aprobado.
-- npm --prefix server run typecheck: aprobado.
-- npm --prefix server test: 252/252 en 7 archivos.
-- npm run test:e2e: 29/29, incluidos 320, 390, 768, 1024 y 1440 px.
-- npm run test:e2e:api: 2/2; inicia sesión real, consulta reportes y crea cliente más OT FACT compuesta con abono.
-- git diff --check: sin errores de espacios.
+- `server/migrations/008_laser_drafts.sql`
+- `server/src/orders/domain.ts`, `router.ts` y `service.ts`
+- `server/src/work/schemas.ts`, `router.ts` y `service.ts`
+- `server/tests/laser_drafts.test.ts` y `server/tests/work.test.ts`
+- `src/pages/NewOrderEditor.tsx`, `Orders.tsx`, `Queues.tsx` y `OrderDetail.tsx`
+- `src/data/orderDraft.ts`, `src/data/api.ts` y tipos del dominio
+- `src/pages/orders.css` y `src/pages/operations.css`
 
-Las pruebas usan bases PGlite aisladas o el adaptador local; no escriben en PostgreSQL productivo.
+## Verificación local
 
-## Limpieza anterior al 21/09/2026
+- `npm run typecheck`: aprobado.
+- `npm test`: 146/146.
+- `npm run build`: aprobado.
+- `npm --prefix server run typecheck`: aprobado.
+- `npm --prefix server test`: 267/267 en 8 archivos.
+- `npm run test:e2e`: 31/31, incluidos 320, 390, 768, 1024 y 1440 px.
+- `npm run test:e2e:api`: 4/4 con API y PGlite reales; cubre FACT, láser, carga responsive y edición técnica de Diseño.
+- Migración histórica 001→008 comprobada sobre PGlite con backfill de actividades de Impresión y restricciones nuevas.
+- `git diff --check`: sin errores al cierre.
 
-Se implementó la utilidad segura en:
+Las pruebas usan PGlite aislado o el adaptador local; no escriben en PostgreSQL productivo.
 
-- server/src/maintenance/cleanup-test-data.ts
-- server/src/cli/cleanup-test-data.ts
-- server/tests/cleanup-test-data.test.ts
-- docs/LIMPIEZA_DATOS_2026-09-21.md
+## Cambios locales anteriores incluidos en el mismo cierre
 
-La herramienta hace vista previa obligatoria, usa un token ligado al destino y a la instantánea, bloquea cambios concurrentes y elimina en una transacción OT, pagos, eventos, productos, materiales, actividades, lotes y clientes anteriores al corte. Conserva usuarios y sesiones. Si no queda ninguna OT, el siguiente consecutivo es 1; si quedan OT del día, continúa desde el máximo conservado + 1 sin renumerarlas.
+- `server/maintenance/borrar_datos_prueba_antes_2026-09-21.sql`: limpieza manual con corte fijo al inicio del 21/09 en Colombia; conserva usuarios y sesiones. No se ha ejecutado remotamente.
+- `src/pages/Operation.tsx` y estilos: Carga de Diseño separada en tarjetas legibles.
+- Pruebas de la utilidad de limpieza y del layout responsive con API.
 
-No se ejecutó contra la base desplegada: en el equipo no hay DATABASE_URL ni sesión Vercel autenticada. La vista previa contra la PGlite local terminó de forma segura antes de escribir porque esa base antigua aún no tiene las migraciones 004–007. No se eliminó ningún dato local ni remoto.
+## Pendiente para producción
 
-## Paso productivo pendiente
-
-Antes de considerar el cambio publicado:
-
-1. Obtener un respaldo verificable de PostgreSQL/Supabase y detener escrituras.
-2. Cargar de forma segura las variables reales, sin pegarlas en el chat ni en Git.
-3. Ejecutar npm --prefix server run db:migrate.
-4. Ejecutar la vista previa:
-
-   npm run api:cleanup-tests -- --cutoff=2026-09-21
-
-5. Verificar destino, cantidades y próximo número; ejecutar con el token mostrado.
-6. Publicar la aplicación, comprobar login/OT/reportes y conservar el respaldo.
-
-No publicar esta rama antes de aplicar las migraciones: el código nuevo depende de las tablas y columnas 004–007.
+1. Tener respaldo verificable de Supabase y evitar escrituras durante la migración.
+2. Ejecutar manualmente `server/migrations/008_laser_drafts.sql`; no usar `db:bootstrap`.
+3. Publicar el commit únicamente cuando el usuario lo autorice mediante `push`.
+4. Confirmar en producción creación/restauración/eliminación de borrador, Corte Láser y edición técnica de Diseño.
+5. El SQL de limpieza es una operación separada y destructiva: solo debe ejecutarse manualmente con respaldo si aún se desea retirar los datos de prueba anteriores al 21/09.
 
 ## Comando para retomar
 
-git status --short --branch; npm run typecheck; npm test; npm --prefix server run typecheck; npm --prefix server test
-
-Después, autenticar el entorno productivo o configurar DATABASE_URL de manera local y seguir docs/LIMPIEZA_DATOS_2026-09-21.md. No ejecutar db:bootstrap porque los usuarios existentes deben conservarse.
+```powershell
+git status --short --branch
+git log -3 --oneline
+npm run typecheck
+npm test
+npm --prefix server run typecheck
+npm --prefix server test
+```

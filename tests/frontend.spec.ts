@@ -27,12 +27,13 @@ async function storedOrders(page: Page): Promise<WorkOrder[]> {
 
 async function fillOrder(page: Page, _number = 101, route = 'PRINT_WORKSHOP') {
   await page.goto('/orders/new');
-  await page.getByLabel('Cliente / Razón social *').selectOption('c-1');
+  await page.getByLabel('Cliente o razón social').selectOption('c-1');
   const product = page.locator('.order-product-card').first();
   await product.getByLabel('Descripción del producto *').fill('Aviso de prueba funcional con producción.');
   await product.getByLabel('Valor unitario antes de IVA (COP) *').fill('100000');
   if (route !== 'WORKSHOP_ONLY') {
     await product.getByRole('checkbox', { name: 'Impresión' }).check();
+    await product.getByRole('button', { name: 'Agregar material' }).click();
     await product.getByLabel('Largo (m)').fill('2.5');
     await product.getByLabel('Ancho (m)').fill('1.2');
   }
@@ -89,7 +90,12 @@ test('creación FACT multiproducto: retenciones automáticas, varios materiales 
   await external.getByLabel('Descripción del producto *').fill('Servicio externo de montaje');
   await external.getByLabel('Valor unitario antes de IVA (COP) *').fill('200000');
   await external.getByRole('checkbox', { name: 'Externo' }).check();
-  await expect(external.getByText('Materiales de impresión')).toHaveCount(0);
+  await expect(external.getByRole('checkbox', { name: 'Diseño' })).toBeEnabled();
+  await expect(external.getByRole('checkbox', { name: 'Impresión' })).toBeEnabled();
+  await expect(external.getByRole('checkbox', { name: 'Taller' })).toBeEnabled();
+  await external.getByRole('checkbox', { name: 'Diseño' }).check();
+  await external.getByRole('checkbox', { name: 'Impresión' }).check();
+  await external.getByRole('checkbox', { name: 'Taller' }).check();
   await expect(external.getByLabel('Largo del producto (m)')).toHaveCount(0);
   await expect(external.getByLabel('Ancho del producto (m)')).toHaveCount(0);
   await external.getByLabel('Descripción del producto *').fill('');
@@ -182,8 +188,12 @@ test('Diseño crea directamente y no accede a finanzas, impresión ni usuarios',
   await login(page, 'diseno@intermedios.local');
   await expect(page).toHaveURL(/\/design$/);
   await fillOrder(page, 105, 'WORKSHOP_ONLY');
+  await expect(page.locator('.order-product-card').first().getByRole('checkbox', { name: 'Diseño' })).toHaveCount(0);
+  await expect(page.getByText('La actividad de Diseño se asignará automáticamente a tu perfil.')).toBeVisible();
   await saveOrder(page);
-  expect((await storedOrders(page)).at(-1)!.status).toBe('IN_PRODUCTION');
+  const created = (await storedOrders(page)).at(-1)!;
+  expect(created.status).toBe('IN_PRODUCTION');
+  expect(created.products?.[0].activities[0]).toMatchObject({ area: 'DESIGN', assignedUserId: 'u-design' });
   await expect(page.getByRole('heading', { name: 'Control financiero' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Enviar a producción' })).toHaveCount(0);
   for (const route of ['/reports', '/portfolio', '/printing', '/settings/users']) {
@@ -230,7 +240,39 @@ test('directorio: nuevo cliente disponible al crear una OT', async ({ page }) =>
   await dialog.getByRole('button', { name: 'Guardar cliente' }).click();
   await expect(dialog).toHaveCount(0);
   await page.goto('/orders/new');
-  await expect(page.getByLabel('Cliente / Razón social *').locator('option')).toContainText(['Cliente e2e Café · TEST-101']);
+  await expect(page.getByLabel('Cliente o razón social').locator('option')).toContainText(['Cliente e2e Café · TEST-101']);
+});
+
+test('nueva OT filtra clientes y conserva un solo borrador privado eliminable', async ({ page }) => {
+  await login(page);
+  await page.goto('/orders/new');
+  const clientSearch = page.getByLabel('Buscar y seleccionar cliente *');
+  await clientSearch.fill('café origen');
+  const clientSelect = page.getByLabel('Cliente o razón social');
+  await expect(clientSelect.locator('option')).toContainText(['Café Origen · 900.123.003-3']);
+  await expect(clientSelect.locator('option')).not.toContainText(['SuperGiros S.A.']);
+  await clientSelect.selectOption('c-3');
+  const product = page.locator('.order-product-card').first();
+  await product.getByLabel('Descripción del producto *').fill('Trabajo conservado en borrador');
+  await expect(product.getByLabel('Cantidad *')).toHaveAttribute('step', '1');
+  await page.waitForFunction(() => Boolean(localStorage.getItem('intermedios-order-draft:u-master')));
+  await page.goto('/orders');
+  const draft = page.locator('.orders-draft');
+  await expect(draft).toBeVisible();
+  await expect(draft).toContainText('Trabajo conservado en borrador');
+  await expect(draft).toContainText('Café Origen');
+  await draft.getByRole('button', { name: 'Eliminar borrador' }).click();
+  await expect(draft).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('intermedios-order-draft:u-master'))).toBeNull();
+});
+
+test('cantidad de producto usa unidades enteras y se muestra sin decimales', async ({ page }) => {
+  await login(page);
+  await fillOrder(page, 106, 'WORKSHOP_ONLY');
+  await saveOrder(page);
+  const quantity = page.getByText(/^Cantidad: 1 · Valor unitario:/);
+  await expect(quantity).toBeVisible();
+  await expect(quantity).not.toContainText('1,000');
 });
 
 test('clientes: exige celular y conserva la condición Especial', async ({ page }) => {
@@ -412,7 +454,7 @@ test('regresión móvil: nombre de cliente de 115 caracteres sin espacios no des
   for (const route of ['/clients/c-1', '/clients', '/orders/ot-1', '/orders/new', '/portfolio', '/operation', '/printing']) {
     await page.goto(route);
     await expect(page.locator('main h1')).toBeVisible();
-    if (route === '/orders/new') await page.getByLabel('Cliente / Razón social *').selectOption('c-1');
+    if (route === '/orders/new') await page.getByLabel('Cliente o razón social').selectOption('c-1');
     await page.evaluate(() => document.fonts.ready);
     const dimensions = await page.evaluate(() => ({ viewport: innerWidth, body: document.body.scrollWidth, document: document.documentElement.scrollWidth }));
     expect(dimensions.body, `${route}: nombre largo en body`).toBeLessThanOrEqual(dimensions.viewport + 1);

@@ -107,7 +107,7 @@ describe('Validación y creación de órdenes', () => {
     expect(() => validateInput(data(), input({ category }))).not.toThrow();
   });
   it('crea OT multiproducto con consecutivo, abono inicial y retenciones nuevas', () => {
-    const products = [{ description: 'Banner', quantity: 1, unitValue: 600000, specifications: '',
+    const products = [{ description: 'Banner', quantity: 1, unitValue: 600000,
       materials: [{ material: 'Banner' as const, length: 2, width: 1 }],
       activities: [{ area: 'DESIGN' as const }, { area: 'PRINTING' as const }] }];
     const result = createWorkOrder(data([order()]), user('DISENO'), input({

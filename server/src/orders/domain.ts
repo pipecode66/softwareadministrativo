@@ -27,7 +27,7 @@ const dimension = z.number().finite().min(0.001).max(100000)
   .refine(n => Number(n.toFixed(3)) === n, 'Utiliza máximo tres decimales.');
 export const orderFields = {
   clientId: z.uuid(), description: z.string().trim().min(1).max(10000),
-  value: moneySchema.refine(n => Number.isSafeInteger(n) && n >= 1, 'El valor es obligatorio y debe ser un peso entero desde $1.'),
+  value: moneySchema.refine(n => Number.isSafeInteger(n), 'El valor debe expresarse en pesos enteros.'),
   documentType: z.enum(['REM','FACT']), category: z.enum(categories), route: z.enum(routes),
   requiresInstallation: z.boolean(),
   printing: z.object({ material: z.enum(materials), length: dimension, width: dimension }).strict().optional(),
@@ -36,6 +36,16 @@ export const orderFields = {
   initialPayment: z.object({ date: dateSchema, amount: positivePaymentSchema, method: paymentMethodSchema }).strict().optional(),
 };
 export const orderInputSchema = z.object(orderFields).strict().superRefine((value, ctx) => {
+  const laserOnly = value.documentType === 'FACT' && Boolean(value.products?.length)
+    && value.products!.every(product => {
+      const hasLaser = product.activities.some(activity =>
+        activity.area === 'PRINTING' && activity.printingType === 'LASER');
+      return hasLaser && product.activities.every(activity => activity.area === 'DESIGN'
+        || activity.area === 'PRINTING' && activity.printingType === 'LASER');
+    });
+  if (value.value === 0 && !laserOnly) {
+    ctx.addIssue({ code: 'custom', path: ['value'], message: 'Solo una FACT compuesta exclusivamente por Corte Láser puede iniciar con valor cero.' });
+  }
   if (value.products) {
     const areas = new Set(value.products.flatMap(product => product.activities.map(activity => activity.area)));
     if (value.products.some(product => !product.activities.length)) ctx.addIssue({ code: 'custom', path: ['products'], message: 'Cada producto requiere al menos una actividad de trabajo.' });
@@ -63,6 +73,17 @@ export const transitionSchema = z.object({
   action: z.enum(['send','finishPrinting','finishExternal','startWorkshop','finishWorkshop','install','close']),
   expectedVersion: z.number().int().positive(), date: dateSchema.optional(), note: z.string().trim().max(2000).optional(),
 }).strict();
+
+type DraftJson = string | number | boolean | null | DraftJson[] | { [key: string]: DraftJson };
+const draftJsonSchema: z.ZodType<DraftJson> = z.lazy(() => z.union([
+  z.string().max(10000), z.number().finite(), z.boolean(), z.null(),
+  z.array(draftJsonSchema).max(500),
+  z.record(z.string().min(1).max(100), draftJsonSchema),
+]));
+export const draftPayloadSchema = z.record(z.string().min(1).max(100), draftJsonSchema)
+  .refine(value => Object.keys(value).length <= 100, 'El borrador contiene demasiados campos.');
+export const saveDraftSchema = z.object({ payload: draftPayloadSchema }).strict();
+export type DraftPayload = z.infer<typeof draftPayloadSchema>;
 export type OrderInput = z.infer<typeof orderInputSchema>;
 export type OrderRow = {
   id: string; number: number; client_id: string; description: string; value: string; document_type: 'REM'|'FACT';

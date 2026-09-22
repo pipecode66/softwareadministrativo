@@ -5,12 +5,54 @@ import type { Database, SqlConnection } from '../db/types.js';
 import { ApiError } from '../errors.js';
 import { requireCurrentActor } from '../security/actor.js';
 import { createOrderProducts, replaceOrderProducts } from '../work/service.js';
-import { cents, dateOnly, financials, isAdmin, orderDto, type OrderInput, type OrderRow, type PaymentRow, type bulkPaymentSchema, type createSchema, type editSchema, type paymentSchema, type transitionSchema } from './domain.js';
+import { cents, dateOnly, financials, isAdmin, orderDto, type DraftPayload, type OrderInput, type OrderRow, type PaymentRow, type bulkPaymentSchema, type createSchema, type editSchema, type paymentSchema, type transitionSchema } from './domain.js';
 
 const admins: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL'];
 const creators: Role[] = [...admins, 'DISENO'];
 const missing = () => new ApiError(404, 'ORDER_NOT_FOUND', 'No encontramos esta orden o no está disponible para tu perfil.');
 const conflict = (message: string) => new ApiError(409, 'ORDER_CONFLICT', message);
+interface DraftRow {
+  payload: DraftPayload;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+function draftDto(row: DraftRow | undefined) {
+  return row ? {
+    payload: row.payload,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  } : null;
+}
+
+export async function getOrderDraft(db: Database, auth: AuthSession) {
+  if (!creators.includes(auth.user.role)) {
+    throw new ApiError(403, 'FORBIDDEN', 'Tu perfil no crea borradores de OT.');
+  }
+  const row = (await db.query<DraftRow>(`
+    SELECT payload,created_at,updated_at FROM order_drafts WHERE created_by=$1
+  `, [auth.user.id])).rows[0];
+  return { draft: draftDto(row) };
+}
+
+export async function saveOrderDraft(db: Database, auth: AuthSession, payload: DraftPayload) {
+  return db.transaction(async tx => {
+    const actor = await requireCurrentActor(tx, auth, creators);
+    const row = (await tx.query<DraftRow>(`
+      INSERT INTO order_drafts (created_by,payload) VALUES ($1,$2::jsonb)
+      ON CONFLICT (created_by) DO UPDATE SET payload=excluded.payload,updated_at=clock_timestamp()
+      RETURNING payload,created_at,updated_at
+    `, [actor.id, JSON.stringify(payload)])).rows[0];
+    return { draft: draftDto(row) };
+  });
+}
+
+export async function deleteOrderDraft(db: Database, auth: AuthSession): Promise<void> {
+  await db.transaction(async tx => {
+    const actor = await requireCurrentActor(tx, auth, creators);
+    await tx.query('DELETE FROM order_drafts WHERE created_by=$1', [actor.id]);
+  });
+}
 export function canRead(user: { role: Role; id: string }, row: OrderRow): boolean {
   if (isAdmin(user.role)) return true;
   if (user.role === 'DISENO') return row.created_by === user.id || Boolean(row.has_visible_activity);
@@ -82,21 +124,24 @@ export async function createOrder(db: Database, auth: AuthSession, input: z.infe
     const previous = (await tx.query<OrderRow>('SELECT o.*,c.special_payment FROM orders o JOIN clients c ON c.id=o.client_id WHERE o.created_by = $1 AND o.creation_key = $2', [actor.id, input.requestId])).rows[0];
     if (previous) {
       if (previous.creation_fingerprint !== fingerprint) throw conflict('Este identificador de solicitud ya se utilizó con otros datos.');
+      await tx.query('DELETE FROM order_drafts WHERE created_by=$1', [actor.id]);
       return { order: orderDto(previous, await paymentsOf(tx, previous.id), actor.role), replayed: true };
     }
     const client = await checkClient(tx, input.clientId, input.documentType);
-    if (!client.special_payment && !input.initialPayment) throw new ApiError(400, 'INITIAL_PAYMENT_REQUIRED', 'Indica un abono inicial para este cliente.', 'initialPayment');
+    if (!client.special_payment && normalized.value > 0 && !input.initialPayment) {
+      throw new ApiError(400, 'INITIAL_PAYMENT_REQUIRED', 'Indica un abono inicial para este cliente.', 'initialPayment');
+    }
     if (input.initialPayment && input.initialPayment.date !== dateOnly()) throw new ApiError(400, 'INITIAL_PAYMENT_DATE', 'El abono inicial debe registrarse con la fecha de hoy.', 'initialPayment.date');
     const total = financials({ value:String(normalized.value), document_type:normalized.documentType,
       rete_fuente:String(normalized.reteFuente), rete_iva:String(normalized.reteIva), ica:String(normalized.ica), financial_rule:'NEW' }, []);
-    if (total.collectible <= 0) throw new ApiError(400, 'INVALID_COLLECTIBLE', 'El total a cobrar debe ser mayor que cero.', 'value');
+    if (total.collectible < 0) throw new ApiError(400, 'INVALID_COLLECTIBLE', 'El total a cobrar no puede ser negativo.', 'value');
     if (input.initialPayment && cents(input.initialPayment.amount) > cents(total.collectible)) throw conflict('El abono inicial supera el total a cobrar.');
     const row = (await tx.query<OrderRow>(`
       INSERT INTO orders (client_id,description,value,document_type,category,route,requires_installation,
         material,length,width,rete_fuente,rete_iva,ica,id,created_by,status,creation_key,creation_fingerprint,financial_rule)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'NEW') RETURNING *
     `, [...inputParams(normalized), randomUUID(), actor.id, input.products ? 'IN_PRODUCTION' : 'NEW', input.requestId, fingerprint])).rows[0];
-    if (input.products) await createOrderProducts(tx, row.id, input.products);
+    if (input.products) await createOrderProducts(tx, row.id, input.products, { id: actor.id, role: actor.role });
     else {
       const productId = randomUUID();
       await tx.query(`INSERT INTO order_products (id,order_id,position,description,quantity,unit_value,is_legacy)
@@ -111,6 +156,7 @@ export async function createOrder(db: Database, auth: AuthSession, input: z.infe
         [randomUUID(),row.id,input.initialPayment.date,input.initialPayment.amount,input.initialPayment.method,actor.id,randomUUID()]);
       await event(tx,row,actor.id,'payment',row.status);
     }
+    await tx.query('DELETE FROM order_drafts WHERE created_by=$1', [actor.id]);
     return { order: orderDto({ ...row, special_payment: client.special_payment }, await paymentsOf(tx,row.id), actor.role), replayed: false };
   });
 }
@@ -128,11 +174,13 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
     if (input.initialPayment) throw new ApiError(400, 'INITIAL_PAYMENT_EDIT', 'Los abonos se registran en pagos, no en edición de OT.', 'initialPayment');
     const client = await checkClient(tx, input.clientId, input.documentType);
     const payments = await paymentsOf(tx, id);
-    if (!client.special_payment && payments.length === 0) throw new ApiError(400, 'INITIAL_PAYMENT_REQUIRED', 'Registra primero un abono antes de asignar esta OT a un cliente no especial.', 'clientId');
+    if (!client.special_payment && input.value > 0 && payments.length === 0) {
+      throw new ApiError(400, 'INITIAL_PAYMENT_REQUIRED', 'Registra primero un abono antes de asignar esta OT a un cliente no especial.', 'clientId');
+    }
     const normalized = normalizedInput(input, row);
     const money = financials({ value: String(normalized.value), document_type: normalized.documentType,
       rete_fuente: String(normalized.reteFuente), rete_iva: String(normalized.reteIva), ica: String(normalized.ica), financial_rule: row.financial_rule }, payments);
-    if (money.collectible <= 0) throw new ApiError(400, 'INVALID_COLLECTIBLE', 'El total a cobrar debe ser mayor que cero.', 'value');
+    if (money.collectible < 0) throw new ApiError(400, 'INVALID_COLLECTIBLE', 'El total a cobrar no puede ser negativo.', 'value');
     if (money.balance < 0) throw conflict('El total cobrable no puede ser inferior a los abonos registrados.');
     const updated = (await tx.query<OrderRow>(`
       UPDATE orders SET client_id=$1,description=$2,value=$3,document_type=$4,category=$5,route=$6,requires_installation=$7,

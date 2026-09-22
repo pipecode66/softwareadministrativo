@@ -1,6 +1,16 @@
 .orders-page, .order-form-page, .order-detail-page, .order-print-page { min-width: 0; }
 .orders-page > .metrics-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .orders-list-card { padding: 0; overflow: hidden; }
+.orders-draft { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 21px; border-bottom: 1px solid #fed7aa; background: #fff7ed; }
+.orders-draft-copy { min-width: 0; display: grid; gap: 4px; }
+.orders-draft-copy .eyebrow { margin: 0; color: #c2410c; }
+.orders-draft-copy strong, .orders-draft-copy > span:last-child { overflow-wrap: anywhere; }
+.orders-draft-copy strong { font-size: 13px; color: #0f172a; }
+.orders-draft-copy > span:last-child { color: #64748b; font-size: 11px; }
+.orders-draft-actions { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.order-draft-delete { width: 35px; height: 35px; display: grid; place-items: center; border: 1px solid #fecaca; border-radius: 8px; background: #fff; color: #b91c1c; cursor: pointer; }
+.order-draft-delete:disabled { cursor: wait; opacity: .55; }
+.orders-draft-error { margin: 14px 20px 0; }
 .order-tabs { display: flex; gap: 18px; padding: 0 24px; border-bottom: 1px solid #e8ecf3; overflow-x: auto; scrollbar-width: thin; }
 .order-tab { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; padding: 20px 0 17px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #64748b; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .order-tab span { display: inline-flex; align-items: center; justify-content: center; min-width: 21px; height: 21px; padding: 0 5px; border-radius: 6px; background: #f1f5f9; font-size: 10px; }
@@ -50,6 +60,7 @@
 .order-client-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 13px; font-size: 12px; }
 .order-client-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 13px; }
 .order-client-actions .link { margin-top: 0; }
+.order-client-picker { display: grid; gap: 8px; }
 .order-inline-client { display: grid; gap: 13px; margin-top: 14px; padding: 16px; border: 1px solid #e2e9f4; border-radius: 9px; background: #f8faff; }
 .order-value-field { max-width: 350px; margin-bottom: 24px; }
 .order-input-unit { display: flex; align-items: center; border: 1px solid #d6deea; background: #f8faff; border-radius: 7px; overflow: hidden; }
@@ -375,6 +386,7 @@
 .order-line-total span { font-size: 10px; color: #64748b; }
 .order-line-total strong { font-size: 14px; color: #9a3412; overflow-wrap: anywhere; }
 .order-composite-areas { margin: 17px 0; }
+.order-printing-type { margin-top: 17px; }
 .order-area-choices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .order-area-choices .order-choice-card { padding: 11px 7px; font-size: 11px; }
 .order-product-materials { background: #f0f4ff; border-radius: 9px; padding: 15px; margin-top: 17px; }
@@ -383,7 +395,6 @@
 .order-material-row .input, .order-material-row .select { background: #fff; }
 .order-material-area { color: #9a3412; font-weight: 700; font-size: 11px; align-self: center; padding-top: 17px; white-space: nowrap; }
 .order-material-remove { height: 34px; width: 32px; display: grid; place-items: center; background: #fff; border: 1px solid #fbd5d5; color: #b91c1c; border-radius: 7px; cursor: pointer; }
-.order-product-specifications { white-space: pre-wrap; color: #475569; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .order-product-detail-materials { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .order-product-detail-materials span { padding: 8px 10px; background: #eef3ff; border-radius: 7px; color: #475569; font-size: 11px; overflow-wrap: anywhere; }
 .order-activity-list { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
@@ -397,11 +408,13 @@
 .order-activity-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .order-activity-actions .btn, .order-activity-actions .select { font-size: 10px; min-height: 35px; }
 .order-activity-actions .select { max-width: 180px; }
+.order-activity-actions .order-laser-minutes { width: 92px; min-height: 35px; font-size: 11px; }
 .order-print-product { border-top: 1px solid #e2e8f0; padding: 9px 0; break-inside: avoid; overflow-wrap: anywhere; }
 .order-print-product:first-of-type { border-top: 0; }
 .order-print-product > strong { font-size: 11px; }
 .order-print-product p { margin: 4px 0; font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
 @media (max-width: 720px) {
+  .orders-draft { align-items: flex-start; padding: 15px; }
   .order-product-card, .order-product-detail { padding: 15px; }
   .order-product-pricing { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .order-line-total { grid-column: 1 / -1; }

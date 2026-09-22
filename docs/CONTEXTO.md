@@ -8,20 +8,28 @@ Intermedios Gestión centraliza clientes, ventas, cartera y producción publicit
 
 Administración y Diseño crean OT. El servidor asigna el consecutivo automáticamente. La creación actual usa una OT comercial principal y uno o más productos; cada producto genera actividades internas en Diseño, Impresión, Taller o Externo, sin crear ventas adicionales.
 
-Una actividad de Diseño debe completarse antes de la actividad de Impresión del mismo producto. Administración puede asignarla a un diseñador; los diseñadores también pueden tomar tareas disponibles. Impresión y Taller actualizan únicamente sus actividades. Externo representa trabajo de terceros y no solicita medidas ni materiales internos. La instalación es opcional.
+Una actividad de Diseño debe completarse antes de la actividad de Impresión del mismo producto. Administración puede asignarla a un diseñador; los diseñadores también pueden tomar tareas disponibles. Si Diseño crea la OT, el servidor inserta Diseño como primera actividad de cada producto y la asigna al creador. El diseñador asignado puede corregir la descripción y registrar materiales/medidas para la Impresión posterior. Administración puede operar cualquier área. La instalación es opcional.
+
+Externo representa trabajo de terceros y puede convivir en el mismo producto con Diseño, Impresión y Taller. Cuando es la única actividad no solicita parámetros de impresión; si también existe Impresión, se aplican los datos propios de esa actividad.
+
+Impresión puede ser normal o Corte Láser. La normal utiliza uno o varios materiales con medidas. Corte Láser no usa materiales y cobra $1.000 COP por cada minuto entero registrado antes de finalizar.
 
 Administración edita OT antes de iniciar actividades, registra pagos, certificados y multiabonos. Diseño crea clientes y consulta su historial operativo, pero no recibe totales de órdenes, pagos, saldos, retenciones ni certificados. Impresión y Taller tampoco reciben importes comerciales.
 
 ## Datos comerciales
 
 - Cliente: nombre y celular obligatorios; identificación opcional para REM y requerida para FACT; indicador Especial para permitir OT sin abono inicial.
-- OT: valor base mayor que cero, REM/FACT, categoría SuperGiros, Carro Vallas, Proyecto u Otras, instalación opcional.
+- OT: valor base mayor que cero, REM/FACT, categoría SuperGiros, Carro Vallas, Proyecto u Otras, instalación opcional. Solo una FACT compuesta exclusivamente por Corte Láser puede iniciar con base cero y sin abono.
 - Pago: fecha, valor y método Efectivo, Bancolombia o Davivienda.
 - Multiabono: la administradora selecciona las OT; el servidor aplica el valor a sus saldos de menor a mayor.
-- Productos: descripción, cantidad, valor unitario, especificaciones y, cuando corresponda, dimensiones.
+- Productos: descripción, cantidad entera y valor unitario. No existen especificaciones ni dimensiones generales del producto.
 - Materiales: Panaflex, V. Corte, V. Impresión y Banner, con largo, ancho y m².
 
 Para una FACT nueva se calcula IVA 19 % sobre el valor base. Si la base es estrictamente mayor a $524.000, se proponen automáticamente RETE FUENTE 4 %, RETE IVA 2,85 % e ICA 7/1000. Administración puede editar los importes permitidos. El cobrable nuevo es base + IVA − retenciones. Las OT anteriores a esta regla quedan marcadas LEGACY para no reescribir saldos históricos durante la migración.
+
+Cuando finaliza Corte Láser, sus minutos se suman a la base y el IVA se actualiza. Las retenciones guardadas no se recalculan ni vuelven a evaluar el umbral de $524.000.
+
+Cada usuario de Administración o Diseño puede mantener un solo borrador incompleto de OT. El borrador pertenece exclusivamente al creador, no genera consecutivo y se elimina al crear la OT o mediante su icono en el historial.
 
 ## Reportes
 
@@ -35,4 +43,4 @@ No incluye urgencias, inventario, exportación Excel/CSV, contabilidad integral,
 
 Frontend React/TypeScript/Vite y backend Express/TypeScript con PostgreSQL productivo o PGlite en desarrollo. Autenticación por cookie HttpOnly, CSRF, Argon2, roles server-side, idempotencia en operaciones sensibles y control de versión de OT. Vercel utiliza el adaptador api/ y PostgreSQL externo.
 
-La versión del 21/09/2026 está implementada y verificada localmente, pero esta sesión no comprobó ni modificó el despliegue o la base remota. Consultar docs/ESTADO.md para el punto exacto y docs/LIMPIEZA_DATOS_2026-09-21.md para la depuración autorizada.
+La versión del 22/09/2026 está implementada y verificada localmente, pero la migración 008, el despliegue y la base remota no fueron modificados en esta sesión. Consultar docs/ESTADO.md para el punto exacto y docs/LIMPIEZA_DATOS_2026-09-21.md para la depuración autorizada.
