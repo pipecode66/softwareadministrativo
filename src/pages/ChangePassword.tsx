@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { KeyRound } from 'lucide-react';
+import { Eye, EyeOff, KeyRound } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import { Button, Field } from '../components/ui';
 
@@ -9,6 +9,7 @@ export function ChangePasswordPage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -33,7 +34,7 @@ export function ChangePasswordPage() {
     <div className="login-brand"><img src="/logo.svg" alt="Intermedios Gestión"/><KeyRound size={28}/><h1>Cambiar contraseña</h1><p>{user?.mustChangePassword ? 'Por seguridad, cambia tu contraseña temporal antes de continuar.' : 'Actualiza la contraseña de tu cuenta.'}</p></div>
     <p className="muted break-word">{user?.email}</p>
     <form className="stack" onSubmit={submit} aria-busy={pending}>
-      <Field label="Contraseña actual" htmlFor="password-current"><input className="input" id="password-current" type="password" autoComplete="current-password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required maxLength={128} disabled={pending}/></Field>
+      <Field label="Contraseña actual" htmlFor="password-current" hint="El ojo muestra u oculta únicamente la contraseña que escribas."><div className="input-with-icon"><KeyRound size={18}/><input id="password-current" type={showCurrentPassword ? 'text' : 'password'} autoComplete="current-password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required maxLength={128} disabled={pending}/><button type="button" className="icon-button" onClick={() => setShowCurrentPassword(current => !current)} aria-label={showCurrentPassword ? 'Ocultar contraseña actual' : 'Mostrar contraseña actual'} disabled={pending}>{showCurrentPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button></div></Field>
       <Field label="Nueva contraseña" htmlFor="password-new" hint="Entre 12 y 128 caracteres. No reutilices la contraseña temporal."><input className="input" id="password-new" type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={12} maxLength={128} disabled={pending}/></Field>
       <Field label="Confirmar nueva contraseña" htmlFor="password-confirm"><input className="input" id="password-confirm" type="password" autoComplete="new-password" value={confirmation} onChange={e => setConfirmation(e.target.value)} required minLength={12} maxLength={128} disabled={pending}/></Field>
       {error && <p className="form-alert" role="alert">{error}</p>}

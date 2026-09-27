@@ -44,9 +44,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #ea580c; outline-
 .nav-link svg { flex-shrink: 0; }
 .nav-chevron { margin-left: auto; opacity: .75; }
 .sidebar-profile { padding: 18px 16px; display: flex; align-items: center; gap: 9px; border-top: 1px solid var(--border); background: #fff; }
-.sidebar-profile > div { flex: 1; min-width: 0; }
-.sidebar-profile strong { display: block; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sidebar-profile > div > span { display: block; font-size: 9px; text-transform: uppercase; color: var(--brand); letter-spacing: .06em; font-weight: 600; margin-top: 4px; }
+.sidebar-profile-copy { flex: 1; min-width: 0; }
+.sidebar-profile-copy strong { display: block; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-profile-copy > span { display: block; font-size: 9px; text-transform: uppercase; color: var(--brand); letter-spacing: .06em; font-weight: 600; margin-top: 4px; }
+.sidebar-profile-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.profile-action-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 1px solid #111827; border-radius: 7px; background: var(--brand); color: #fff; text-decoration: none; cursor: pointer; }
+.profile-action-button:hover { background: #9a3412; color: #fff; }
+.profile-action-button:focus-visible { outline: 3px solid #fb923c; outline-offset: 2px; }
+.profile-action-button:disabled { cursor: wait; opacity: .6; }
 .avatar { display: inline-flex; align-items: center; justify-content: center; background: #e9effd; border: 1px solid #e2e8f0; border-radius: 9px; width: 36px; height: 36px; flex: 0 0 36px; font-size: 12px; font-weight: 700; color: #334155; }
 .app-topbar { height: var(--header-height); position: fixed; left: var(--sidebar-width); right: 0; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 28px; background: #ffffffed; backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); }
 .topbar-leading, .topbar-actions, .breadcrumb { display: flex; align-items: center; gap: 14px; min-width: 0; }

@@ -5,7 +5,7 @@ import { useApp } from '../data/AppContext';
 import type { WorkOrder } from '../domain/types';
 import { deleteOrderDraft, loadOrderDraft, ORDER_DRAFT_EVENT, type OrderFormDraft } from '../data/orderDraft';
 import type { OrderDraftRecord } from '../data/api';
-import { canCreate, dateOnly, financials, formatCOP, formatDate, isAdmin, STATUS_LABELS, visibleOrders } from '../domain/utils';
+import { canCreate, dateOnly, financials, formatCOP, formatDate, isAdmin, normalize, STATUS_LABELS, visibleOrders } from '../domain/utils';
 import { Button, Card, DataTable, DocumentBadge, EmptyState, Field, KpiCard, PageHeader, Pagination, PaymentBadge, SearchInput, WorkBadge } from '../components/ui';
 import './orders.css';
 
@@ -34,8 +34,8 @@ export function OrdersPage() {
   const active = orders.filter(order => !completed(order));
   const balances = orders.reduce((sum, order) => sum + financials(order).balance, 0);
   const filtered = orders.filter(order => {
-    const term = query.trim().toLocaleLowerCase('es');
-    const matchesText = !term || `${order.number} ${String(order.number).padStart(4, '0')} ${clientName(order)} ${order.description}`.toLocaleLowerCase('es').includes(term);
+    const term = normalize(query.trim());
+    const matchesText = !term || normalize(`${order.number} ${String(order.number).padStart(4, '0')} ${clientName(order)} ${order.description}`).includes(term);
     const date = dateOnly(order.createdAt);
     const tabMatch = tab === 'all'
       || (tab === 'pending' && !completed(order))

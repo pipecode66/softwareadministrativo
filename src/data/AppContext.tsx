@@ -9,6 +9,7 @@ import {
   ApiRequestError, forgetApiSession, usingApi,
 } from './api';
 import type { BulkPaymentResult, CertificateReport, MaterialReport, NewPayment, PortfolioReport, SalesReport } from './api';
+import { orderArrivalMessages } from './orderNotifications';
 import { LOCAL_REVIEW_PASSWORD } from './seed';
 import { parseData, readData, SESSION_KEY, STORAGE_KEY, writeData } from './repository';
 
@@ -44,6 +45,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessionUser, setSessionUser] = useState<User | null>(null);
   const sessionRef = useRef<User | null>(null);
   const sessionEpoch = useRef(0);
+  const orderNotificationsReady = useRef(false);
   const [accounts, setAccounts] = useState<User[]>([]);
   const [sessionReady, setSessionReady] = useState(!usingApi);
   const [dataLoading, setDataLoading] = useState(false);
@@ -90,7 +92,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [sessionUser?.id, sessionUser?.role, sessionUser?.mustChangePassword]);
   function replaceData(next: AppData) { dataRef.current = next; setData(next); }
   function acceptSession(current: User | null) {
-    if (current?.id !== sessionRef.current?.id) replaceData(emptyData());
+    if (current?.id !== sessionRef.current?.id) {
+      replaceData(emptyData());
+      orderNotificationsReady.current = false;
+    }
     sessionRef.current = current;
     setSessionUser(current);
     setAccounts(current ? [current] : []);
@@ -154,19 +159,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ]));
       if (epoch !== sessionEpoch.current) return;
       const previousOrders = dataRef.current.orders;
-      const previousById = new Map(previousOrders.map(order => [order.id, order]));
-      for (const order of remoteOrders.orders) {
-        const previous = previousById.get(order.id);
-        const enteredAdminReview = isAdmin(current.role) && (!previous || previous.status !== order.status) && order.status === 'PENDING_ADMIN_REVIEW';
-        const enteredPrinting = current.role === 'IMPRESION' && (!previous || previous.status !== order.status) && order.status === 'IN_PRINTING';
-        const enteredWorkshop = current.role === 'TALLER' && (!previous || previous.status !== order.status) && ['IN_WORKSHOP', 'PENDING_INSTALLATION'].includes(order.status);
-        if (enteredAdminReview) toast(`Nueva OT #${String(order.number).padStart(4, '0')} pendiente de revisión.`);
-        else if (enteredPrinting) toast(`La OT #${String(order.number).padStart(4, '0')} llegó a Impresión.`);
-        else if (enteredWorkshop) toast(`La OT #${String(order.number).padStart(4, '0')} llegó a Taller.`);
-      }
+      for (const message of orderArrivalMessages(
+        current.role,
+        previousOrders,
+        remoteOrders.orders,
+        orderNotificationsReady.current,
+      )) toast(message);
       setAccounts(users);
       const mergedClients = [...new Map([...remoteOrders.clients, ...clients].map(client => [client.id, client])).values()];
       replaceData({ ...dataRef.current, users, clients: mergedClients, orders: remoteOrders.orders });
+      orderNotificationsReady.current = true;
     } catch (error) {
       if (epoch === sessionEpoch.current) setDataError(error instanceof Error ? error.message : 'No se pudieron cargar los datos del servidor.');
       throw error;

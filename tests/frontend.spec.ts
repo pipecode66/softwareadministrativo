@@ -359,6 +359,11 @@ test('búsqueda global consecutiva y filtros de trabajo/pago REM y FACT', async 
   await page.getByRole('button', { name: 'Realizar búsqueda' }).click();
   await expect(page.getByLabel('Buscar órdenes', { exact: true })).toHaveValue('0002');
   await expect(page.getByRole('link', { name: 'OT #0002', exact: true }).filter({ visible: true })).toBeVisible();
+  await page.getByLabel('Buscar órdenes', { exact: true }).fill('PENDONES PUBLICITARIOS');
+  await expect(page.getByRole('link', { name: 'OT #0005', exact: true }).filter({ visible: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'OT #0002', exact: true })).toHaveCount(0);
+  await page.getByLabel('Buscar órdenes', { exact: true }).fill('senalizacion interior');
+  await expect(page.getByRole('link', { name: 'OT #0002', exact: true }).filter({ visible: true })).toBeVisible();
   await page.getByRole('button', { name: 'Limpiar filtros', exact: true }).click();
   await page.getByLabel('Estado del trabajo', { exact: true }).selectOption('PENDING_ADMIN_REVIEW');
   await page.getByLabel('Documento', { exact: true }).selectOption('FACT');

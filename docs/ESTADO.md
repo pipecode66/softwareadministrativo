@@ -1,66 +1,57 @@
 # Estado de continuidad
 
-Actualizado: 2026-09-22.
+Actualizado: 2026-09-27.
 
 ## Estado actual
 
-El nuevo tramo solicitado quedó implementado y verificado localmente sobre `main`. Al cerrar esta sesión debe quedar en un commit local único; no se ha autorizado ni realizado `push`, despliegue o ejecución de la migración nueva en Supabase.
+El tramo de Corte Láser y borradores quedó publicado anteriormente en `main` mediante el commit `97472bf`. El usuario confirmó que `server/migrations/008_laser_drafts.sql` fue ejecutada en Supabase.
 
-La base remota conocida tiene aplicadas manualmente las migraciones 004 a 007. Antes de publicar este tramo se debe ejecutar `server/migrations/008_laser_drafts.sql` en Supabase. La migración habilita RLS en `order_drafts`, por lo que debe elegirse la opción de ejecutar con RLS si el editor vuelve a consultarlo.
+El tramo actual quedó implementado y verificado localmente sobre `main`. No requiere migraciones de base de datos. Al cerrar debe quedar en un commit local; el usuario todavía no ha autorizado el `push` de este nuevo commit ni se ha comprobado un despliegue productivo.
 
 ## Funcionalidades terminadas en este tramo
 
-- Impresión se divide por actividad en Impresión normal o Corte Láser.
-- Corte Láser usa una tarifa fija de $1.000 COP por minuto. Impresión y Administración pueden registrar minutos enteros; no se puede finalizar sin tiempo registrado.
-- Al completar Corte Láser se recompone el valor de la OT sin duplicar cargos. En FACT se actualiza el IVA sobre la nueva base y se conservan intactas las retenciones originales.
-- Una FACT formada únicamente por Corte Láser puede iniciar en $0 y sin abono; no se permite esa excepción para REM, Taller, Externo ni productos mixtos sin valor.
-- Cada creador conserva como máximo un borrador de OT. Solo su propietario puede consultarlo o eliminarlo; aparece primero en Historial de órdenes y no consume consecutivo.
-- El selector de clientes incorpora búsqueda por nombre, identificación o celular.
-- Se retiraron especificaciones y largo/ancho generales del producto. Las medidas siguen existiendo únicamente en los materiales de Impresión.
-- La cantidad de producto acepta enteros desde 1 y se presenta sin decimales falsos como `1,000`.
-- Las OT creadas por Diseño reciben automáticamente una actividad de Diseño en primera posición, asignada al mismo creador; el diseñador ya no selecciona su propia área.
-- El diseñador asignado puede editar la descripción del trabajo y los materiales/medidas destinados a Impresión antes de completar Diseño.
-- Externo puede combinarse dentro del mismo producto con Diseño, Impresión y Taller.
-- Administración puede iniciar y finalizar actividades de todas las áreas, respetando orden y requisitos productivos.
-- Se corrigió el layout responsive de la carga de diseñadores y de las tarjetas de las bandejas independientes; los datos ya no quedan concatenados.
+- El historial de órdenes busca por número de OT, cliente y descripción del trabajo.
+- La búsqueda por descripción no distingue mayúsculas ni tildes; una consulta como `TALONARIOS` devuelve todas las OT visibles que contengan ese texto.
+- La primera carga después de iniciar o restaurar una sesión se utiliza como línea base silenciosa: las OT históricas ya existentes no generan avisos repetidos.
+- Los avisos de llegada continúan funcionando después de la línea base cuando una OT nueva o un cambio real de etapa llega a Administración, Impresión o Taller.
+- El enlace textual de cambio de contraseña fue reemplazado por un botón naranja con icono de llave y borde oscuro.
+- El botón de cerrar sesión quedó junto al de contraseña, con el mismo tratamiento visual.
+- La pantalla de cambio permite mostrar u ocultar únicamente la contraseña actual que el usuario está escribiendo. La contraseña almacenada nunca se recupera ni se muestra porque el servidor conserva solo su hash Argon2id.
+- Se conservó el flujo seguro existente: contraseña actual obligatoria, nueva contraseña de 12 a 128 caracteres, confirmación, rotación de sesión y revocación de las sesiones anteriores.
 
 ## Archivos principales
 
-- `server/migrations/008_laser_drafts.sql`
-- `server/src/orders/domain.ts`, `router.ts` y `service.ts`
-- `server/src/work/schemas.ts`, `router.ts` y `service.ts`
-- `server/tests/laser_drafts.test.ts` y `server/tests/work.test.ts`
-- `src/pages/NewOrderEditor.tsx`, `Orders.tsx`, `Queues.tsx` y `OrderDetail.tsx`
-- `src/data/orderDraft.ts`, `src/data/api.ts` y tipos del dominio
-- `src/pages/orders.css` y `src/pages/operations.css`
+- `src/pages/Orders.tsx`
+- `src/data/AppContext.tsx`
+- `src/data/orderNotifications.ts`
+- `src/components/AppShell.tsx`
+- `src/pages/ChangePassword.tsx`
+- `src/styles.css`
+- `tests/order-notifications.test.ts`
+- `tests/frontend.spec.ts`
+- `tests/api-e2e.spec.ts`
+- `server/tests/orders.test.ts`
 
 ## Verificación local
 
 - `npm run typecheck`: aprobado.
-- `npm test`: 146/146.
+- `npm test`: 149/149 en 3 archivos.
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
 - `npm --prefix server test`: 267/267 en 8 archivos.
 - `npm run test:e2e`: 31/31, incluidos 320, 390, 768, 1024 y 1440 px.
-- `npm run test:e2e:api`: 4/4 con API y PGlite reales; cubre FACT, láser, carga responsive y edición técnica de Diseño.
-- Migración histórica 001→008 comprobada sobre PGlite con backfill de actividades de Impresión y restricciones nuevas.
+- `npm run test:e2e:api`: 5/5 con API y PGlite reales.
+- La prueba del servidor confirma varias coincidencias por descripción con `TALONARIOS`.
+- La prueba de sesión confirma que la carga inicial es silenciosa y que los avisos posteriores continúan activos.
 - `git diff --check`: sin errores al cierre.
 
 Las pruebas usan PGlite aislado o el adaptador local; no escriben en PostgreSQL productivo.
 
-## Cambios locales anteriores incluidos en el mismo cierre
-
-- `server/maintenance/borrar_datos_prueba_antes_2026-09-21.sql`: limpieza manual con corte fijo al inicio del 21/09 en Colombia; conserva usuarios y sesiones. No se ha ejecutado remotamente.
-- `src/pages/Operation.tsx` y estilos: Carga de Diseño separada en tarjetas legibles.
-- Pruebas de la utilidad de limpieza y del layout responsive con API.
-
 ## Pendiente para producción
 
-1. Tener respaldo verificable de Supabase y evitar escrituras durante la migración.
-2. Ejecutar manualmente `server/migrations/008_laser_drafts.sql`; no usar `db:bootstrap`.
-3. Publicar el commit únicamente cuando el usuario lo autorice mediante `push`.
-4. Confirmar en producción creación/restauración/eliminación de borrador, Corte Láser y edición técnica de Diseño.
-5. El SQL de limpieza es una operación separada y destructiva: solo debe ejecutarse manualmente con respaldo si aún se desea retirar los datos de prueba anteriores al 21/09.
+1. Subir el nuevo commit únicamente cuando el usuario autorice el `push`.
+2. Esperar el despliegue asociado y comprobar en producción la búsqueda por descripción, el inicio de sesión sin avisos históricos y los botones de cuenta.
+3. No hay SQL ni migración nueva que ejecutar para este tramo.
 
 ## Comando para retomar
 

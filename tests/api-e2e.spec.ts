@@ -31,6 +31,29 @@ test('sesión real carga reportes desde el servidor', async ({ page }) => {
   await expect(page.getByText('Ventas · valor base')).toBeVisible();
 });
 
+test('perfil muestra acciones de contraseña y salida, y permite revisar lo digitado', async ({ page }) => {
+  await login(page);
+  const actions = page.locator('.app-sidebar .sidebar-profile-actions');
+  const passwordLink = actions.getByRole('link', { name: 'Cambiar contraseña' });
+  const logoutButton = actions.getByRole('button', { name: 'Cerrar sesión' });
+  await expect(passwordLink).toBeVisible();
+  await expect(logoutButton).toBeVisible();
+  await expect(passwordLink).toHaveCSS('background-color', 'rgb(194, 65, 12)');
+  await expect(logoutButton).toHaveCSS('background-color', 'rgb(194, 65, 12)');
+  await expect(passwordLink).toHaveCSS('border-top-color', 'rgb(17, 24, 39)');
+  await expect(logoutButton).toHaveCSS('border-top-color', 'rgb(17, 24, 39)');
+  await passwordLink.click();
+  await expect(page).toHaveURL(/\/change-password$/);
+  const currentPassword = page.getByLabel('Contraseña actual', { exact: true });
+  await currentPassword.fill('Una clave E2E segura 2026!');
+  await expect(currentPassword).toHaveAttribute('type', 'password');
+  await page.getByRole('button', { name: 'Mostrar contraseña actual' }).click();
+  await expect(currentPassword).toHaveAttribute('type', 'text');
+  await expect(currentPassword).toHaveValue('Una clave E2E segura 2026!');
+  await page.getByRole('button', { name: 'Ocultar contraseña actual' }).click();
+  await expect(currentPassword).toHaveAttribute('type', 'password');
+});
+
 test('sesión real crea cliente y OT compuesta con abono y cálculo FACT', async ({ page }) => {
   await login(page);
   await createClient(page, 'Cliente integración API', 'NIT-E2E-2026');
@@ -148,7 +171,7 @@ test('carga de Diseño separa responsables y métricas sin desbordarse', async (
   await page.getByLabel('Contraseña', { exact: true }).fill('Clave segura E2E 2026!');
   await page.getByRole('button', { name: 'Ingresar al sistema' }).click();
   await expect(page).toHaveURL(/\/change-password$/);
-  await page.getByLabel('Contraseña actual').fill('Clave segura E2E 2026!');
+  await page.getByLabel('Contraseña actual', { exact: true }).fill('Clave segura E2E 2026!');
   await page.getByLabel('Nueva contraseña', { exact: true }).fill('Clave nueva E2E segura 2026!');
   await page.getByLabel('Confirmar nueva contraseña').fill('Clave nueva E2E segura 2026!');
   await page.getByRole('button', { name: 'Guardar nueva contraseña' }).click();

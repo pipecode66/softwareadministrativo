@@ -27,6 +27,9 @@
 25. Diseño creador recibe automáticamente una actividad DESIGN inicial asignada a sí mismo. El diseñador asignado puede editar descripción y materiales antes de finalizar su actividad.
 26. Externo puede coexistir dentro del mismo producto con Diseño, Impresión y Taller; ya no excluye producción interna.
 27. Administración puede operar actividades de cualquier área, conservando las precedencias y requisitos de finalización.
+28. El historial busca entre todas las OT visibles por número, cliente y descripción; la comparación de la interfaz no distingue mayúsculas ni tildes.
+29. La primera consulta de órdenes de cada sesión establece una línea base silenciosa. Los avisos entre departamentos se generan únicamente por órdenes nuevas o cambios reales observados después de esa carga.
+30. Las contraseñas almacenadas nunca se muestran ni se recuperan: solo existe su hash Argon2id. El control de visibilidad enseña exclusivamente el texto que el usuario escribe como contraseña actual antes de solicitar el cambio seguro.
 
 ## Decisiones sustituidas
 

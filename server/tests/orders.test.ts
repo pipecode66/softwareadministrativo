@@ -484,15 +484,20 @@ describe('OT: alcance de datos y filtros', () => {
 
   it('busca OT, nombre o descripción literalmente y pagina sin perder el total', async () => {
     const first = await create({ description: 'Banner 100% especial' });
+    const talonarios = await create({ description: 'Talonarios autocopiativos' });
+    const numerados = await create({ description: 'Pedido de TALONARIOS numerados' });
     await create({ description: 'Pancarta' });
     expect((await get('/orders?q=0001')).body.items[0].id).toBe(first.id);
-    expect((await get('/orders?q=andino')).body.total).toBe(2);
+    const byDescription = await get('/orders?q=talonarios');
+    expect(byDescription.body.total).toBe(2);
+    expect(byDescription.body.items.map((item: OrderView) => item.id)).toEqual([numerados.id, talonarios.id]);
+    expect((await get('/orders?q=andino')).body.total).toBe(4);
     expect((await get('/orders?q=%25')).body.total).toBe(1);
     expect((await get(`/orders?q=${encodeURIComponent("' OR 1=1 --")}`)).body.total).toBe(0);
     const paged = await get('/orders?page=1&pageSize=1');
-    expect(paged.body).toMatchObject({ page: 1, pageSize: 1, total: 2 });
+    expect(paged.body).toMatchObject({ page: 1, pageSize: 1, total: 4 });
     expect(paged.body.items).toHaveLength(1);
-    expect((await get('/orders?page=3&pageSize=1')).body).toMatchObject({ items: [], total: 2 });
+    expect((await get('/orders?page=5&pageSize=1')).body).toMatchObject({ items: [], total: 4 });
   });
 
   it('filtra fechas de creación en Bogotá y valida rangos invertidos o inexistentes', async () => {

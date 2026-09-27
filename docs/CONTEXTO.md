@@ -31,6 +31,10 @@ Cuando finaliza Corte Láser, sus minutos se suman a la base y el IVA se actuali
 
 Cada usuario de Administración o Diseño puede mantener un solo borrador incompleto de OT. El borrador pertenece exclusivamente al creador, no genera consecutivo y se elimina al crear la OT o mediante su icono en el historial.
 
+El historial permite localizar todas las OT visibles por número, cliente o descripción del trabajo, sin distinguir mayúsculas ni tildes.
+
+Los avisos de llegada entre departamentos se activan solo después de completar la primera carga de la sesión. Las OT históricas no generan mensajes al ingresar; las llegadas y cambios de etapa posteriores sí lo hacen.
+
 ## Reportes
 
 Administración consulta ventas por fecha, mes o rango, filtradas por categoría y REM/FACT. FACT e IVA aparecen separados. Cartera muestra saldos al corte con IVA, sin IVA e IVA pendiente. Los certificados recibidos restan de la métrica pendiente de cada retención, no del efectivo ya cobrado. El consumo de materiales cuenta m² únicamente cuando finaliza Impresión.
@@ -43,4 +47,4 @@ No incluye urgencias, inventario, exportación Excel/CSV, contabilidad integral,
 
 Frontend React/TypeScript/Vite y backend Express/TypeScript con PostgreSQL productivo o PGlite en desarrollo. Autenticación por cookie HttpOnly, CSRF, Argon2, roles server-side, idempotencia en operaciones sensibles y control de versión de OT. Vercel utiliza el adaptador api/ y PostgreSQL externo.
 
-La versión del 22/09/2026 está implementada y verificada localmente, pero la migración 008, el despliegue y la base remota no fueron modificados en esta sesión. Consultar docs/ESTADO.md para el punto exacto y docs/LIMPIEZA_DATOS_2026-09-21.md para la depuración autorizada.
+El usuario confirmó la aplicación de la migración 008 en Supabase. La versión del 27/09/2026 está implementada y verificada localmente, pero el nuevo commit aún no se ha subido ni desplegado. Consultar docs/ESTADO.md para el punto exacto y docs/LIMPIEZA_DATOS_2026-09-21.md para la depuración autorizada.
