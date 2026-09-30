@@ -25,9 +25,20 @@ async function storedOrders(page: Page): Promise<WorkOrder[]> {
   return page.evaluate(key => (JSON.parse(localStorage.getItem(key)!) as AppData).orders, DATA_KEY);
 }
 
+async function selectOrderClient(page: Page, query: string, optionName: string | RegExp) {
+  const picker = page.getByRole('combobox', { name: 'Buscar y seleccionar cliente *' });
+  await picker.fill(query);
+  const results = page.getByRole('listbox', { name: 'Resultados de clientes' });
+  await expect(results).toBeVisible();
+  const option = results.getByRole('option', { name: optionName });
+  await expect(option).toBeVisible();
+  await option.click();
+  await expect(results).toHaveCount(0);
+}
+
 async function fillOrder(page: Page, _number = 101, route = 'PRINT_WORKSHOP') {
   await page.goto('/orders/new');
-  await page.getByLabel('Cliente o razón social').selectOption('c-1');
+  await selectOrderClient(page, '900.123.001-1', /SuperGiros S\.A\./);
   const product = page.locator('.order-product-card').first();
   await product.getByLabel('Descripción del producto *').fill('Aviso de prueba funcional con producción.');
   await product.getByLabel('Valor unitario antes de IVA (COP) *').fill('100000');
@@ -240,18 +251,29 @@ test('directorio: nuevo cliente disponible al crear una OT', async ({ page }) =>
   await dialog.getByRole('button', { name: 'Guardar cliente' }).click();
   await expect(dialog).toHaveCount(0);
   await page.goto('/orders/new');
-  await expect(page.getByLabel('Cliente o razón social').locator('option')).toContainText(['Cliente e2e Café · TEST-101']);
+  await selectOrderClient(page, 'TEST-101', /Cliente e2e Café/);
+  await expect(page.locator('.order-client-selected')).toContainText('Cliente e2e Café');
 });
 
 test('nueva OT filtra clientes y conserva un solo borrador privado eliminable', async ({ page }) => {
   await login(page);
   await page.goto('/orders/new');
-  const clientSearch = page.getByLabel('Buscar y seleccionar cliente *');
+  const consultClients = page.getByRole('link', { name: 'Consultar clientes', exact: true });
+  const newClient = page.getByRole('button', { name: 'Nuevo cliente', exact: true });
+  await expect(consultClients).toBeVisible();
+  await expect(newClient).toBeVisible();
+  await expect(consultClients).toHaveClass(/\bbtn\b/);
+  await expect(newClient).toHaveClass(/\bbtn\b/);
+  const clientSearch = page.getByRole('combobox', { name: 'Buscar y seleccionar cliente *' });
   await clientSearch.fill('café origen');
-  const clientSelect = page.getByLabel('Cliente o razón social');
-  await expect(clientSelect.locator('option')).toContainText(['Café Origen · 900.123.003-3']);
-  await expect(clientSelect.locator('option')).not.toContainText(['SuperGiros S.A.']);
-  await clientSelect.selectOption('c-3');
+  const results = page.getByRole('listbox', { name: 'Resultados de clientes' });
+  await expect(results).toBeVisible();
+  const matchingClient = results.getByRole('option', { name: /Café Origen/ });
+  await expect(matchingClient).toContainText('900.123.003-3');
+  await expect(results.getByRole('option', { name: /SuperGiros S\.A\./ })).toHaveCount(0);
+  await matchingClient.click();
+  await expect(results).toHaveCount(0);
+  await expect(page.locator('.order-client-selected')).toContainText('Café Origen');
   const product = page.locator('.order-product-card').first();
   await product.getByLabel('Descripción del producto *').fill('Trabajo conservado en borrador');
   await expect(product.getByLabel('Cantidad *')).toHaveAttribute('step', '1');
@@ -273,6 +295,51 @@ test('cantidad de producto usa unidades enteras y se muestra sin decimales', asy
   const quantity = page.getByText(/^Cantidad: 1 · Valor unitario:/);
   await expect(quantity).toBeVisible();
   await expect(quantity).not.toContainText('1,000');
+});
+
+test('historial de órdenes restaura la página al volver y una entrada nueva inicia limpia', async ({ page }) => {
+  await login(page);
+  await page.evaluate(key => {
+    const data = JSON.parse(localStorage.getItem(key)!) as AppData;
+    const template = data.orders[0];
+    const extraOrders = Array.from({ length: 32 }, (_, index) => {
+      const copy = JSON.parse(JSON.stringify(template)) as WorkOrder;
+      const timestamp = new Date(Date.UTC(2030, 0, 1, 12, index)).toISOString();
+      return {
+        ...copy,
+        id: `history-order-${index + 1}`,
+        number: 1000 + index,
+        description: `Trabajo paginado ${index + 1}`,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+    });
+    data.orders.push(...extraOrders);
+    localStorage.setItem(key, JSON.stringify(data));
+  }, DATA_KEY);
+  await page.reload();
+  await page.goto('/orders');
+
+  const pagination = page.getByRole('navigation', { name: 'Paginación' });
+  for (let step = 1; step < 4; step++) {
+    await pagination.getByRole('button', { name: 'Página siguiente' }).click();
+  }
+  await expect(page).toHaveURL(/\/orders\?page=4$/);
+  await expect(pagination.locator('.page-current')).toHaveText('4');
+
+  const orderLink = page.locator('tbody .order-number').first();
+  const openedOrder = await orderLink.textContent();
+  await orderLink.click();
+  await expect(page.locator('main h1')).toContainText(openedOrder!);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/orders\?page=4$/);
+  await expect(pagination.locator('.page-current')).toHaveText('4');
+  await expect(page.getByRole('link', { name: openedOrder!, exact: true }).first()).toBeVisible();
+
+  await page.locator('.app-sidebar').getByRole('link', { name: 'Órdenes', exact: true }).click();
+  await expect(page).toHaveURL(/\/orders$/);
+  await expect(pagination.locator('.page-current')).toHaveText('1');
 });
 
 test('clientes: exige celular y conserva la condición Especial', async ({ page }) => {
@@ -459,7 +526,13 @@ test('regresión móvil: nombre de cliente de 115 caracteres sin espacios no des
   for (const route of ['/clients/c-1', '/clients', '/orders/ot-1', '/orders/new', '/portfolio', '/operation', '/printing']) {
     await page.goto(route);
     await expect(page.locator('main h1')).toBeVisible();
-    if (route === '/orders/new') await page.getByLabel('Cliente o razón social').selectOption('c-1');
+    if (route === '/orders/new') {
+      const picker = page.getByRole('combobox', { name: 'Buscar y seleccionar cliente *' });
+      await picker.fill(longName);
+      const results = page.getByRole('listbox', { name: 'Resultados de clientes' });
+      await expect(results).toBeVisible();
+      await expect(results.getByRole('option', { name: new RegExp(longName) })).toBeVisible();
+    }
     await page.evaluate(() => document.fonts.ready);
     const dimensions = await page.evaluate(() => ({ viewport: innerWidth, body: document.body.scrollWidth, document: document.documentElement.scrollWidth }));
     expect(dimensions.body, `${route}: nombre largo en body`).toBeLessThanOrEqual(dimensions.viewport + 1);

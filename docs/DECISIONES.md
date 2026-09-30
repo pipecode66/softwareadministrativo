@@ -30,6 +30,9 @@
 28. El historial busca entre todas las OT visibles por número, cliente y descripción; la comparación de la interfaz no distingue mayúsculas ni tildes.
 29. La primera consulta de órdenes de cada sesión establece una línea base silenciosa. Los avisos entre departamentos se generan únicamente por órdenes nuevas o cambios reales observados después de esa carga.
 30. Las contraseñas almacenadas nunca se muestran ni se recuperan: solo existe su hash Argon2id. El control de visibilidad enseña exclusivamente el texto que el usuario escribe como contraseña actual antes de solicitar el cambio seguro.
+31. En Nueva OT, la búsqueda y la selección del cliente forman un único desplegable filtrable por nombre, identificación o celular. Escribir una consulta nueva invalida la selección previa hasta elegir una coincidencia.
+32. La página y los filtros del historial de OT se conservan en los parámetros de su URL. Atrás del navegador restaura esa entrada exacta; una navegación nueva a `/orders` desde el menú comienza en la página 1 sin contexto anterior.
+33. Al cerrar cada entrega se debe crear su commit y enviarlo a `origin/main`, salvo que el usuario indique expresamente lo contrario o exista un bloqueo técnico que deba informarse.
 
 ## Decisiones sustituidas
 

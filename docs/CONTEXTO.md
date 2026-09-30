@@ -33,6 +33,8 @@ Cada usuario de Administración o Diseño puede mantener un solo borrador incomp
 
 El historial permite localizar todas las OT visibles por número, cliente o descripción del trabajo, sin distinguir mayúsculas ni tildes.
 
+La selección de cliente en Nueva OT es un buscador desplegable por nombre, identificación o celular. El historial conserva página y filtros en su URL para que Atrás del navegador restaure la vista exacta; entrar nuevamente desde el menú abre una vista limpia.
+
 Los avisos de llegada entre departamentos se activan solo después de completar la primera carga de la sesión. Las OT históricas no generan mensajes al ingresar; las llegadas y cambios de etapa posteriores sí lo hacen.
 
 ## Reportes
@@ -47,4 +49,4 @@ No incluye urgencias, inventario, exportación Excel/CSV, contabilidad integral,
 
 Frontend React/TypeScript/Vite y backend Express/TypeScript con PostgreSQL productivo o PGlite en desarrollo. Autenticación por cookie HttpOnly, CSRF, Argon2, roles server-side, idempotencia en operaciones sensibles y control de versión de OT. Vercel utiliza el adaptador api/ y PostgreSQL externo.
 
-El usuario confirmó la aplicación de la migración 008 en Supabase. La versión del 27/09/2026 está implementada y verificada localmente, pero el nuevo commit aún no se ha subido ni desplegado. Consultar docs/ESTADO.md para el punto exacto y docs/LIMPIEZA_DATOS_2026-09-21.md para la depuración autorizada.
+El usuario confirmó la aplicación de la migración 008 en Supabase. Los cambios vigentes al 30/09/2026 están implementados, verificados y enviados a `origin/main`; el despliegue productivo posterior no se ha comprobado desde este entorno. Al cerrar cada entrega se hace commit y push salvo indicación expresa en contrario. Consultar docs/ESTADO.md para el punto exacto, el contador comercial acumulado y docs/LIMPIEZA_DATOS_2026-09-21.md para la depuración autorizada.

@@ -1,6 +1,6 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-async function login(page: import('@playwright/test').Page) {
+async function login(page: Page) {
   await page.goto('/login');
   await page.getByLabel('Usuario o correo').fill('api-e2e@example.test');
   await page.getByLabel('Contraseña', { exact: true }).fill('Una clave E2E segura 2026!');
@@ -8,7 +8,18 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page).toHaveURL(/\/$/);
 }
 
-async function createClient(page: import('@playwright/test').Page, name: string, identification: string) {
+async function selectOrderClient(page: Page, query: string, optionName: string | RegExp) {
+  const picker = page.getByRole('combobox', { name: 'Buscar y seleccionar cliente *' });
+  await picker.fill(query);
+  const results = page.getByRole('listbox', { name: 'Resultados de clientes' });
+  await expect(results).toBeVisible();
+  const option = results.getByRole('option', { name: optionName });
+  await expect(option).toBeVisible();
+  await option.click();
+  await expect(results).toHaveCount(0);
+}
+
+async function createClient(page: Page, name: string, identification: string) {
   await page.goto('/clients');
   await page.getByRole('button', { name: 'Nuevo cliente', exact: true }).click();
   const dialog = page.getByRole('dialog');
@@ -59,7 +70,7 @@ test('sesión real crea cliente y OT compuesta con abono y cálculo FACT', async
   await createClient(page, 'Cliente integración API', 'NIT-E2E-2026');
 
   await page.goto('/orders/new');
-  await page.getByLabel('Cliente o razón social').selectOption({ label: 'Cliente integración API · NIT-E2E-2026' });
+  await selectOrderClient(page, 'NIT-E2E-2026', /Cliente integración API/);
   await page.getByRole('radio', { name: /FACT/ }).check();
   const product = page.locator('.order-product-card').first();
   await product.getByLabel('Descripción del producto *').fill('Aviso compuesto de integración');
@@ -91,7 +102,7 @@ test('corte láser registra minutos, exige el tiempo y actualiza base e IVA', as
   await login(page);
   await createClient(page, 'Cliente corte láser API', 'NIT-LASER-E2E');
   await page.goto('/orders/new');
-  await page.getByLabel('Cliente o razón social').selectOption({ label: 'Cliente corte láser API · NIT-LASER-E2E' });
+  await selectOrderClient(page, 'NIT-LASER-E2E', /Cliente corte láser API/);
   await page.getByRole('radio', { name: /FACT/ }).check();
   const product = page.locator('.order-product-card').first();
   await product.getByLabel('Descripción del producto *').fill('Corte láser de integración');
@@ -144,7 +155,7 @@ test('carga de Diseño separa responsables y métricas sin desbordarse', async (
   }
 
   await page.goto('/orders/new');
-  await page.getByLabel('Cliente o razón social').selectOption({ label: 'Cliente diseño API · NIT-DESIGN-E2E' });
+  await selectOrderClient(page, 'NIT-DESIGN-E2E', /Cliente diseño API/);
   const product = page.locator('.order-product-card').first();
   await product.getByLabel('Descripción del producto *').fill('Actividad de diseño responsive');
   await product.getByLabel('Valor unitario antes de IVA (COP) *').fill('100000');

@@ -10,20 +10,23 @@ import { Button, Card, DataTable, DocumentBadge, EmptyState, Field, KpiCard, Pag
 import './orders.css';
 
 type OrderTab = 'all' | 'pending' | 'production' | 'finished' | 'balance';
+const ORDER_TABS: OrderTab[] = ['all', 'pending', 'production', 'finished', 'balance'];
 const completed = (order: WorkOrder) => ['COMPLETED', 'INSTALLED'].includes(order.status);
 const awaitingReview = (order: WorkOrder) => ['NEW', 'PENDING_ADMIN_REVIEW'].includes(order.status);
 
 export function OrdersPage() {
   const { data, user } = useApp();
   const [params, setParams] = useSearchParams();
-  const [query, setQuery] = useState(params.get('q') || '');
-  const [tab, setTab] = useState<OrderTab>(params.get('tab') === 'balance' ? 'balance' : 'all');
-  const [status, setStatus] = useState(params.get('status') || '');
-  const [documentType, setDocumentType] = useState(params.get('type') || '');
-  const [payment, setPayment] = useState(params.get('payment') || '');
-  const [from, setFrom] = useState(params.get('from') || '');
-  const [to, setTo] = useState(params.get('to') || '');
-  const [page, setPage] = useState(1);
+  const query = params.get('q') || '';
+  const requestedTab = params.get('tab');
+  const tab: OrderTab = ORDER_TABS.includes(requestedTab as OrderTab) ? requestedTab as OrderTab : 'all';
+  const status = params.get('status') || '';
+  const documentType = params.get('type') || '';
+  const payment = params.get('payment') || '';
+  const from = params.get('from') || '';
+  const to = params.get('to') || '';
+  const requestedPage = Number.parseInt(params.get('page') || '1', 10);
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const [draft, setDraft] = useState<OrderDraftRecord<OrderFormDraft> | null>(null);
   const [draftBusy, setDraftBusy] = useState(false);
   const [draftError, setDraftError] = useState('');
@@ -57,8 +60,14 @@ export function OrdersPage() {
     { id: 'finished', label: 'Terminadas', count: orders.filter(completed).length },
     ...(admin ? [{ id: 'balance' as OrderTab, label: 'Cobro pendiente', count: orders.filter(order => financials(order).balance > 0).length }] : []),
   ];
+  function updateView(changes: Record<string, string>, resetPage = true) {
+    const next = new URLSearchParams(params);
+    Object.entries(changes).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+    if (resetPage) next.delete('page');
+    setParams(next, { replace: true });
+  }
   function resetFilters() {
-    setQuery(''); setTab('all'); setStatus(''); setDocumentType(''); setPayment(''); setFrom(''); setTo(''); setPage(1); setParams({});
+    setParams({}, { replace: true });
   }
   const columns = [
     { key: 'number', label: 'OT / Fecha', render: (order: WorkOrder) => <><Link className="order-number" to={`/orders/${order.id}`}>OT #{String(order.number).padStart(4, '0')}</Link><span className="cell-subtitle">{formatDate(order.createdAt)}</span></> },
@@ -106,18 +115,18 @@ export function OrdersPage() {
       {draft && <section className="orders-draft" aria-label="Borrador de orden"><div className="orders-draft-copy"><span className="eyebrow">BORRADORES</span><strong>{draft.payload.products.find(product => product.description.trim())?.description || 'Orden de trabajo sin descripción'}</strong><span>{data.clients.find(item => item.id === draft.payload.clientId)?.name || 'Cliente por seleccionar'} · Guardado {formatDate(draft.updatedAt, true)}</span></div><div className="orders-draft-actions"><Link className="order-view-link" to="/orders/new" aria-label="Abrir borrador"><ArrowRight size={18} /></Link><button className="order-draft-delete" type="button" aria-label="Eliminar borrador" disabled={draftBusy} onClick={() => void removeDraft()}><Trash2 size={17} /></button></div></section>}
       {draftError && <p className="notice notice-warning orders-draft-error" role="alert">{draftError}</p>}
       <div className="order-tabs" aria-label="Filtrar órdenes por situación">
-        {tabs.map(item => <button key={item.id} type="button" className={`order-tab ${tab === item.id ? 'is-active' : ''}`} aria-pressed={tab === item.id} onClick={() => { setTab(item.id); setPage(1); }}>{item.label}<span>{item.count}</span></button>)}
+        {tabs.map(item => <button key={item.id} type="button" className={`order-tab ${tab === item.id ? 'is-active' : ''}`} aria-pressed={tab === item.id} onClick={() => updateView({ tab: item.id === 'all' ? '' : item.id })}>{item.label}<span>{item.count}</span></button>)}
       </div>
       <div className="orders-filter-area">
-        <div className="orders-search-row"><SearchInput value={query} onChange={value => { setQuery(value); setPage(1); }} label="Buscar órdenes" placeholder="Buscar por OT, cliente o descripción…" /><Button variant="ghost" onClick={resetFilters}><FilterX size={17} /> Limpiar filtros</Button></div>
+        <div className="orders-search-row"><SearchInput value={query} onChange={value => updateView({ q: value })} label="Buscar órdenes" placeholder="Buscar por OT, cliente o descripción…" /><Button variant="ghost" onClick={resetFilters}><FilterX size={17} /> Limpiar filtros</Button></div>
         <div className="orders-filter-grid">
-          <Field label="Estado del trabajo" htmlFor="filter-status"><select className="select" id="filter-status" value={status} onChange={event => { setStatus(event.target.value); setPage(1); }}><option value="">Todos los estados</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
-          <Field label="Documento" htmlFor="filter-type"><select className="select" id="filter-type" value={documentType} onChange={event => { setDocumentType(event.target.value); setPage(1); }}><option value="">REM y FACT</option><option value="REM">Remisión · REM</option><option value="FACT">Facturación · FACT</option></select></Field>
-          {admin && <Field label="Estado de pago" htmlFor="filter-payment"><select className="select" id="filter-payment" value={payment} onChange={event => { setPayment(event.target.value); setPage(1); }}><option value="">Todos los pagos</option><option value="PENDING">Sin pagos</option><option value="PARTIAL">Pago parcial</option><option value="PAID">Pagada</option></select></Field>}
-          <Field label="Creada desde" htmlFor="filter-from"><input className="input" id="filter-from" type="date" value={from} max={to || undefined} onChange={event => { setFrom(event.target.value); setPage(1); }} /></Field>
-          <Field label="Creada hasta" htmlFor="filter-to"><input className="input" id="filter-to" type="date" value={to} min={from || undefined} onChange={event => { setTo(event.target.value); setPage(1); }} /></Field>
+          <Field label="Estado del trabajo" htmlFor="filter-status"><select className="select" id="filter-status" value={status} onChange={event => updateView({ status: event.target.value })}><option value="">Todos los estados</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+          <Field label="Documento" htmlFor="filter-type"><select className="select" id="filter-type" value={documentType} onChange={event => updateView({ type: event.target.value })}><option value="">REM y FACT</option><option value="REM">Remisión · REM</option><option value="FACT">Facturación · FACT</option></select></Field>
+          {admin && <Field label="Estado de pago" htmlFor="filter-payment"><select className="select" id="filter-payment" value={payment} onChange={event => updateView({ payment: event.target.value })}><option value="">Todos los pagos</option><option value="PENDING">Sin pagos</option><option value="PARTIAL">Pago parcial</option><option value="PAID">Pagada</option></select></Field>}
+          <Field label="Creada desde" htmlFor="filter-from"><input className="input" id="filter-from" type="date" value={from} max={to || undefined} onChange={event => updateView({ from: event.target.value })} /></Field>
+          <Field label="Creada hasta" htmlFor="filter-to"><input className="input" id="filter-to" type="date" value={to} min={from || undefined} onChange={event => updateView({ to: event.target.value })} /></Field>
         </div>
-        {selectedClient && <p className="order-filter-note">Mostrando trabajos de <strong>{selectedClient.name}</strong>. <button className="link" type="button" onClick={() => { const next = new URLSearchParams(params); next.delete('client'); next.delete('clientId'); setParams(next); }}>Ver todos los clientes</button></p>}
+        {selectedClient && <p className="order-filter-note">Mostrando trabajos de <strong>{selectedClient.name}</strong>. <button className="link" type="button" onClick={() => updateView({ client: '', clientId: '' })}>Ver todos los clientes</button></p>}
         {from && to && from > to && <p className="order-field-error" role="alert">La fecha inicial debe ser anterior o igual a la fecha final.</p>}
       </div>
       {filtered.length ? <>
@@ -128,7 +137,7 @@ export function OrdersPage() {
           {admin && <div className="order-card-amount"><span>Saldo pendiente</span><strong>{formatCOP(financials(order).balance)}</strong></div>}
           <div className="order-card-footer"><span className="muted">{formatDate(order.createdAt)}</span><Link className="link" to={`/orders/${order.id}`}>Ver orden <ArrowRight size={15} /></Link></div>
         </article>} />
-        <Pagination page={currentPage} pageSize={pageSize} total={filtered.length} onChange={setPage} />
+        <Pagination page={currentPage} pageSize={pageSize} total={filtered.length} onChange={nextPage => updateView({ page: nextPage > 1 ? String(nextPage) : '' }, false)} />
       </> : <EmptyState title="No hay órdenes para estos filtros" description="Prueba con otro cliente, fecha o estado del trabajo." action={<Button variant="secondary" onClick={resetFilters}>Limpiar filtros</Button>} />}
     </Card>
     <div className="order-flow-note"><ClipboardList size={22} /><div><strong>Producción y cobros, cada uno con su estado</strong><p>Una orden terminada puede conservar un saldo pendiente. Consulta cada estado por separado.</p></div></div>

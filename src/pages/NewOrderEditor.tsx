@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, FileText, Info, Plus, Save, Trash2 } from 'lucide-react';
 import { useApp } from '../data/AppContext';
@@ -57,6 +57,8 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   const navigate = useNavigate();
   const [clientId, setClientId] = useState(existing?.clientId || initialClientId);
   const [clientQuery, setClientQuery] = useState('');
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [activeClientIndex, setActiveClientIndex] = useState(-1);
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
@@ -95,7 +97,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   const route = routeFor(products);
   const designerCreatorId = !existing && user?.role === 'DISENO' ? user.id : undefined;
   const clientTerm = normalize(clientQuery.trim());
-  const filteredClients = data.clients.filter(item => !clientTerm || normalize(`${item.name} ${item.identification} ${item.phone}`).includes(clientTerm) || item.id === clientId);
+  const filteredClients = data.clients.filter(item => !clientTerm || normalize(`${item.name} ${item.identification} ${item.phone}`).includes(clientTerm));
   const designers = [...new Map([
     ...data.users.filter(person => person.role === 'DISENO' && person.active).map(person => ({ id: person.id, name: person.name })),
     ...remoteDesigners,
@@ -112,6 +114,12 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
     });
     return () => { active = false; };
   }, [user?.id, user?.role]);
+
+  useEffect(() => {
+    if (!clientId || clientQuery) return;
+    const selected = data.clients.find(item => item.id === clientId);
+    if (selected) setClientQuery(selected.name);
+  }, [clientId, clientQuery, data.clients]);
 
   useEffect(() => {
     if (existing || !user) return;
@@ -192,12 +200,38 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   function updateMaterial(product: ProductDraft, key: string, update: Partial<MaterialDraft>) {
     updateProduct(product.key, { materials: product.materials.map(item => item.key === key ? { ...item, ...update } : item) });
   }
+  function selectClient(nextClient: (typeof data.clients)[number]) {
+    setClientId(nextClient.id);
+    setClientQuery(nextClient.name);
+    setClientPickerOpen(false);
+    setActiveClientIndex(-1);
+    setError('');
+  }
+  function handleClientKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Escape') {
+      setClientPickerOpen(false);
+      setActiveClientIndex(-1);
+      return;
+    }
+    if (!filteredClients.length || !['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
+    if (event.key === 'Enter') {
+      if (!clientPickerOpen || activeClientIndex < 0) return;
+      event.preventDefault();
+      selectClient(filteredClients[activeClientIndex]);
+      return;
+    }
+    event.preventDefault();
+    setClientPickerOpen(true);
+    setActiveClientIndex(current => event.key === 'ArrowDown'
+      ? current >= filteredClients.length - 1 ? 0 : current + 1
+      : current <= 0 ? filteredClients.length - 1 : current - 1);
+  }
   async function addClient() {
     if (!clientName.trim() || !clientPhone.trim()) { setClientError('Nombre y celular son obligatorios.'); return; }
     if (documentType === 'FACT' && !clientIdentification.trim()) { setClientError('La identificación es obligatoria para FACT.'); return; }
     try {
       const created = await saveClient({ name: clientName.trim(), phone: clientPhone.trim(), identification: clientIdentification.trim(), specialPayment: clientSpecial });
-      setClientId(created.id); setNewClientOpen(false); setClientError(''); setClientName(''); setClientPhone(''); setClientIdentification('');
+      setClientId(created.id); setClientQuery(created.name); setClientPickerOpen(false); setNewClientOpen(false); setClientError(''); setClientName(''); setClientPhone(''); setClientIdentification('');
       toast('Cliente agregado al directorio.');
     } catch (reason) { setClientError(reason instanceof Error ? reason.message : 'No fue posible guardar el cliente.'); }
   }
@@ -277,10 +311,10 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
           <div className="order-section-heading"><span>01</span><h2>Cliente y documento</h2></div>
           <div className="form-grid">
             <Field label="Número de OT" htmlFor="ot-number" hint="El servidor asigna el siguiente número al guardar."><input id="ot-number" className="input" value={existing ? String(existing.number) : 'Asignado al guardar'} readOnly /></Field>
-            <Field label="Buscar y seleccionar cliente *" htmlFor="ot-client-search"><div className="order-client-picker"><input id="ot-client-search" className="input" type="search" value={clientQuery} onChange={event => setClientQuery(event.target.value)} placeholder="Nombre, identificación o celular" /><select id="ot-client" aria-label="Cliente o razón social" className="select" value={clientId} onChange={event => { setClientId(event.target.value); setError(''); }} required><option value="">Selecciona un cliente</option>{filteredClients.map(item => <option key={item.id} value={item.id}>{item.name}{item.identification ? ` · ${item.identification}` : ''}</option>)}</select></div></Field>
+            <Field label="Buscar y seleccionar cliente *" htmlFor="ot-client-search"><div className="order-client-picker" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { setClientPickerOpen(false); setActiveClientIndex(-1); } }}><input id="ot-client-search" className="input" type="search" role="combobox" aria-autocomplete="list" aria-expanded={clientPickerOpen} aria-controls="ot-client-options" aria-activedescendant={clientPickerOpen && activeClientIndex >= 0 && activeClientIndex < filteredClients.length ? `ot-client-option-${filteredClients[activeClientIndex].id}` : undefined} aria-required="true" autoComplete="off" value={clientQuery} onFocus={() => { const selectedIndex = filteredClients.findIndex(item => item.id === clientId); setClientPickerOpen(true); setActiveClientIndex(filteredClients.length ? Math.max(0, selectedIndex) : -1); }} onKeyDown={handleClientKeyDown} onChange={event => { setClientQuery(event.target.value); setClientId(''); setClientPickerOpen(true); setActiveClientIndex(0); setError(''); }} placeholder="Nombre, identificación o celular" />{clientPickerOpen && <div id="ot-client-options" className="order-client-options" role="listbox" aria-label="Resultados de clientes">{filteredClients.length ? filteredClients.map((item, index) => <button id={`ot-client-option-${item.id}`} key={item.id} type="button" role="option" aria-selected={item.id === clientId} className={`order-client-option ${index === activeClientIndex ? 'is-active' : ''}`} onMouseEnter={() => setActiveClientIndex(index)} onClick={() => selectClient(item)}><strong>{item.name}</strong><span>{[item.identification, item.phone].filter(Boolean).join(' · ') || 'Sin identificación ni celular'}</span></button>) : <p className="order-client-empty" role="status">No se encontraron clientes.</p>}</div>}</div></Field>
           </div>
           {client && <div className="order-client-selected"><div><strong>{client.name}</strong><span>{client.phone} · {client.specialPayment ? 'Pago especial: no requiere abono inicial' : 'Requiere abono inicial'}</span></div><Check size={18} /></div>}
-          <div className="order-client-actions"><Link className="link" to="/clients">Consultar clientes</Link><button type="button" className="link" onClick={() => setNewClientOpen(value => !value)}>{newClientOpen ? 'Cancelar' : 'Nuevo cliente'}</button></div>
+          <div className="order-client-actions"><Link className="btn btn-secondary" to="/clients">Consultar clientes</Link><Button type="button" variant="secondary" onClick={() => setNewClientOpen(value => !value)}>{newClientOpen ? 'Cancelar' : 'Nuevo cliente'}</Button></div>
           {newClientOpen && <div className="order-inline-client"><div className="form-grid"><Field label="Nombre / razón social *" htmlFor="new-client-name"><input id="new-client-name" className="input" value={clientName} onChange={event => setClientName(event.target.value)} /></Field><Field label="Celular *" htmlFor="new-client-phone"><input id="new-client-phone" className="input" type="tel" value={clientPhone} onChange={event => setClientPhone(event.target.value)} /></Field><Field label="NIT o identificación" htmlFor="new-client-identification" hint="Obligatorio si requiere FACT."><input id="new-client-identification" className="input" value={clientIdentification} onChange={event => setClientIdentification(event.target.value)} /></Field></div><label className="order-install-toggle"><input type="checkbox" checked={clientSpecial} onChange={event => setClientSpecial(event.target.checked)} /><span><strong>Cliente de pago especial</strong><small>Puede registrar OTs sin abono inicial; su saldo se verá como Especial.</small></span></label>{clientError && <p className="order-field-error" role="alert">{clientError}</p>}<Button type="button" variant="secondary" onClick={() => void addClient()}>Agregar cliente</Button></div>}
           <fieldset className="order-choice-fieldset order-composite-choice"><legend>Tipo de documento</legend><div className="order-document-options"><label className={`order-choice-card ${documentType === 'REM' ? 'is-selected' : ''}`}><input type="radio" name="documentType" checked={documentType === 'REM'} onChange={() => setDocumentType('REM')} /><FileText size={18} /> REM</label><label className={`order-choice-card ${documentType === 'FACT' ? 'is-selected' : ''}`}><input type="radio" name="documentType" checked={documentType === 'FACT'} onChange={() => setDocumentType('FACT')} /><FileText size={18} /> FACT · IVA 19 %</label></div></fieldset>
           <fieldset className="order-choice-fieldset order-composite-choice"><legend>Categoría comercial</legend><div className="order-category-options">{CATEGORIES.map(item => <label key={item} className={`order-choice-card ${category === item ? 'is-selected' : ''}`}><input type="radio" name="category" checked={category === item} onChange={() => setCategory(item)} />{item}</label>)}</div></fieldset>
