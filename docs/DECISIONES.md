@@ -33,6 +33,7 @@
 31. En Nueva OT, la búsqueda y la selección del cliente forman un único desplegable filtrable por nombre, identificación o celular. Escribir una consulta nueva invalida la selección previa hasta elegir una coincidencia.
 32. La página y los filtros del historial de OT se conservan en los parámetros de su URL. Atrás del navegador restaura esa entrada exacta; una navegación nueva a `/orders` desde el menú comienza en la página 1 sin contexto anterior.
 33. Al cerrar cada entrega se debe crear su commit y enviarlo a `origin/main`, salvo que el usuario indique expresamente lo contrario o exista un bloqueo técnico que deba informarse.
+34. Impresión y Taller pueden consultar en el detalle de una OT el nombre y rol de quien la registró. Este dato operativo no habilita acceso al directorio de usuarios ni expone correo, estado de cuenta u otros datos administrativos.
 
 ## Decisiones sustituidas
 

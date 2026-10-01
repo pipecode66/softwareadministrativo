@@ -14,7 +14,7 @@ Externo representa trabajo de terceros y puede convivir en el mismo producto con
 
 Impresión puede ser normal o Corte Láser. La normal utiliza uno o varios materiales con medidas. Corte Láser no usa materiales y cobra $1.000 COP por cada minuto entero registrado antes de finalizar.
 
-Administración edita OT antes de iniciar actividades, registra pagos, certificados y multiabonos. Diseño crea clientes y consulta su historial operativo, pero no recibe totales de órdenes, pagos, saldos, retenciones ni certificados. Impresión y Taller tampoco reciben importes comerciales.
+Administración edita OT antes de iniciar actividades, registra pagos, certificados y multiabonos. Diseño crea clientes y consulta su historial operativo, pero no recibe totales de órdenes, pagos, saldos, retenciones ni certificados. Impresión y Taller tampoco reciben importes comerciales. Al revisar una OT, Impresión y Taller pueden ver el nombre y rol de quien la registró, sin acceso al directorio de usuarios ni a sus correos.
 
 ## Datos comerciales
 
@@ -49,4 +49,4 @@ No incluye urgencias, inventario, exportación Excel/CSV, contabilidad integral,
 
 Frontend React/TypeScript/Vite y backend Express/TypeScript con PostgreSQL productivo o PGlite en desarrollo. Autenticación por cookie HttpOnly, CSRF, Argon2, roles server-side, idempotencia en operaciones sensibles y control de versión de OT. Vercel utiliza el adaptador api/ y PostgreSQL externo.
 
-El usuario confirmó la aplicación de la migración 008 en Supabase. Los cambios vigentes al 30/09/2026 están implementados, verificados y enviados a `origin/main`; el despliegue productivo posterior no se ha comprobado desde este entorno. Al cerrar cada entrega se hace commit y push salvo indicación expresa en contrario. Consultar docs/ESTADO.md para el punto exacto, el contador comercial acumulado y docs/LIMPIEZA_DATOS_2026-09-21.md para la depuración autorizada.
+El usuario confirmó la aplicación de la migración 008 en Supabase. Los cambios vigentes al 01/10/2026 están implementados, verificados y enviados a `origin/main`; el despliegue productivo posterior no se ha comprobado desde este entorno. Al cerrar cada entrega se hace commit y push salvo indicación expresa en contrario. Consultar docs/ESTADO.md para el punto exacto, el contador comercial acumulado y docs/LIMPIEZA_DATOS_2026-09-21.md para la depuración autorizada.

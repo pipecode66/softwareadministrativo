@@ -1,15 +1,20 @@
 # Estado de continuidad
 
-Actualizado: 2026-09-30.
+Actualizado: 2026-10-01.
 
 ## Estado actual
 
 El tramo de Corte Láser y borradores quedó publicado anteriormente en `main` mediante el commit `97472bf`. El usuario confirmó que `server/migrations/008_laser_drafts.sql` fue ejecutada en Supabase. El commit `d31d776` contiene la búsqueda por descripción y los controles de sesión.
 
-El tramo del selector desplegable de clientes y la restauración del historial quedó implementado, verificado, versionado y enviado a `origin/main` el 30/09/2026. No requiere cambios de backend, SQL ni migraciones. No se ha comprobado todavía el despliegue productivo posterior al `push`.
+El tramo del selector desplegable de clientes y la restauración del historial quedó implementado, verificado, versionado y enviado a `origin/main` el 30/09/2026.
+
+El 01/10/2026 quedó implementada, verificada, versionada y enviada a `origin/main` la identificación del creador de la OT para Impresión y Taller. La lista operativa del servidor entrega exclusivamente el nombre y el rol del creador, sin abrir acceso al directorio de usuarios, correos ni datos administrativos. El detalle conserva esa identificación después de actualizar o avanzar una orden. No requiere SQL ni migración. El despliegue productivo posterior al `push` no se ha comprobado desde este entorno.
 
 ## Funcionalidades terminadas en este tramo
 
+- Al abrir una OT, los perfiles de Impresión y Taller ven quién la registró y el rol de esa persona.
+- La identidad operativa se limita a nombre y rol; no se exponen correo, estado de cuenta, teléfono, NIT ni datos financieros.
+- La referencia al creador se conserva en pantalla después de editar, registrar una acción o cambiar la etapa de la OT.
 - El historial de órdenes busca por número de OT, cliente y descripción del trabajo.
 - La búsqueda por descripción no distingue mayúsculas ni tildes; una consulta como `TALONARIOS` devuelve todas las OT visibles que contengan ese texto.
 - La primera carga después de iniciar o restaurar una sesión se utiliza como línea base silenciosa: las OT históricas ya existentes no generan avisos repetidos.
@@ -27,7 +32,9 @@ El tramo del selector desplegable de clientes y la restauración del historial q
 ## Archivos principales
 
 - `src/pages/Orders.tsx`
+- `src/pages/OrderDetail.tsx`
 - `src/data/AppContext.tsx`
+- `src/domain/types.ts`
 - `src/data/orderNotifications.ts`
 - `src/components/AppShell.tsx`
 - `src/pages/ChangePassword.tsx`
@@ -37,6 +44,8 @@ El tramo del selector desplegable de clientes y la restauración del historial q
 - `tests/order-notifications.test.ts`
 - `tests/frontend.spec.ts`
 - `tests/api-e2e.spec.ts`
+- `server/src/orders/domain.ts`
+- `server/src/orders/service.ts`
 - `server/tests/orders.test.ts`
 
 ## Verificación local
@@ -46,6 +55,7 @@ El tramo del selector desplegable de clientes y la restauración del historial q
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
 - `npm --prefix server test`: 267/267 en 8 archivos.
+- Prueba E2E dirigida para Impresión y Taller: 2/2; ambos perfiles visualizan al creador en el detalle.
 - `npm run test:e2e`: los 32 casos funcionales aprobaron, incluidos el desplegable abierto en móvil y la restauración de la página 4. Dos recorridos completos cerraron 31/32 por incidencias transitorias del entorno de Playwright (un artefacto de traza y una espera de carga antes del login); ambos casos restantes aprobaron 1/1 al repetirlos aisladamente.
 - `npm run test:e2e:api`: 5/5 con API y PGlite reales.
 - La prueba del servidor confirma varias coincidencias por descripción con `TALONARIOS`.
@@ -66,14 +76,17 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Corte Láser, borradores y ajustes productivos del 22/09 | 11 | 4 |
 | Búsqueda, avisos y controles de cuenta del 27/09 | 3 | 1 |
 | Selector de clientes y contexto del historial del 30/09 | 3 | 2 |
-| **Acumulado** | **34** | **17** |
+| Identidad del creador para producción del 01/10 | 1 | 0 |
+| **Acumulado** | **35** | **17** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
+La identificación del creador solicitada el 01/10 se cuenta como un cambio menor de visibilidad operativa, no como un cambio significativo.
+
 ## Pendiente para producción
 
-1. Esperar el despliegue asociado y comprobar en producción la búsqueda por descripción, el inicio de sesión sin avisos históricos, los botones de cuenta, el selector desplegable de clientes y la restauración del historial.
-2. No hay SQL ni migración nueva que ejecutar para este tramo.
+1. Esperar el despliegue asociado y comprobar en producción que Impresión y Taller visualicen el nombre y rol del creador al abrir una OT.
+2. No hay SQL ni migración nueva que ejecutar para este cambio.
 
 ## Comando para retomar
 

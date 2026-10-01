@@ -15,6 +15,9 @@ import { parseData, readData, SESSION_KEY, STORAGE_KEY, writeData } from './repo
 
 type ClientInput = Pick<Client, 'name' | 'identification' | 'phone' | 'specialPayment'>;
 export type UserInput = Pick<User, 'name' | 'email' | 'role' | 'active'> & { password?: string };
+function preserveCreator(current: WorkOrder, updated: WorkOrder): WorkOrder {
+  return { ...updated, creatorName: updated.creatorName ?? current.creatorName, creatorRole: updated.creatorRole ?? current.creatorRole };
+}
 interface AppContextValue {
   data: AppData; user: User | null; accounts: User[]; sessionReady: boolean; usingApi: boolean;
   dataLoading: boolean; dataError: string; refreshData: () => Promise<void>;
@@ -243,7 +246,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const order = dataRef.current.orders.find(item => item.id === id);
         if (!order) throw new Error('No encontramos esta orden.');
         const updated = await remote(() => apiUpdateOrder(id, input, order.version ?? 1));
-        replaceData({ ...dataRef.current, orders: dataRef.current.orders.map(item => item.id === id ? updated : item) });
+        replaceData({ ...dataRef.current, orders: dataRef.current.orders.map(item => item.id === id ? preserveCreator(item, updated) : item) });
         return;
       }
       modifyOrder(id, (order, current, account) => editWorkOrder(current, account, order, input));
@@ -251,7 +254,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async addPayment(id, payment) {
       if (usingApi) {
         const updated = await remote(() => apiAddPayment(id, payment, crypto.randomUUID()));
-        replaceData({ ...dataRef.current, orders: dataRef.current.orders.map(item => item.id === id ? updated : item) });
+        replaceData({ ...dataRef.current, orders: dataRef.current.orders.map(item => item.id === id ? preserveCreator(item, updated) : item) });
         return;
       }
       modifyOrder(id, (order, _current, account) => recordPayment(account, order, payment));
@@ -292,7 +295,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const order = dataRef.current.orders.find(item => item.id === id);
         if (!order) throw new Error('No encontramos esta orden.');
         const updated = await remote(() => apiTransitionOrder(id, action, order.version ?? 1, details));
-        replaceData({ ...dataRef.current, orders: dataRef.current.orders.map(item => item.id === id ? updated : item) });
+        replaceData({ ...dataRef.current, orders: dataRef.current.orders.map(item => item.id === id ? preserveCreator(item, updated) : item) });
         return;
       }
       modifyOrder(id, (order, _current, account) => transitionWorkOrder(account, order, action, details));

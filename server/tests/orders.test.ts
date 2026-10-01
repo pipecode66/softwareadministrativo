@@ -22,6 +22,7 @@ const missingId = '00000000-0000-4000-8000-000000000099';
 interface Session { cookie: string; csrf: string; user: PublicUser }
 interface OrderView {
   id: string; number: number; version: number; status: string;
+  creatorName?: string; creatorRole?: Role;
   value?: number; financials?: ReturnType<typeof financials>; payments?: unknown[];
   printingCompletedAt?: string; workshopStartedAt?: string; installedAt?: string;
   installationNote?: string; closedAt?: string; areaM2?: number;
@@ -441,10 +442,12 @@ describe('OT: alcance de datos y filtros', () => {
     const operator = await actor('IMPRESION');
     const list = await get('/orders', operator);
     expect(list.body.total).toBe(1);
-    expect(list.body.items[0]).toMatchObject({ id: shown.id, areaM2: 3, status: 'IN_PRINTING' });
+    expect(list.body.items[0]).toMatchObject({ id: shown.id, areaM2: 3, status: 'IN_PRINTING',
+      creatorName: admin.user.name, creatorRole: 'ADMINMASTER' });
     for (const field of ['value', 'payments', 'financials', 'reteFuente', 'reteIva', 'ica']) expect(list.body.items[0]).not.toHaveProperty(field);
     expect(list.text).not.toContain('NIT-900888777');
     expect(list.text).not.toContain('+57 300 987 6543');
+    expect(list.text).not.toContain(EMAIL);
     expect((await get(`/orders/${hidden.id}`, operator)).status).toBe(404);
     const detail = await get(`/orders/${shown.id}`, operator);
     expect(detail.body.client).toEqual({ id: clientId, name: 'Cliente Andino' });
@@ -462,7 +465,12 @@ describe('OT: alcance de datos y filtros', () => {
     const list = await get('/orders', operator);
     expect(list.body.total).toBe(2);
     expect(list.body.items.map((item: OrderView) => item.id).sort()).toEqual([workshop.id, install.id].sort());
+    expect(list.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: workshop.id, creatorName: admin.user.name, creatorRole: 'ADMINMASTER' }),
+      expect.objectContaining({ id: install.id, creatorName: admin.user.name, creatorRole: 'ADMINMASTER' }),
+    ]));
     expect(list.text).not.toMatch(/"value"|"payments"|"financials"|"reteFuente"/);
+    expect(list.text).not.toContain(EMAIL);
   });
 
   it('filtra por cobros pendientes, parciales y pagados tanto REM como FACT', async () => {

@@ -213,9 +213,9 @@ test('Diseño crea directamente y no accede a finanzas, impresión ni usuarios',
   }
 });
 
-for (const [email, home, orderId, action, expectedStatus] of [
-  ['impresion@intermedios.local', '/printing', 'ot-1', 'Finalizar impresión', 'IN_WORKSHOP'],
-  ['taller@intermedios.local', '/workshop', 'ot-2', 'Iniciar taller', 'IN_WORKSHOP'],
+for (const [email, home, orderId, action, expectedStatus, creatorName] of [
+  ['impresion@intermedios.local', '/printing', 'ot-1', 'Finalizar impresión', 'IN_WORKSHOP', 'Sofía López'],
+  ['taller@intermedios.local', '/workshop', 'ot-2', 'Iniciar taller', 'IN_WORKSHOP', 'Laura Ramírez'],
 ] as const) {
   test(`${home}: permisos de operador y actualización de su etapa`, async ({ page }) => {
     await login(page, email);
@@ -223,6 +223,7 @@ for (const [email, home, orderId, action, expectedStatus] of [
     await page.goto(`/orders/${orderId}`);
     await expect(page.getByRole('heading', { name: 'Control financiero' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Vista imprimible' })).toHaveCount(0);
+    await expect(page.getByText('Registrada por', { exact: true }).locator('..')).toContainText(creatorName);
     await advance(page, action);
     expect((await storedOrders(page)).find(item => item.id === orderId)!.status).toBe(expectedStatus);
     for (const route of ['/orders/new', '/reports', '/settings/users']) {

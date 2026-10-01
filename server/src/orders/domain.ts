@@ -89,6 +89,7 @@ export type OrderRow = {
   id: string; number: number; client_id: string; description: string; value: string; document_type: 'REM'|'FACT';
   category: typeof categories[number]; route: typeof routes[number] | 'IMPRENTA'; requires_installation: boolean;
   status: typeof statuses[number]; created_by: string; created_at: Date|string; updated_at: Date|string; version: number;
+  creator_name?: string; creator_role?: Role;
   material: typeof materials[number] | null; length: string|null; width: string|null;
   rete_fuente: string; rete_iva: string; ica: string;
   financial_rule: 'LEGACY'|'NEW'; special_payment?: boolean;
@@ -115,7 +116,9 @@ export function orderDto(row: OrderRow, payments: PaymentRow[], role: Role, desi
     id: row.id, number: row.number, clientId: row.client_id, description: row.description, documentType: row.document_type,
     category: row.category, route: row.route, requiresInstallation: row.requires_installation, status: row.status,
     financialRule: row.financial_rule, specialPayment: Boolean(row.special_payment),
-    createdBy: row.created_by, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at), version: row.version,
+    createdBy: row.created_by,
+    ...(row.creator_name && row.creator_role ? { creatorName: row.creator_name, creatorRole: row.creator_role } : {}),
+    createdAt: iso(row.created_at), updatedAt: iso(row.updated_at), version: row.version,
     ...(row.material ? { printing: { material: row.material, length: Number(row.length), width: Number(row.width) }, areaM2: Math.round(Number(row.length)*Number(row.width)*1000)/1000 } : {}),
     ...(row.printing_completed_at ? { printingCompletedAt: iso(row.printing_completed_at) } : {}),
     ...(row.workshop_started_at ? { workshopStartedAt: iso(row.workshop_started_at) } : {}),

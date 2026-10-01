@@ -354,7 +354,9 @@ export async function listOrders(db: Database, auth: AuthSession, input: ListQue
     if (input.paymentStatus === 'SPECIAL') conditions.push(`c.special_payment=true AND ${paid}<${collectible}`);
     const where = conditions.map(s => `(${s})`).join(' AND ');
     const total = Number((await tx.query<{ total: string }>(`SELECT count(*) AS total FROM orders o JOIN clients c ON c.id=o.client_id WHERE ${where}`, params)).rows[0].total);
-    const rows = (await tx.query<OrderRow>(`SELECT o.*,c.special_payment FROM orders o JOIN clients c ON c.id=o.client_id WHERE ${where} ORDER BY o.number DESC LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, input.pageSize, (input.page-1)*input.pageSize])).rows;
+    const rows = (await tx.query<OrderRow>(`SELECT o.*,c.special_payment,creator.name AS creator_name,creator.role AS creator_role
+      FROM orders o JOIN clients c ON c.id=o.client_id JOIN users creator ON creator.id=o.created_by
+      WHERE ${where} ORDER BY o.number DESC LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, input.pageSize, (input.page-1)*input.pageSize])).rows;
     const ids = rows.map(row => row.id);
     const payments = isAdmin(auth.user.role) && ids.length ? (await tx.query<PaymentRow>('SELECT * FROM payments WHERE order_id=ANY($1::uuid[]) ORDER BY date,recorded_at,id', [ids])).rows : [];
     const clientRows = ids.length ? (await tx.query<{ id:string; name:string; created_at:Date|string }>('SELECT DISTINCT c.id,c.name,c.created_at FROM clients c JOIN orders o ON o.client_id=c.id WHERE o.id=ANY($1::uuid[])', [ids])).rows : [];

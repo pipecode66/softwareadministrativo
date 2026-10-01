@@ -32,6 +32,7 @@ export interface WorkOrder {
   id: string; number: number; clientId: string; description: string; value: number;
   documentType: DocumentType; category: Category; route: ProductionRoute;
   requiresInstallation: boolean; status: WorkStatus; createdBy: string;
+  creatorName?: string; creatorRole?: Role;
   createdAt: string; updatedAt: string; version?: number; printing?: Printing; financialRule?: FinancialRule;
   specialPayment?: boolean; certificates?: { reteFuente: boolean; reteIva: boolean; ica: boolean };
   products?: OrderProduct[];
