@@ -19,7 +19,8 @@ const EMAIL = 'work-master@example.test';
 const PASSWORD = 'Una clave ficticia para tareas 2026!';
 const config = readConfig({ NODE_ENV: 'test', APP_ORIGINS: ORIGIN, LOGIN_RATE_LIMIT: '100' });
 type Session = { cookie: string; csrf: string; user: PublicUser };
-type Activity = { id: string; area: string; status: string; ready: boolean; assignedUserId: string | null; materials: { consumedAt: string | null }[] };
+type Activity = { id: string; area: string; status: string; ready: boolean; assignedUserId: string | null;
+  receivedByWorkshop?: string; materials: { consumedAt: string | null }[] };
 let db: Database;
 let app: Express;
 let admin: Session;
@@ -168,9 +169,20 @@ describe('Productos y trabajo interno', () => {
     expect((await post(`/work/activities/${cutting.id}/start`, {}, workshop)).status).toBe(409);
     expect((await get(`/work/activities?orderId=${order.id}`, printer)).body.items[0].materials[0].consumedAt).toBeNull();
     expect((await post(`/work/activities/${printing.id}/start`, {}, printer)).status).toBe(200);
-    const printed = await post(`/work/activities/${printing.id}/complete`, {}, printer);
+    const missingRecipient = await post(`/work/activities/${printing.id}/complete`, {}, printer);
+    expect(missingRecipient.status).toBe(400);
+    expect(missingRecipient.body.error.message).toBe('Por favor, digitar quien recibe en taller.');
+    const blankRecipient = await post(`/work/activities/${printing.id}/complete`, { receivedByWorkshop: '   ' }, printer);
+    expect(blankRecipient.status).toBe(400);
+    expect(blankRecipient.body.error.message).toBe('Por favor, digitar quien recibe en taller.');
+    const printed = await post(`/work/activities/${printing.id}/complete`, { receivedByWorkshop: '  Carlos Taller  ' }, printer);
     expect(printed.status).toBe(200);
+    expect(printed.body.activity.receivedByWorkshop).toBe('Carlos Taller');
     expect(printed.body.activity.materials[0].consumedAt).toBeTruthy();
+    const workshopView = await get(`/work/orders/${order.id}`, workshop);
+    expect(workshopView.body.products[0].activities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ area: 'PRINTING', receivedByWorkshop: 'Carlos Taller' }),
+    ]));
     const today = dateOnly();
     const materialReport = await get(`/reports/materials?from=${today}&to=${today}`);
     expect(materialReport.status).toBe(200);

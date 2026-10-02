@@ -23,6 +23,7 @@ interface Session { cookie: string; csrf: string; user: PublicUser }
 interface OrderView {
   id: string; number: number; version: number; status: string;
   creatorName?: string; creatorRole?: Role;
+  printingReceivedByWorkshop?: string;
   value?: number; financials?: ReturnType<typeof financials>; payments?: unknown[];
   printingCompletedAt?: string; workshopStartedAt?: string; installedAt?: string;
   installationNote?: string; closedAt?: string; areaM2?: number;
@@ -106,7 +107,9 @@ function transition(order: OrderView, action: string, session = admin, details: 
 }
 
 async function move(order: OrderView, action: string, session = admin, details: Record<string, unknown> = {}): Promise<OrderView> {
-  const response = await transition(order, action, session, details);
+  const actionDetails = action === 'finishPrinting' && details.receivedByWorkshop === undefined
+    ? { ...details, receivedByWorkshop: 'Carlos Taller' } : details;
+  const response = await transition(order, action, session, actionDetails);
   expect(response.status).toBe(200);
   return response.body.order as OrderView;
 }
@@ -347,8 +350,15 @@ describe('OT: edición, versiones y flujo productivo', () => {
     order = await move(order, 'send');
     if (route !== 'WORKSHOP_ONLY') {
       expect(order.status).toBe('IN_PRINTING');
+      const missingRecipient = await transition(order, 'finishPrinting', await actor('IMPRESION'));
+      expect(missingRecipient.status).toBe(400);
+      expect(missingRecipient.body.error.message).toBe('Por favor, digitar quien recibe en taller.');
+      const blankRecipient = await transition(order, 'finishPrinting', await actor('IMPRESION'), { receivedByWorkshop: '   ' });
+      expect(blankRecipient.status).toBe(400);
+      expect(blankRecipient.body.error.message).toBe('Por favor, digitar quien recibe en taller.');
       order = await move(order, 'finishPrinting', await actor('IMPRESION'));
       expect(order.printingCompletedAt).toBeDefined();
+      expect(order.printingReceivedByWorkshop).toBe('Carlos Taller');
     }
     if (route !== 'PRINT_ONLY') {
       expect(order.status).toBe('IN_WORKSHOP');
@@ -397,7 +407,8 @@ describe('OT: edición, versiones y flujo productivo', () => {
   it('no duplica impresión ni eventos con dos transiciones de la misma versión', async () => {
     const order = await move(await create(), 'send');
     const operator = await actor('IMPRESION');
-    const results = await Promise.all([transition(order, 'finishPrinting', operator), transition(order, 'finishPrinting', operator)]);
+    const details = { receivedByWorkshop: 'Carlos Taller' };
+    const results = await Promise.all([transition(order, 'finishPrinting', operator, details), transition(order, 'finishPrinting', operator, details)]);
     expect(results.filter(response => response.status === 200)).toHaveLength(1);
     expect(results.filter(response => [404, 409].includes(response.status))).toHaveLength(1);
     const events = await db.query("SELECT id FROM order_events WHERE order_id=$1 AND action='finishPrinting'", [order.id]);
@@ -467,7 +478,8 @@ describe('OT: alcance de datos y filtros', () => {
     expect(list.body.items.map((item: OrderView) => item.id).sort()).toEqual([workshop.id, install.id].sort());
     expect(list.body.items).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: workshop.id, creatorName: admin.user.name, creatorRole: 'ADMINMASTER' }),
-      expect.objectContaining({ id: install.id, creatorName: admin.user.name, creatorRole: 'ADMINMASTER' }),
+      expect.objectContaining({ id: install.id, creatorName: admin.user.name, creatorRole: 'ADMINMASTER',
+        printingReceivedByWorkshop: 'Carlos Taller' }),
     ]));
     expect(list.text).not.toMatch(/"value"|"payments"|"financials"|"reteFuente"/);
     expect(list.text).not.toContain(EMAIL);

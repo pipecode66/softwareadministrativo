@@ -12,7 +12,7 @@ Una actividad de Diseño debe completarse antes de la actividad de Impresión de
 
 Externo representa trabajo de terceros y puede convivir en el mismo producto con Diseño, Impresión y Taller. Cuando es la única actividad no solicita parámetros de impresión; si también existe Impresión, se aplican los datos propios de esa actividad.
 
-Impresión puede ser normal o Corte Láser. La normal utiliza uno o varios materiales con medidas. Corte Láser no usa materiales y cobra $1.000 COP por cada minuto entero registrado antes de finalizar.
+Impresión puede ser normal o Corte Láser. La normal utiliza uno o varios materiales con medidas. Corte Láser no usa materiales y cobra $1.000 COP por cada minuto entero registrado antes de finalizar. El perfil de Impresión debe registrar el nombre de quien recibe el trabajo en Taller antes de poder finalizar; el dato queda ligado a esa actividad. Las OT heredadas conservan el mismo registro en su etapa general de Impresión.
 
 Administración edita OT antes de iniciar actividades, registra pagos, certificados y multiabonos. Diseño crea clientes y consulta su historial operativo, pero no recibe totales de órdenes, pagos, saldos, retenciones ni certificados. Impresión y Taller tampoco reciben importes comerciales. Al revisar una OT, Impresión y Taller pueden ver el nombre y rol de quien la registró, sin acceso al directorio de usuarios ni a sus correos.
 
@@ -49,4 +49,4 @@ No incluye urgencias, inventario, exportación Excel/CSV, contabilidad integral,
 
 Frontend React/TypeScript/Vite y backend Express/TypeScript con PostgreSQL productivo o PGlite en desarrollo. Autenticación por cookie HttpOnly, CSRF, Argon2, roles server-side, idempotencia en operaciones sensibles y control de versión de OT. Vercel utiliza el adaptador api/ y PostgreSQL externo.
 
-El usuario confirmó la aplicación de la migración 008 en Supabase. Los cambios vigentes al 01/10/2026 están implementados, verificados y enviados a `origin/main`; el despliegue productivo posterior no se ha comprobado desde este entorno. Al cerrar cada entrega se hace commit y push salvo indicación expresa en contrario. Consultar docs/ESTADO.md para el punto exacto, el contador comercial acumulado y docs/LIMPIEZA_DATOS_2026-09-21.md para la depuración autorizada.
+El usuario confirmó la aplicación de la migración 008 en Supabase. El cambio del 02/10/2026 está implementado y verificado localmente, pero la publicación espera que el usuario aplique primero `009_printing_handoff.sql` en Supabase. El despliegue productivo posterior no se comprueba desde este entorno. Al cerrar cada entrega se hace commit y push salvo indicación expresa en contrario o una dependencia de producción que haga inseguro publicarla. Consultar docs/ESTADO.md para el punto exacto, el contador comercial acumulado y docs/LIMPIEZA_DATOS_2026-09-21.md para la depuración autorizada.

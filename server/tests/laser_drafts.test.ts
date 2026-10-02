@@ -27,6 +27,7 @@ type Activity = {
   laserMinutes?: number | null;
   laserRate?: number;
   laserCharge?: number;
+  receivedByWorkshop?: string;
 };
 
 let db: Database;
@@ -190,13 +191,17 @@ describe('Corte Láser y total comercial', () => {
     let laser = (await activities(orderId, printer))[0];
     expect(laser).toMatchObject({ area: 'PRINTING', printingType: 'LASER', laserMinutes: null, laserRate: 1000, laserCharge: 0 });
     expect((await post(`/work/activities/${laser.id}/start`, {}, printer)).status).toBe(200);
-    expect((await post(`/work/activities/${laser.id}/complete`, {}, printer)).status).toBe(409);
+    const missingRecipient = await post(`/work/activities/${laser.id}/complete`, {}, printer);
+    expect(missingRecipient.status).toBe(400);
+    expect(missingRecipient.body.error.message).toBe('Por favor, digitar quien recibe en taller.');
     expect((await patch(`/work/activities/${laser.id}/laser`, { minutes: 1.5 }, printer)).status).toBe(400);
     expect((await patch(`/work/activities/${laser.id}/laser`, { minutes: 7 }, await actor('TALLER'))).status).toBe(403);
     const saved = await patch(`/work/activities/${laser.id}/laser`, { minutes: 7 }, printer);
     expect(saved.status).toBe(200);
     expect(saved.body.activity).toMatchObject({ laserMinutes: 7, laserRate: 1000, laserCharge: 7000 });
-    expect((await post(`/work/activities/${laser.id}/complete`, {}, printer)).status).toBe(200);
+    const completed = await post(`/work/activities/${laser.id}/complete`, { receivedByWorkshop: '  María Taller  ' }, printer);
+    expect(completed.status).toBe(200);
+    expect(completed.body.activity.receivedByWorkshop).toBe('María Taller');
 
     const order = (await get(`/orders/${orderId}`)).body.order;
     expect(order).toMatchObject({ value: 7000, status: 'COMPLETED', reteFuente: 0, reteIva: 0, ica: 0 });
@@ -224,14 +229,14 @@ describe('Corte Láser y total comercial', () => {
 
     await post(`/work/activities/${laserActivities[0].id}/start`, {});
     await patch(`/work/activities/${laserActivities[0].id}/laser`, { minutes: 10 });
-    await post(`/work/activities/${laserActivities[0].id}/complete`, {});
+    await post(`/work/activities/${laserActivities[0].id}/complete`, { receivedByWorkshop: 'Carlos Taller' });
     let order = (await get(`/orders/${orderId}`)).body.order;
     expect(order.financials).toMatchObject({ base: 510000, iva: 96900, retentions: 0 });
 
     await patch(`/work/activities/${laserActivities[1].id}/laser`, { minutes: 20 });
     expect((await get(`/orders/${orderId}`)).body.order.value).toBe(510000);
     await post(`/work/activities/${laserActivities[1].id}/start`, {});
-    await post(`/work/activities/${laserActivities[1].id}/complete`, {});
+    await post(`/work/activities/${laserActivities[1].id}/complete`, { receivedByWorkshop: 'Carlos Taller' });
     order = (await get(`/orders/${orderId}`)).body.order;
     expect(order).toMatchObject({ value: 530000, reteFuente: 0, reteIva: 0, ica: 0 });
     expect(order.financials).toMatchObject({ base: 530000, iva: 100700, retentions: 0, collectible: 630700 });
@@ -245,7 +250,7 @@ describe('Corte Láser y total comercial', () => {
     const laser = (await activities(created.body.order.id))[0];
     expect((await patch(`/work/activities/${laser.id}/laser`, { minutes: 5 })).status).toBe(200);
     expect((await post(`/work/activities/${laser.id}/start`, {})).status).toBe(200);
-    expect((await post(`/work/activities/${laser.id}/complete`, {})).status).toBe(200);
+    expect((await post(`/work/activities/${laser.id}/complete`, { receivedByWorkshop: 'Carlos Taller' })).status).toBe(200);
     const after = (await get(`/orders/${created.body.order.id}`)).body.order;
     expect(after).toMatchObject({ value: 605000, reteFuente: 24000, reteIva: 17100, ica: 4200 });
     expect(after.financials).toMatchObject({ base: 605000, iva: 114950, retentions: 45300, collectible: 674650 });
@@ -268,7 +273,8 @@ describe('Corte Láser y total comercial', () => {
     const queue = await activities(before.id);
     for (const activity of queue) {
       expect((await post(`/work/activities/${activity.id}/start`, {})).status).toBe(200);
-      expect((await post(`/work/activities/${activity.id}/complete`, {})).status).toBe(200);
+      expect((await post(`/work/activities/${activity.id}/complete`,
+        activity.area === 'PRINTING' ? { receivedByWorkshop: 'Carlos Taller' } : {})).status).toBe(200);
     }
     const after = (await get(`/orders/${before.id}`)).body.order;
     expect(after).toMatchObject({ status: 'COMPLETED', value: 600000, reteFuente: 24000, reteIva: 17100, ica: 4200 });
@@ -432,6 +438,10 @@ describe('Migración 008 sobre trabajo existente', () => {
       expect((await historical.query<{ relrowsecurity: boolean }>(`
         SELECT relrowsecurity FROM pg_class WHERE oid='order_drafts'::regclass
       `)).rows[0].relrowsecurity).toBe(true);
+      await historical.exec(await readFile(new URL('../migrations/009_printing_handoff.sql', import.meta.url), 'utf8'));
+      expect((await historical.query<{ received_by_workshop: string | null }>(
+        'SELECT received_by_workshop FROM order_activities WHERE id=$1', [printId],
+      )).rows[0].received_by_workshop).toBeNull();
 
       const laserId = randomUUID();
       await historical.query(`

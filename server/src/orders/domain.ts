@@ -72,6 +72,10 @@ export const bulkPaymentSchema = z.object({
 export const transitionSchema = z.object({
   action: z.enum(['send','finishPrinting','finishExternal','startWorkshop','finishWorkshop','install','close']),
   expectedVersion: z.number().int().positive(), date: dateSchema.optional(), note: z.string().trim().max(2000).optional(),
+  receivedByWorkshop: z.string().trim()
+    .min(1, 'Por favor, digitar quien recibe en taller.')
+    .max(200, 'Quien recibe en Taller admite máximo 200 caracteres.')
+    .optional(),
 }).strict();
 
 type DraftJson = string | number | boolean | null | DraftJson[] | { [key: string]: DraftJson };
@@ -96,6 +100,7 @@ export type OrderRow = {
   has_visible_activity?: boolean;
   certificate_rete_fuente: boolean; certificate_rete_iva: boolean; certificate_ica: boolean;
   printing_completed_at: Date|string|null; workshop_started_at: Date|string|null; ready_for_installation_at: Date|string|null;
+  printing_received_by_workshop: string|null;
   installed_at: Date|string|null; installation_note: string|null; closed_at: Date|string|null; creation_key: string; creation_fingerprint: string;
 };
 export type PaymentRow = { id: string; order_id: string; date: string|Date; amount: string; method: typeof paymentMethods[number] | 'LEGACY'; recorded_by: string; request_key: string; bulk_batch_id?: string|null };
@@ -121,6 +126,7 @@ export function orderDto(row: OrderRow, payments: PaymentRow[], role: Role, desi
     createdAt: iso(row.created_at), updatedAt: iso(row.updated_at), version: row.version,
     ...(row.material ? { printing: { material: row.material, length: Number(row.length), width: Number(row.width) }, areaM2: Math.round(Number(row.length)*Number(row.width)*1000)/1000 } : {}),
     ...(row.printing_completed_at ? { printingCompletedAt: iso(row.printing_completed_at) } : {}),
+    ...(row.printing_received_by_workshop ? { printingReceivedByWorkshop: row.printing_received_by_workshop } : {}),
     ...(row.workshop_started_at ? { workshopStartedAt: iso(row.workshop_started_at) } : {}),
     ...(row.installed_at ? { installedAt: iso(row.installed_at), installationNote: row.installation_note ?? '' } : {}),
     ...(row.closed_at ? { closedAt: iso(row.closed_at) } : {}),

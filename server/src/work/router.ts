@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Database } from '../db/types.js';
-import { activityListSchema, activityParamsSchema, assignSchema, designDetailsSchema, laserMinutesSchema, workOrderParamsSchema } from './schemas.js';
+import { activityListSchema, activityParamsSchema, assignSchema, completeActivitySchema, designDetailsSchema, laserMinutesSchema, workOrderParamsSchema } from './schemas.js';
 import { changeActivity, designerLoad, editDesignDetails, listActivities, saveLaserMinutes, workOrder } from './service.js';
 
 const emptyBody = z.object({}).strict();
@@ -27,7 +27,7 @@ export function createWorkRouter(db: Database): Router {
   router.patch('/activities/:id/assign', async (req, res) => {
     const { id } = activityParamsSchema.parse(req.params);
     const { assignedUserId } = assignSchema.parse(req.body);
-    res.json({ activity: await changeActivity(db, req.auth!, id, 'assign', assignedUserId) });
+    res.json({ activity: await changeActivity(db, req.auth!, id, 'assign', { assignedUserId }) });
   });
   router.patch('/activities/:id/laser', async (req, res) => {
     const { id } = activityParamsSchema.parse(req.params);
@@ -44,8 +44,8 @@ export function createWorkRouter(db: Database): Router {
   });
   router.post('/activities/:id/complete', async (req, res) => {
     const { id } = activityParamsSchema.parse(req.params);
-    emptyBody.parse(req.body);
-    res.json({ activity: await changeActivity(db, req.auth!, id, 'complete') });
+    const details = completeActivitySchema.parse(req.body);
+    res.json({ activity: await changeActivity(db, req.auth!, id, 'complete', details) });
   });
   return router;
 }

@@ -77,7 +77,7 @@ export function recordPayment(user: User, order: WorkOrder, payment: { date: str
   assert(!payment.method || ['EFECTIVO', 'BANCOLOMBIA', 'DAVIVIENDA'].includes(payment.method), 'Selecciona un medio de pago válido.');
   return { ...order, payments: [...order.payments, { id: crypto.randomUUID(), date: payment.date, amount: roundMoney(payment.amount), method: payment.method ?? 'EFECTIVO', recordedBy: user.id }] };
 }
-export function transitionWorkOrder(user: User, order: WorkOrder, action: OrderAction, details?: { date?: string; note?: string }): WorkOrder {
+export function transitionWorkOrder(user: User, order: WorkOrder, action: OrderAction, details?: { date?: string; note?: string; receivedByWorkshop?: string }): WorkOrder {
   assert(user.active && canViewOrder(user, order), 'No tienes permiso para modificar esta orden.');
   const admin = isAdmin(user.role);
   const now = new Date().toISOString();
@@ -92,7 +92,10 @@ export function transitionWorkOrder(user: User, order: WorkOrder, action: OrderA
     next.status = order.route === 'WORKSHOP_ONLY' ? 'IN_WORKSHOP' : order.route === 'EXTERNO' ? 'IN_EXTERNAL' : 'IN_PRINTING';
   } else if (action === 'finishPrinting') {
     assert(user.role === 'IMPRESION' && order.status === 'IN_PRINTING', 'Solo Impresión puede finalizar esta fase.');
+    const receivedByWorkshop = details?.receivedByWorkshop?.trim();
+    assert(receivedByWorkshop, 'Por favor, digitar quien recibe en taller.');
     next.printingCompletedAt = now;
+    next.printingReceivedByWorkshop = receivedByWorkshop;
     next.status = order.route === 'PRINT_WORKSHOP' ? 'IN_WORKSHOP' : order.requiresInstallation ? 'PENDING_INSTALLATION' : 'COMPLETED';
   } else if (action === 'finishExternal') {
     assert(admin && order.status === 'IN_EXTERNAL', 'Solo Administración puede finalizar el trabajo Externo.');

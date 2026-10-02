@@ -14,6 +14,7 @@ interface ActivityRow {
   id: string; order_id: string; product_id: string; position: number;
   area: Area; status: Status; assigned_user_id: string | null;
   printing_type: PrintingType | null; laser_minutes: number | null;
+  received_by_workshop: string | null;
   started_at: Date | string | null; completed_at: Date | string | null;
   created_at: Date | string; updated_at: Date | string;
 }
@@ -163,6 +164,7 @@ function activityDto(row: ListedActivityRow, materials: MaterialRow[]) {
     startedAt: date(row.started_at), completedAt: date(row.completed_at),
     createdAt: date(row.created_at), updatedAt: date(row.updated_at),
     ...(row.area === 'PRINTING' ? { printingType: row.printing_type } : {}),
+    ...(row.received_by_workshop ? { receivedByWorkshop: row.received_by_workshop } : {}),
     ...(row.printing_type === 'LASER' ? {
       laserMinutes: row.laser_minutes === null ? null : Number(row.laser_minutes),
       laserRate: LASER_RATE,
@@ -263,6 +265,7 @@ export async function workOrder(db: Database, auth: AuthSession, orderId: string
           status: activity.status, assignedUserId: activity.assigned_user_id,
           ready: activity.ready, startedAt: date(activity.started_at), completedAt: date(activity.completed_at),
           ...(activity.area === 'PRINTING' ? { printingType: activity.printing_type } : {}),
+          ...(activity.received_by_workshop ? { receivedByWorkshop: activity.received_by_workshop } : {}),
           ...(activity.printing_type === 'LASER' ? {
             laserMinutes: activity.laser_minutes === null ? null : Number(activity.laser_minutes),
             laserRate: LASER_RATE,
@@ -387,7 +390,8 @@ export async function designerLoad(db: Database, auth: AuthSession) {
 
 export async function changeActivity(
   db: Database, auth: AuthSession, id: string,
-  action: 'claim' | 'assign' | 'start' | 'complete', assignedUserId?: string,
+  action: 'claim' | 'assign' | 'start' | 'complete',
+  details: { assignedUserId?: string; receivedByWorkshop?: string } = {},
 ) {
   return db.transaction(async tx => {
     const actor = await requireCurrentActor(tx, auth, ['ADMINMASTER','ADMIN_GENERAL','DISENO','IMPRESION','TALLER']);
@@ -408,10 +412,10 @@ export async function changeActivity(
     } else if (action === 'assign') {
       if (!admin(actor.role) || current.area !== 'DESIGN') throw new ApiError(403, 'FORBIDDEN', 'Solo Administración asigna tareas de Diseño.');
       if (current.status !== 'PENDING') throw conflict('Solo se pueden asignar tareas pendientes.');
-      const designer = await tx.query('SELECT id FROM users WHERE id=$1 AND role=$2 AND is_active=true FOR SHARE', [assignedUserId, 'DISENO']);
+      const designer = await tx.query('SELECT id FROM users WHERE id=$1 AND role=$2 AND is_active=true FOR SHARE', [details.assignedUserId, 'DISENO']);
       if (!designer.rows.length) throw new ApiError(400, 'DESIGNER_UNAVAILABLE', 'Selecciona un diseñador activo.', 'assignedUserId');
-      if (current.assigned_user_id !== assignedUserId) {
-        await tx.query('UPDATE order_activities SET assigned_user_id=$2,updated_at=now() WHERE id=$1', [id, assignedUserId]);
+      if (current.assigned_user_id !== details.assignedUserId) {
+        await tx.query('UPDATE order_activities SET assigned_user_id=$2,updated_at=now() WHERE id=$1', [id, details.assignedUserId]);
       }
     } else {
       const roleForArea: Record<Area, Role[]> = {
@@ -440,6 +444,11 @@ export async function changeActivity(
       } else {
         if (current.status === 'PENDING') throw conflict('Primero inicia la actividad.');
         if (current.status === 'IN_PROGRESS') {
+          const receivedByWorkshop = details.receivedByWorkshop?.trim();
+          if (actor.role === 'IMPRESION' && current.area === 'PRINTING' && !receivedByWorkshop) {
+            throw new ApiError(400, 'PRINTING_HANDOFF_REQUIRED',
+              'Por favor, digitar quien recibe en taller.', 'receivedByWorkshop');
+          }
           if (current.printing_type === 'LASER' && current.laser_minutes === null) {
             throw conflict('Indica los minutos consumidos antes de finalizar Corte Láser.');
           }
@@ -457,8 +466,10 @@ export async function changeActivity(
           }
           const stamp = (await tx.query<{ at: Date | string }>('SELECT now() AS at')).rows[0].at;
           await tx.query(`
-            UPDATE order_activities SET status='COMPLETED',completed_at=$2,updated_at=$2 WHERE id=$1
-          `, [id, stamp]);
+            UPDATE order_activities SET status='COMPLETED',completed_at=$2,updated_at=$2,
+              received_by_workshop=CASE WHEN area='PRINTING' THEN coalesce($3,received_by_workshop) ELSE received_by_workshop END
+            WHERE id=$1
+          `, [id, stamp, receivedByWorkshop ?? null]);
           if (current.area === 'PRINTING') await tx.query(`
             UPDATE order_product_materials SET consumed_at=$2 WHERE product_id=$1 AND consumed_at IS NULL
           `, [current.product_id, stamp]);

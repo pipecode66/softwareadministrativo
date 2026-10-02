@@ -34,6 +34,7 @@
 32. La página y los filtros del historial de OT se conservan en los parámetros de su URL. Atrás del navegador restaura esa entrada exacta; una navegación nueva a `/orders` desde el menú comienza en la página 1 sin contexto anterior.
 33. Al cerrar cada entrega se debe crear su commit y enviarlo a `origin/main`, salvo que el usuario indique expresamente lo contrario o exista un bloqueo técnico que deba informarse.
 34. Impresión y Taller pueden consultar en el detalle de una OT el nombre y rol de quien la registró. Este dato operativo no habilita acceso al directorio de usuarios ni expone correo, estado de cuenta u otros datos administrativos.
+35. El perfil de Impresión debe registrar quién recibe en Taller antes de finalizar, tanto para impresión normal como para Corte Láser. El dato se recorta, admite hasta 200 caracteres y queda asociado a la actividad; las OT heredadas lo conservan en la etapa general de Impresión.
 
 ## Decisiones sustituidas
 

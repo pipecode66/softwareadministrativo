@@ -415,6 +415,9 @@
 .order-activity-actions .btn, .order-activity-actions .select { font-size: 10px; min-height: 35px; }
 .order-activity-actions .select { max-width: 180px; }
 .order-activity-actions .order-laser-minutes { width: 92px; min-height: 35px; font-size: 11px; }
+.order-printing-handoff { display: grid; gap: 4px; width: min(230px, 100%); text-align: left; }
+.order-printing-handoff label { color: #475569; font-size: 10px; font-weight: 700; }
+.order-printing-handoff .input { min-height: 35px; font-size: 11px; }
 .order-print-product { border-top: 1px solid #e2e8f0; padding: 9px 0; break-inside: avoid; overflow-wrap: anywhere; }
 .order-print-product:first-of-type { border-top: 0; }
 .order-print-product > strong { font-size: 11px; }
@@ -430,6 +433,7 @@
   .order-material-area { padding-top: 0; }
   .order-activity-row { align-items: flex-start; flex-direction: column; }
   .order-activity-actions { width: 100%; justify-content: flex-start; }
+  .order-printing-handoff { width: 100%; }
 }
 @media print {
   @page { size: letter portrait; margin: 10mm 12mm; }

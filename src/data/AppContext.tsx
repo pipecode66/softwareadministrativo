@@ -32,7 +32,7 @@ interface AppContextValue {
   createOrder: (input: OrderInput) => Promise<WorkOrder>; updateOrder: (id: string, input: OrderInput) => Promise<void>;
   addPayment: (id: string, payment: NewPayment) => Promise<void>;
   bulkPayment: (input: { clientId: string; selectedOrderIds: string[] } & NewPayment, requestId: string) => Promise<BulkPaymentResult>;
-  transitionOrder: (id: string, action: OrderAction, details?: { date?: string; note?: string }) => Promise<void>;
+  transitionOrder: (id: string, action: OrderAction, details?: { date?: string; note?: string; receivedByWorkshop?: string }) => Promise<void>;
   saveClient: (input: ClientInput, id?: string) => Promise<Client>;
   saveUser: (input: UserInput, id?: string) => Promise<User>;
   resetPassword: (id: string, password: string) => Promise<void>;

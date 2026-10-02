@@ -65,6 +65,12 @@ export const activityListSchema = z.object({
 export const activityParamsSchema = z.object({ id: z.uuid() }).strict();
 export const workOrderParamsSchema = z.object({ orderId: z.uuid() }).strict();
 export const assignSchema = z.object({ assignedUserId: z.uuid() }).strict();
+export const completeActivitySchema = z.object({
+  receivedByWorkshop: z.string().trim()
+    .min(1, 'Por favor, digitar quien recibe en taller.')
+    .max(200, 'Quien recibe en Taller admite máximo 200 caracteres.')
+    .optional(),
+}).strict();
 export const laserMinutesSchema = z.object({
   minutes: z.number().int().min(1).max(999999999),
 }).strict();

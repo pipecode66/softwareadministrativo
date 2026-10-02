@@ -298,7 +298,10 @@ export async function transitionOrder(db: Database, auth: AuthSession, id: strin
       case 'finishPrinting':
         if (actor.role !== 'IMPRESION') throw new ApiError(403, 'FORBIDDEN', 'Solo Impresión puede finalizar esta fase.');
         requireStatus('IN_PRINTING');
+        if (!input.receivedByWorkshop?.trim()) throw new ApiError(400, 'PRINTING_HANDOFF_REQUIRED',
+          'Por favor, digitar quien recibe en taller.', 'receivedByWorkshop');
         next.printing_completed_at = now;
+        next.printing_received_by_workshop = input.receivedByWorkshop.trim();
         next.status = row.route === 'PRINT_WORKSHOP' ? 'IN_WORKSHOP' : row.requires_installation ? 'PENDING_INSTALLATION' : 'COMPLETED'; break;
       case 'finishExternal':
         requireRole(); requireStatus('IN_EXTERNAL');
@@ -320,10 +323,12 @@ export async function transitionOrder(db: Database, auth: AuthSession, id: strin
     }
     if (next.status === 'PENDING_INSTALLATION' && row.status !== 'PENDING_INSTALLATION') next.ready_for_installation_at = now;
     if (input.action !== 'install' && (input.date || input.note)) throw new ApiError(400, 'INVALID_DETAILS', 'Fecha y nota solo corresponden a instalación.');
+    if (input.action !== 'finishPrinting' && input.receivedByWorkshop !== undefined) throw new ApiError(400, 'INVALID_DETAILS', 'Quien recibe en Taller solo corresponde al cierre de Impresión.');
     const updated = (await tx.query<OrderRow>(`
       UPDATE orders SET status=$2,printing_completed_at=$3,workshop_started_at=$4,ready_for_installation_at=$5,
-        installed_at=$6,installation_note=$7,closed_at=$8,updated_at=clock_timestamp(),version=version+1 WHERE id=$1 RETURNING *
-    `, [id, next.status, next.printing_completed_at, next.workshop_started_at, next.ready_for_installation_at, next.installed_at, next.installation_note, next.closed_at])).rows[0];
+        installed_at=$6,installation_note=$7,closed_at=$8,printing_received_by_workshop=$9,
+        updated_at=clock_timestamp(),version=version+1 WHERE id=$1 RETURNING *
+    `, [id, next.status, next.printing_completed_at, next.workshop_started_at, next.ready_for_installation_at, next.installed_at, next.installation_note, next.closed_at, next.printing_received_by_workshop])).rows[0];
     if (input.action === 'finishPrinting') await tx.query(`UPDATE order_product_materials
       SET consumed_at=$2 WHERE order_id=$1 AND consumed_at IS NULL`, [id, next.printing_completed_at]);
     await event(tx, updated, actor.id, input.action, row.status);

@@ -60,7 +60,13 @@ async function saveOrder(page: Page) {
 
 async function advance(page: Page, label: string) {
   await page.getByRole('button', { name: label, exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Confirmar', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  if (label === 'Finalizar impresión') {
+    await dialog.getByRole('button', { name: 'Confirmar', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toHaveText('Por favor, digitar quien recibe en taller.');
+    await dialog.getByLabel('Quién recibe en Taller *').fill('Carlos Taller');
+  }
+  await dialog.getByRole('button', { name: 'Confirmar', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 }
 

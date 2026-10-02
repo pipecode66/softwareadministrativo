@@ -1,6 +1,6 @@
 # Estado de continuidad
 
-Actualizado: 2026-10-01.
+Actualizado: 2026-10-02.
 
 ## Estado actual
 
@@ -10,8 +10,15 @@ El tramo del selector desplegable de clientes y la restauración del historial q
 
 El 01/10/2026 quedó implementada, verificada, versionada y enviada a `origin/main` la identificación del creador de la OT para Impresión y Taller. La lista operativa del servidor entrega exclusivamente el nombre y el rol del creador, sin abrir acceso al directorio de usuarios, correos ni datos administrativos. El detalle conserva esa identificación después de actualizar o avanzar una orden. No requiere SQL ni migración. El despliegue productivo posterior al `push` no se ha comprobado desde este entorno.
 
+El 02/10/2026 quedó implementado, verificado y versionado localmente el registro obligatorio de quién recibe en Taller al finalizar Impresión. Cubre actividades por producto, Corte Láser y OT heredadas. Requiere aplicar `server/migrations/009_printing_handoff.sql` en Supabase antes de publicar el backend; por seguridad, el `push` queda pendiente de la confirmación del usuario.
+
 ## Funcionalidades terminadas en este tramo
 
+- Impresión debe escribir quién recibe el trabajo en Taller antes de finalizar su actividad.
+- Un intento vacío o compuesto solo por espacios se rechaza con `Por favor, digitar quien recibe en taller.`.
+- El servidor exige el dato incluso ante llamadas directas y lo normaliza eliminando espacios al inicio y al final.
+- El nombre queda guardado en la actividad correspondiente y se puede consultar después desde el detalle y desde Taller.
+- El flujo también cubre OT antiguas que todavía utilizan la etapa general de Impresión.
 - Al abrir una OT, los perfiles de Impresión y Taller ven quién la registró y el rol de esa persona.
 - La identidad operativa se limita a nombre y rol; no se exponen correo, estado de cuenta, teléfono, NIT ni datos financieros.
 - La referencia al creador se conserva en pantalla después de editar, registrar una acción o cambiar la etapa de la OT.
@@ -33,8 +40,11 @@ El 01/10/2026 quedó implementada, verificada, versionada y enviada a `origin/ma
 
 - `src/pages/Orders.tsx`
 - `src/pages/OrderDetail.tsx`
+- `src/pages/Queues.tsx`
 - `src/data/AppContext.tsx`
+- `src/data/api.ts`
 - `src/domain/types.ts`
+- `src/domain/service.ts`
 - `src/data/orderNotifications.ts`
 - `src/components/AppShell.tsx`
 - `src/pages/ChangePassword.tsx`
@@ -46,7 +56,13 @@ El 01/10/2026 quedó implementada, verificada, versionada y enviada a `origin/ma
 - `tests/api-e2e.spec.ts`
 - `server/src/orders/domain.ts`
 - `server/src/orders/service.ts`
+- `server/src/work/router.ts`
+- `server/src/work/schemas.ts`
+- `server/src/work/service.ts`
+- `server/migrations/009_printing_handoff.sql`
 - `server/tests/orders.test.ts`
+- `server/tests/work.test.ts`
+- `server/tests/laser_drafts.test.ts`
 
 ## Verificación local
 
@@ -55,6 +71,8 @@ El 01/10/2026 quedó implementada, verificada, versionada y enviada a `origin/ma
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
 - `npm --prefix server test`: 267/267 en 8 archivos.
+- Pruebas dirigidas de órdenes, actividades y Corte Láser: 119/119.
+- Pruebas E2E locales de Impresión, Taller y materiales: 3/3.
 - Prueba E2E dirigida para Impresión y Taller: 2/2; ambos perfiles visualizan al creador en el detalle.
 - `npm run test:e2e`: los 32 casos funcionales aprobaron, incluidos el desplegable abierto en móvil y la restauración de la página 4. Dos recorridos completos cerraron 31/32 por incidencias transitorias del entorno de Playwright (un artefacto de traza y una espera de carga antes del login); ambos casos restantes aprobaron 1/1 al repetirlos aisladamente.
 - `npm run test:e2e:api`: 5/5 con API y PGlite reales.
@@ -77,16 +95,20 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Búsqueda, avisos y controles de cuenta del 27/09 | 3 | 1 |
 | Selector de clientes y contexto del historial del 30/09 | 3 | 2 |
 | Identidad del creador para producción del 01/10 | 1 | 0 |
-| **Acumulado** | **35** | **17** |
+| Entrega de Impresión a Taller del 02/10 | 1 | 1 |
+| **Acumulado** | **36** | **18** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
 La identificación del creador solicitada el 01/10 se cuenta como un cambio menor de visibilidad operativa, no como un cambio significativo.
 
+El registro obligatorio de entrega solicitado el 02/10 se considera significativo porque cambia la regla de finalización productiva, persiste un dato nuevo y requiere migración de base de datos.
+
 ## Pendiente para producción
 
-1. Esperar el despliegue asociado y comprobar en producción que Impresión y Taller visualicen el nombre y rol del creador al abrir una OT.
-2. No hay SQL ni migración nueva que ejecutar para este cambio.
+1. Ejecutar `server/migrations/009_printing_handoff.sql` en Supabase antes de publicar el backend nuevo.
+2. Tras la confirmación de la migración, enviar la entrega versionada a `origin/main`.
+3. Comprobar en producción una finalización de Impresión normal y una de Corte Láser con el receptor registrado.
 
 ## Comando para retomar
 

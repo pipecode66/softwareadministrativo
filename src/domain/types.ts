@@ -22,6 +22,7 @@ export interface OrderActivity {
   ready?: boolean; startedAt?: string | null; completedAt?: string | null;
   materials?: ProductMaterial[]; printingType?: PrintingType;
   laserMinutes?: number | null; laserRate?: number; laserCharge?: number;
+  receivedByWorkshop?: string | null;
 }
 export interface OrderProduct {
   id?: string; position?: number; description: string; quantity: number; unitValue?: number;
@@ -40,6 +41,7 @@ export interface WorkOrder {
   serverVisible?: boolean;
   reteFuente: number; reteIva: number; ica: number; payments: Payment[];
   printingCompletedAt?: string; workshopStartedAt?: string; readyForInstallationAt?: string; installedAt?: string;
+  printingReceivedByWorkshop?: string;
   installationNote?: string; closedAt?: string;
 }
 export type OrderInput = Pick<WorkOrder, 'number' | 'clientId' | 'description' | 'value' | 'documentType' | 'category' | 'route' | 'requiresInstallation' | 'printing' | 'reteFuente' | 'reteIva' | 'ica'> & {

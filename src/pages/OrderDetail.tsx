@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Banknote, Check, CheckCircle2, ClipboardList, Clock3, FileText, Hammer, MapPin, Pencil, Plus, Printer, Ruler, Wallet } from 'lucide-react';
 import { useApp } from '../data/AppContext';
-import type { OrderAction, OrderProduct, PaymentMethod, Role, WorkOrder } from '../domain/types';
+import type { OrderAction, OrderActivity, OrderProduct, PaymentMethod, Role, WorkOrder } from '../domain/types';
 import { apiChangeActivity, apiDesignerLoad, apiSaveLaserMinutes, apiWorkOrder, usingApi } from '../data/api';
 import { areaOf, dateOnly, financials, formatCOP, formatDate, formatMeasure, formatNumber, isAdmin, ROLE_LABELS, roundMoney, ROUTE_LABELS, STATUS_LABELS, today, visibleOrders } from '../domain/utils';
 import { Button, Card, CardHeader, DataTable, DocumentBadge, EmptyState, Field, Modal, PageHeader, PaymentBadge, WorkBadge } from '../components/ui';
@@ -56,6 +56,7 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
   const [laserMinutes, setLaserMinutes] = useState<Record<string, string>>({});
+  const [handoffRecipients, setHandoffRecipients] = useState<Record<string, string>>({});
   const [remoteDesigners, setRemoteDesigners] = useState<Array<{ id: string; name: string }>>([]);
   const designers = [...new Map([
     ...users.filter(person => person.role === 'DISENO' && person.active).map(person => ({ id: person.id, name: person.name })),
@@ -82,10 +83,10 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
     });
     return () => { active = false; };
   }, [order.id, order.version, order.products]);
-  async function changeActivity(id: string, action: 'claim' | 'start' | 'complete' | 'assign', assignedUserId?: string) {
+  async function changeActivity(id: string, action: 'claim' | 'start' | 'complete' | 'assign', details?: { assignedUserId?: string; receivedByWorkshop?: string }) {
     setBusyId(id); setError('');
     try {
-      await apiChangeActivity(id, action, assignedUserId);
+      await apiChangeActivity(id, action, details);
       const result = await apiWorkOrder(order.id);
       setProducts(result.products);
       await refreshData();
@@ -106,6 +107,13 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'No fue posible guardar los minutos de corte láser.'); }
     finally { setBusyId(''); }
   }
+  async function completeActivity(activity: OrderActivity) {
+    if (!activity.id) return;
+    const needsHandoff = role === 'IMPRESION' && activity.area === 'PRINTING';
+    const receivedByWorkshop = handoffRecipients[activity.id]?.trim() ?? '';
+    if (needsHandoff && !receivedByWorkshop) { setError('Por favor, digitar quien recibe en taller.'); return; }
+    await changeActivity(activity.id, 'complete', needsHandoff ? { receivedByWorkshop } : undefined);
+  }
   if (loading) return <Card className="order-information-card"><CardHeader title="Productos y actividades" /><p className="muted">Cargando trabajos de la OT…</p></Card>;
   if (error && !products.length) return <Card className="order-information-card"><CardHeader title="Productos y actividades" /><p className="order-field-error" role="alert">{error}</p></Card>;
   if (!products.length) return null;
@@ -120,12 +128,13 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
         const canOperate = isAdmin(role) || activity.area === 'DESIGN' && role === 'DISENO' && activity.assignedUserId === userId || activity.area === 'PRINTING' && role === 'IMPRESION' || activity.area === 'WORKSHOP' && role === 'TALLER';
         const canClaim = usingApi && activity.area === 'DESIGN' && role === 'DISENO' && !activity.assignedUserId && activity.status === 'PENDING';
           const isLaser = activity.area === 'PRINTING' && activity.printingType === 'LASER';
-          return <li key={activity.id || activityIndex} className={`order-activity-row is-${activity.status?.toLowerCase() || 'pending'}`}><div><strong>{isLaser ? 'Corte láser' : activityLabels[activity.area]}</strong><span>{activityStatuses[activity.status || 'PENDING']}{owner ? ` · ${owner.name}` : activity.area === 'DESIGN' ? activity.assignedUserId ? ' · diseñador asignado' : ' · sin asignar' : ''}{activity.ready === false ? ' · espera actividad anterior' : ''}{isLaser ? ` · $1.000/min${activity.laserMinutes ? ` · ${activity.laserMinutes} min` : ''}` : ''}</span></div><div className="order-activity-actions">
-          {usingApi && isAdmin(role) && activity.area === 'DESIGN' && activity.status === 'PENDING' && !!activity.id && <select className="select" aria-label={`Asignar diseñador a ${product.description}`} value={activity.assignedUserId || ''} disabled={busyId === activity.id} onChange={event => { if (event.target.value) void changeActivity(activity.id!, 'assign', event.target.value); }}><option value="">Asignar diseñador</option>{designers.map(designer => <option key={designer.id} value={designer.id}>{designer.name}</option>)}</select>}
+          return <li key={activity.id || activityIndex} className={`order-activity-row is-${activity.status?.toLowerCase() || 'pending'}`}><div><strong>{isLaser ? 'Corte láser' : activityLabels[activity.area]}</strong><span>{activityStatuses[activity.status || 'PENDING']}{owner ? ` · ${owner.name}` : activity.area === 'DESIGN' ? activity.assignedUserId ? ' · diseñador asignado' : ' · sin asignar' : ''}{activity.ready === false ? ' · espera actividad anterior' : ''}{isLaser ? ` · $1.000/min${activity.laserMinutes ? ` · ${activity.laserMinutes} min` : ''}` : ''}{activity.receivedByWorkshop ? ` · recibe en Taller: ${activity.receivedByWorkshop}` : ''}</span></div><div className="order-activity-actions">
+          {usingApi && isAdmin(role) && activity.area === 'DESIGN' && activity.status === 'PENDING' && !!activity.id && <select className="select" aria-label={`Asignar diseñador a ${product.description}`} value={activity.assignedUserId || ''} disabled={busyId === activity.id} onChange={event => { if (event.target.value) void changeActivity(activity.id!, 'assign', { assignedUserId: event.target.value }); }}><option value="">Asignar diseñador</option>{designers.map(designer => <option key={designer.id} value={designer.id}>{designer.name}</option>)}</select>}
           {canClaim && !!activity.id && <Button type="button" variant="secondary" disabled={busyId === activity.id} onClick={() => void changeActivity(activity.id!, 'claim')}>Tomar tarea</Button>}
           {usingApi && canOperate && isLaser && activity.status !== 'COMPLETED' && !!activity.id && <><input className="input order-laser-minutes" type="number" min="1" step="1" aria-label="Minutos de corte láser" value={laserMinutes[activity.id] ?? String(activity.laserMinutes ?? '')} onChange={event => setLaserMinutes(current => ({ ...current, [activity.id!]: event.target.value }))} /><Button type="button" variant="secondary" disabled={busyId === activity.id} onClick={() => void saveLaser(activity.id!)}>Guardar minutos</Button></>}
           {usingApi && canOperate && activity.status === 'PENDING' && activity.ready !== false && !!activity.id && <Button type="button" variant="secondary" disabled={busyId === activity.id} onClick={() => void changeActivity(activity.id!, 'start')}>Iniciar</Button>}
-          {usingApi && canOperate && activity.status === 'IN_PROGRESS' && !!activity.id && <Button type="button" variant="secondary" disabled={busyId === activity.id || isLaser && !activity.laserMinutes} onClick={() => void changeActivity(activity.id!, 'complete')}>Finalizar</Button>}
+          {usingApi && role === 'IMPRESION' && activity.area === 'PRINTING' && activity.status === 'IN_PROGRESS' && !!activity.id && <div className="order-printing-handoff"><label htmlFor={`detail-handoff-${activity.id}`}>Quién recibe en Taller *</label><input id={`detail-handoff-${activity.id}`} className="input" type="text" maxLength={200} value={handoffRecipients[activity.id] ?? ''} onChange={event => { setHandoffRecipients(current => ({ ...current, [activity.id!]: event.target.value })); setError(''); }} /></div>}
+          {usingApi && canOperate && activity.status === 'IN_PROGRESS' && !!activity.id && <Button type="button" variant="secondary" disabled={busyId === activity.id || isLaser && !activity.laserMinutes} onClick={() => void completeActivity(activity)}>Finalizar</Button>}
         </div></li>;
       })}</ol>}
     </section>)}</div>
@@ -143,6 +152,7 @@ export function OrderDetailPage() {
   const [paymentMethod, setPaymentMethod] = useState<Exclude<PaymentMethod, 'LEGACY'>>('EFECTIVO');
   const [installationDate, setInstallationDate] = useState(today);
   const [installationNote, setInstallationNote] = useState('');
+  const [receivedByWorkshop, setReceivedByWorkshop] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const order = visibleOrders(user, data.orders).find(item => item.id === id);
@@ -161,7 +171,7 @@ export function OrderDetailPage() {
   const sortedPayments = [...order.payments].sort((a, b) => b.date.localeCompare(a.date));
 
   function openPayment() { setError(''); setPaymentAmount(''); setPaymentMethod('EFECTIVO'); setPaymentDate(today()); setPaymentOpen(true); }
-  function openAction() { setError(''); setInstallationDate(today()); setInstallationNote(''); setActionOpen(true); }
+  function openAction() { setError(''); setInstallationDate(today()); setInstallationNote(''); setReceivedByWorkshop(''); setActionOpen(true); }
   async function submitPayment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!order || saving) return;
@@ -177,9 +187,12 @@ export function OrderDetailPage() {
   async function submitAction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!order || !nextAction || saving) return;
+    if (nextAction.action === 'finishPrinting' && !receivedByWorkshop.trim()) { setError('Por favor, digitar quien recibe en taller.'); return; }
     setSaving(true); setError('');
     try {
-      await transitionOrder(order.id, nextAction.action, nextAction.action === 'install' ? { date: installationDate, note: installationNote } : undefined);
+      await transitionOrder(order.id, nextAction.action,
+        nextAction.action === 'install' ? { date: installationDate, note: installationNote }
+          : nextAction.action === 'finishPrinting' ? { receivedByWorkshop: receivedByWorkshop.trim() } : undefined);
       setActionOpen(false);
       toast(nextAction.action === 'close' ? 'Orden cerrada administrativamente.' : nextAction.action === 'install' ? 'Instalación registrada.' : 'Etapa del trabajo actualizada.');
       if (!admin && (nextAction.action === 'finishPrinting' || nextAction.action === 'install' || (nextAction.action === 'finishWorkshop' && !order.requiresInstallation))) navigate('/orders');
@@ -205,7 +218,7 @@ export function OrderDetailPage() {
         <Card className="order-information-card"><CardHeader title="Información del trabajo" /><div className="order-detail-description"><span className="eyebrow">Descripción</span><p>{order.description}</p></div><dl className="order-info-grid"><div><dt>Categoría comercial</dt><dd>{order.category}</dd></div><div><dt>Creación</dt><dd>{formatDate(order.createdAt, true)}</dd></div><div><dt>Registrada por</dt><dd>{creatorName}{creatorRole && <small>{ROLE_LABELS[creatorRole]}</small>}</dd></div><div><dt>Recorrido</dt><dd>{ROUTE_LABELS[order.route]}</dd></div></dl></Card>
         <OrderProducts order={order} role={user?.role} userId={user?.id} users={data.users} refreshData={refreshData} toast={toast} />
         {!usingApi && order.printing && <Card className="order-information-card"><CardHeader title="Ficha de impresión" description="Dimensiones en metros y superficie calculada" /><div className="order-material-heading"><div className="order-material-icon"><Printer size={23} /></div><div><span className="muted">Material seleccionado</span><h3>{order.printing.material}</h3></div></div><div className="order-dimension-grid"><div><span>Largo</span><strong>{formatMeasure(order.printing.length)} <small>m</small></strong></div><div><span>Ancho</span><strong>{formatMeasure(order.printing.width)} <small>m</small></strong></div><div className="order-area-highlight"><span>Superficie</span><strong>{formatMeasure(areaOf(order.printing))} <small>m²</small></strong></div></div><p className="order-help-text">{order.printingCompletedAt ? `Consumo registrado al finalizar impresión: ${formatDate(order.printingCompletedAt, true)}.` : 'Esta superficie contará como consumo al finalizar la impresión.'}</p></Card>}
-        <Card className="order-information-card"><CardHeader title="Taller e instalación" /><dl className="order-info-grid"><div><dt>Paso por Taller</dt><dd>{['PRINT_ONLY', 'IMPRENTA', 'EXTERNO'].includes(order.route) ? 'No requerido' : order.route === 'MULTI_AREA' ? 'Según actividades' : 'Incluido en el recorrido'}</dd></div><div><dt>Instalación</dt><dd>{order.requiresInstallation ? order.installedAt ? 'Realizada' : 'Requerida' : 'No requerida'}</dd></div>{order.workshopStartedAt && <div><dt>Inicio en Taller</dt><dd>{formatDate(order.workshopStartedAt, true)}</dd></div>}{order.installedAt && <div><dt>Fecha de instalación</dt><dd>{formatDate(order.installedAt)}</dd></div>}</dl>{order.installationNote && <div className="order-detail-description"><span className="eyebrow">Observaciones de instalación</span><p>{order.installationNote}</p></div>}</Card>
+        <Card className="order-information-card"><CardHeader title="Taller e instalación" /><dl className="order-info-grid"><div><dt>Paso por Taller</dt><dd>{['PRINT_ONLY', 'IMPRENTA', 'EXTERNO'].includes(order.route) ? 'No requerido' : order.route === 'MULTI_AREA' ? 'Según actividades' : 'Incluido en el recorrido'}</dd></div><div><dt>Instalación</dt><dd>{order.requiresInstallation ? order.installedAt ? 'Realizada' : 'Requerida' : 'No requerida'}</dd></div>{order.printingReceivedByWorkshop && <div><dt>Recibe en Taller</dt><dd>{order.printingReceivedByWorkshop}</dd></div>}{order.workshopStartedAt && <div><dt>Inicio en Taller</dt><dd>{formatDate(order.workshopStartedAt, true)}</dd></div>}{order.installedAt && <div><dt>Fecha de instalación</dt><dd>{formatDate(order.installedAt)}</dd></div>}</dl>{order.installationNote && <div className="order-detail-description"><span className="eyebrow">Observaciones de instalación</span><p>{order.installationNote}</p></div>}</Card>
         {admin && <Card className="order-payments-card"><CardHeader title="Pagos y abonos" description={`${order.payments.length} ${order.payments.length === 1 ? 'pago registrado' : 'pagos registrados'} · cada movimiento conserva su fecha y valor`} action={money.balance > 0 ? <Button variant="secondary" onClick={openPayment}><Plus size={16} /> Registrar pago</Button> : undefined} />{sortedPayments.length ? <DataTable rows={sortedPayments} rowKey={payment => payment.id} columns={[
           { key: 'date', label: 'Fecha del pago', render: payment => formatDate(payment.date) },
           { key: 'amount', label: 'Valor recibido', className: 'money', render: payment => <strong className="order-paid-value">{formatCOP(payment.amount)}</strong> },
@@ -225,7 +238,7 @@ export function OrderDetailPage() {
       <form className="stack" onSubmit={submitPayment} noValidate><p className="muted">{client?.name}</p><div className="order-payment-modal-balance"><Wallet size={22} /><div><span>Saldo actual por cobrar</span><strong>{formatCOP(money.balance)}</strong></div><Button type="button" variant="secondary" onClick={() => { setPaymentAmount(String(money.balance)); setError(''); }}>Pagar saldo completo</Button></div><div className="form-grid"><Field label="Fecha de recepción *" htmlFor="detail-payment-date"><input className="input" id="detail-payment-date" type="date" min={dateOnly(order.createdAt)} max={today()} value={paymentDate} onChange={event => { setPaymentDate(event.target.value); setError(''); }} required /></Field><Field label="Valor del pago (COP) *" htmlFor="detail-payment-amount"><input className="input" id="detail-payment-amount" type="number" min="0.01" step="0.01" max={money.balance} inputMode="decimal" value={paymentAmount} placeholder="0" onChange={event => { setPaymentAmount(event.target.value); setError(''); }} required /></Field><Field label="Medio de pago *" htmlFor="detail-payment-method"><select className="select" id="detail-payment-method" value={paymentMethod} onChange={event => setPaymentMethod(event.target.value as Exclude<PaymentMethod, 'LEGACY'>)} required><option value="EFECTIVO">Efectivo</option><option value="BANCOLOMBIA">Bancolombia</option><option value="DAVIVIENDA">Davivienda</option></select></Field></div><div className={`order-payment-result ${remainingAfterPayment < 0 ? 'is-invalid' : ''}`} aria-live="polite"><span>Saldo después del pago</span><strong>{formatCOP(remainingAfterPayment)}</strong></div>{error && <p className="order-field-error" role="alert">{error}</p>}<div className="actions"><Button type="button" variant="secondary" onClick={() => setPaymentOpen(false)}>Cancelar</Button><Button type="submit" disabled={saving || money.balance <= 0}><Check size={17} />{saving ? 'Guardando…' : 'Confirmar y registrar pago'}</Button></div></form>
     </Modal>
     <Modal open={actionOpen} onClose={() => setActionOpen(false)} title={nextAction?.label || 'Actualizar orden'}>
-      <form className="stack" onSubmit={submitAction}><div className="order-action-confirm"><span className="eyebrow">OT #{String(order.number).padStart(4, '0')}</span><h3>{client?.name}</h3><p>{order.description}</p><WorkBadge status={order.status} /></div><p>{actionDescription}</p>{nextAction?.action === 'install' && <><Field label="Fecha de instalación *" htmlFor="detail-install-date"><input className="input" id="detail-install-date" type="date" value={installationDate} min={dateOnly(order.readyForInstallationAt || order.updatedAt)} max={today()} onChange={event => setInstallationDate(event.target.value)} required /></Field><Field label="Observaciones de instalación" htmlFor="detail-install-note" hint="Opcional"><textarea className="textarea" id="detail-install-note" rows={3} maxLength={1000} value={installationNote} onChange={event => setInstallationNote(event.target.value)} /></Field></>}{error && <p className="order-field-error" role="alert">{error}</p>}<div className="actions"><Button type="button" variant="secondary" onClick={() => setActionOpen(false)}>Cancelar</Button><Button type="submit" disabled={saving}><Check size={17} />{saving ? 'Guardando…' : 'Confirmar'}</Button></div></form>
+      <form className="stack" onSubmit={submitAction} noValidate><div className="order-action-confirm"><span className="eyebrow">OT #{String(order.number).padStart(4, '0')}</span><h3>{client?.name}</h3><p>{order.description}</p><WorkBadge status={order.status} /></div><p>{actionDescription}</p>{nextAction?.action === 'finishPrinting' && <Field label="Quién recibe en Taller *" htmlFor="detail-printing-handoff"><input className="input" id="detail-printing-handoff" type="text" maxLength={200} value={receivedByWorkshop} onChange={event => { setReceivedByWorkshop(event.target.value); setError(''); }} required /></Field>}{nextAction?.action === 'install' && <><Field label="Fecha de instalación *" htmlFor="detail-install-date"><input className="input" id="detail-install-date" type="date" value={installationDate} min={dateOnly(order.readyForInstallationAt || order.updatedAt)} max={today()} onChange={event => setInstallationDate(event.target.value)} required /></Field><Field label="Observaciones de instalación" htmlFor="detail-install-note" hint="Opcional"><textarea className="textarea" id="detail-install-note" rows={3} maxLength={1000} value={installationNote} onChange={event => setInstallationNote(event.target.value)} /></Field></>}{error && <p className="order-field-error" role="alert">{error}</p>}<div className="actions"><Button type="button" variant="secondary" onClick={() => setActionOpen(false)}>Cancelar</Button><Button type="submit" disabled={saving}><Check size={17} />{saving ? 'Guardando…' : 'Confirmar'}</Button></div></form>
     </Modal>
   </div>;
 }

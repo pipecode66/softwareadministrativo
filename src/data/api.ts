@@ -211,7 +211,7 @@ export interface BulkPaymentResult { batchId: string; clientId: string; amount: 
 export function apiBulkPayment(input: { clientId: string; selectedOrderIds: string[] } & NewPayment, requestId: string): Promise<BulkPaymentResult> {
   return request<BulkPaymentResult>('/orders/bulk-payments', { method: 'POST', body: JSON.stringify({ ...input, requestId }) });
 }
-export async function apiTransitionOrder(id: string, action: OrderAction, expectedVersion: number, details?: { date?: string; note?: string }): Promise<WorkOrder> {
+export async function apiTransitionOrder(id: string, action: OrderAction, expectedVersion: number, details?: { date?: string; note?: string; receivedByWorkshop?: string }): Promise<WorkOrder> {
   const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}/transitions`, { method: 'POST', body: JSON.stringify({ action, expectedVersion, ...details }) });
   return asOrder(body.order);
 }
@@ -224,9 +224,9 @@ export function apiListActivities(query: { orderId?: string; area?: import('../d
 export function apiDesignerLoad() {
   return request<{ items: Array<{ id: string; name: string; pending: number; inProgress: number; total: number }>; unassigned: number }>('/work/designers/load');
 }
-export function apiChangeActivity(id: string, action: 'claim' | 'start' | 'complete' | 'assign', assignedUserId?: string) {
+export function apiChangeActivity(id: string, action: 'claim' | 'start' | 'complete' | 'assign', details?: { assignedUserId?: string; receivedByWorkshop?: string }) {
   return request<{ activity: OrderActivity }>(`/work/activities/${encodeURIComponent(id)}/${action}`, {
-    method: action === 'assign' ? 'PATCH' : 'POST', body: JSON.stringify(assignedUserId ? { assignedUserId } : {}),
+    method: action === 'assign' ? 'PATCH' : 'POST', body: JSON.stringify(details ?? {}),
   }).then(result => result.activity);
 }
 

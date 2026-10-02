@@ -242,14 +242,17 @@ describe('Producción, instalación y cierre', () => {
   ] as const)('finalizar impresión resuelve $route / instalación $requiresInstallation', ({ route, requiresInstallation, expected }) => {
     const original = order({ status: 'IN_PRINTING', route, requiresInstallation });
     expect(original.printingCompletedAt).toBeUndefined();
-    const result = transitionWorkOrder(user('IMPRESION'), original, 'finishPrinting');
-    expect(result).toMatchObject({ status: expected, printingCompletedAt: NOW, updatedAt: NOW });
+    expect(() => transitionWorkOrder(user('IMPRESION'), original, 'finishPrinting'))
+      .toThrow('Por favor, digitar quien recibe en taller.');
+    const result = transitionWorkOrder(user('IMPRESION'), original, 'finishPrinting', { receivedByWorkshop: '  Carlos Taller  ' });
+    expect(result).toMatchObject({ status: expected, printingCompletedAt: NOW,
+      printingReceivedByWorkshop: 'Carlos Taller', updatedAt: NOW });
     expect(original.printingCompletedAt).toBeUndefined();
     expect(() => transitionWorkOrder(user(), result, 'finishPrinting')).toThrow();
   });
   it('consumo queda disponible solo después de completar impresión, en m²', () => {
     const queued = order({ status: 'IN_PRINTING' });
-    const done = transitionWorkOrder(user('IMPRESION'), queued, 'finishPrinting');
+    const done = transitionWorkOrder(user('IMPRESION'), queued, 'finishPrinting', { receivedByWorkshop: 'María Taller' });
     const consumption = (works: WorkOrder[]) => works.filter(work => work.printingCompletedAt && inRange(work.printingCompletedAt, { from: '2026-09-01', to: '2026-09-30' })).reduce((sum, work) => sum + areaOf(work.printing), 0);
     expect(consumption([queued])).toBe(0);
     expect(consumption([done])).toBe(3);
@@ -288,7 +291,7 @@ describe('Producción, instalación y cierre', () => {
   it('recorre Diseño → Administración → Impresión → Taller → Instalación → Cierre', () => {
     let work = createWorkOrder(data(), user('DISENO'), input({ requiresInstallation: true }));
     work = transitionWorkOrder(user(), work, 'send');
-    work = transitionWorkOrder(user('IMPRESION'), work, 'finishPrinting');
+    work = transitionWorkOrder(user('IMPRESION'), work, 'finishPrinting', { receivedByWorkshop: 'María Taller' });
     work = transitionWorkOrder(user('TALLER'), work, 'startWorkshop');
     work = transitionWorkOrder(user('TALLER'), work, 'finishWorkshop');
     work = transitionWorkOrder(user('TALLER'), work, 'install', { date: today() });
