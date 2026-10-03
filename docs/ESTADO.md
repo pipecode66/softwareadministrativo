@@ -1,6 +1,6 @@
 # Estado de continuidad
 
-Actualizado: 2026-10-02.
+Actualizado: 2026-10-03.
 
 ## Estado actual
 
@@ -10,7 +10,7 @@ El tramo del selector desplegable de clientes y la restauración del historial q
 
 El 01/10/2026 quedó implementada, verificada, versionada y enviada a `origin/main` la identificación del creador de la OT para Impresión y Taller. La lista operativa del servidor entrega exclusivamente el nombre y el rol del creador, sin abrir acceso al directorio de usuarios, correos ni datos administrativos. El detalle conserva esa identificación después de actualizar o avanzar una orden. No requiere SQL ni migración. El despliegue productivo posterior al `push` no se ha comprobado desde este entorno.
 
-El 02/10/2026 quedó implementado, verificado y versionado localmente el registro obligatorio de quién recibe en Taller al finalizar Impresión. Cubre actividades por producto, Corte Láser y OT heredadas. Requiere aplicar `server/migrations/009_printing_handoff.sql` en Supabase antes de publicar el backend; por seguridad, el `push` queda pendiente de la confirmación del usuario.
+El 03/10/2026 el usuario confirmó que `server/migrations/009_printing_handoff.sql` fue ejecutada en Supabase. El registro obligatorio de quién recibe en Taller al finalizar Impresión quedó implementado, verificado, versionado en `eea5e25` y enviado a `origin/main`. Cubre actividades por producto, Corte Láser y OT heredadas. El despliegue productivo posterior al `push` no se ha comprobado desde este entorno.
 
 ## Funcionalidades terminadas en este tramo
 
@@ -106,9 +106,7 @@ El registro obligatorio de entrega solicitado el 02/10 se considera significativ
 
 ## Pendiente para producción
 
-1. Ejecutar `server/migrations/009_printing_handoff.sql` en Supabase antes de publicar el backend nuevo.
-2. Tras la confirmación de la migración, enviar la entrega versionada a `origin/main`.
-3. Comprobar en producción una finalización de Impresión normal y una de Corte Láser con el receptor registrado.
+1. Comprobar en producción una finalización de Impresión normal y una de Corte Láser con el receptor registrado.
 
 ## Comando para retomar
 
