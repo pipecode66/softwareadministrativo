@@ -2,6 +2,8 @@
 
 Esta utilidad atiende la solicitud de eliminar datos comerciales creados **antes del 21 de septiembre de 2026 a las 00:00 en `America/Bogota`**, conservando usuarios, sesiones y datos creados desde el corte. No se ejecuta automáticamente al desplegar ni al migrar.
 
+> Esta depuración histórica no deja el sistema completamente vacío. Para el reinicio total autorizado antes de la entrega del 03/10/2026 se debe usar `server/maintenance/borrar_todos_los_datos_para_entrega_2026-10-03.sql`; ambas consultas tienen alcances distintos.
+
 ## Alcance
 
 Se eliminan, dentro de una sola transacción:

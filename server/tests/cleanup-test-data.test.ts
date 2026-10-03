@@ -159,6 +159,41 @@ describe('limpieza transaccional de datos de prueba', () => {
     expect((await insertOrder(retainedClient, atCutoff, 'Siguiente OT')).number).toBe(3);
   });
 
+  it('el SQL de entrega vacia todos los datos comerciales, conserva las cuentas y reinicia la OT en 1', async () => {
+    const client = await insertClient(atCutoff, 'Cliente de prueba final');
+    const order = await insertOrder(client, atCutoff, 'OT de prueba final');
+    await addDependencies(order.id, client, atCutoff);
+    await db.query(`INSERT INTO order_drafts (created_by,payload)
+      VALUES ($1,$2::jsonb)`, [userId, JSON.stringify({ clientId: client })]);
+    const migrationCount = (await db.query<{ count: number }>(
+      'SELECT count(*)::integer AS count FROM schema_migrations',
+    )).rows[0]!.count;
+
+    const sql = await readFile(
+      new URL('../maintenance/borrar_todos_los_datos_para_entrega_2026-10-03.sql', import.meta.url),
+      'utf8',
+    );
+    await db.exec(sql);
+    await db.exec(sql);
+
+    for (const table of [
+      'clients', 'orders', 'payments', 'bulk_payment_batches', 'order_products',
+      'order_product_materials', 'order_activities', 'order_events', 'order_drafts',
+    ]) {
+      const result = await db.query<{ count: number }>(`SELECT count(*)::integer AS count FROM ${table}`);
+      expect(result.rows[0]!.count, table).toBe(0);
+    }
+    expect((await db.query('SELECT id FROM users')).rows).toHaveLength(1);
+    expect((await db.query('SELECT token_hash FROM sessions')).rows).toHaveLength(1);
+    expect((await db.query('SELECT id FROM system_locks')).rows).toHaveLength(1);
+    expect((await db.query<{ count: number }>(
+      'SELECT count(*)::integer AS count FROM schema_migrations',
+    )).rows[0]!.count).toBe(migrationCount);
+
+    const productionClient = await insertClient(atCutoff, 'Primer cliente real');
+    expect((await insertOrder(productionClient, atCutoff, 'Primera OT real')).number).toBe(1);
+  });
+
   it('rechaza una vista previa obsoleta y revierte sin eliminar nada', async () => {
     const oldClient = await insertClient(beforeCutoff, 'Cliente inicial');
     await insertOrder(oldClient, beforeCutoff, 'OT inicial');

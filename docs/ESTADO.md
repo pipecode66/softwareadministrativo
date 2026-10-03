@@ -12,6 +12,8 @@ El 01/10/2026 quedó implementada, verificada, versionada y enviada a `origin/ma
 
 El 03/10/2026 el usuario confirmó que `server/migrations/009_printing_handoff.sql` fue ejecutada en Supabase. El registro obligatorio de quién recibe en Taller al finalizar Impresión quedó implementado, verificado, versionado en `eea5e25` y enviado a `origin/main`. Cubre actividades por producto, Corte Láser y OT heredadas. El despliegue productivo posterior al `push` no se ha comprobado desde este entorno.
 
+El 03/10/2026 se preparó `server/maintenance/borrar_todos_los_datos_para_entrega_2026-10-03.sql` para dejar en cero todos los datos comerciales y operativos antes del inicio real. La consulta elimina clientes, OT, pagos, multiabonos, productos, materiales, actividades, eventos y borradores; conserva usuarios, sesiones, bloqueos e historial de migraciones, y deja la siguiente OT en 1. Es una utilidad manual, no una migración, y no se ejecutó desde este entorno.
+
 ## Funcionalidades terminadas en este tramo
 
 - Impresión debe escribir quién recibe el trabajo en Taller antes de finalizar su actividad.
@@ -60,6 +62,8 @@ El 03/10/2026 el usuario confirmó que `server/migrations/009_printing_handoff.s
 - `server/src/work/schemas.ts`
 - `server/src/work/service.ts`
 - `server/migrations/009_printing_handoff.sql`
+- `server/maintenance/borrar_todos_los_datos_para_entrega_2026-10-03.sql`
+- `server/tests/cleanup-test-data.test.ts`
 - `server/tests/orders.test.ts`
 - `server/tests/work.test.ts`
 - `server/tests/laser_drafts.test.ts`
@@ -70,7 +74,8 @@ El 03/10/2026 el usuario confirmó que `server/migrations/009_printing_handoff.s
 - `npm test`: 149/149 en 3 archivos.
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
-- `npm --prefix server test`: 267/267 en 8 archivos.
+- `npm --prefix server test`: 268/268 en 8 archivos.
+- La prueba de limpieza total confirma las nueve tablas comerciales vacías, usuarios/sesiones/configuración conservados y la siguiente OT en 1.
 - Pruebas dirigidas de órdenes, actividades y Corte Láser: 119/119.
 - Pruebas E2E locales de Impresión, Taller y materiales: 3/3.
 - Prueba E2E dirigida para Impresión y Taller: 2/2; ambos perfiles visualizan al creador en el detalle.
@@ -107,6 +112,8 @@ El registro obligatorio de entrega solicitado el 02/10 se considera significativ
 ## Pendiente para producción
 
 1. Comprobar en producción una finalización de Impresión normal y una de Corte Láser con el receptor registrado.
+2. Antes del inicio real y con el aplicativo temporalmente sin uso, respaldar Supabase y ejecutar manualmente `server/maintenance/borrar_todos_los_datos_para_entrega_2026-10-03.sql`.
+3. Confirmar que la fila de verificación devuelve cero en todos los contadores comerciales y `siguiente_numero_ot = 1`; no crear una OT de prueba si la entrega debe permanecer vacía.
 
 ## Comando para retomar
 
