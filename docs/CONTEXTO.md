@@ -27,6 +27,8 @@ Administración edita OT antes de iniciar actividades, registra pagos, certifica
 
 Para una FACT nueva se calcula IVA 19 % sobre el valor base. Si la base es estrictamente mayor a $524.000, se proponen automáticamente RETE FUENTE 4 %, RETE IVA 2,85 % e ICA 7/1000. Administración puede editar los importes permitidos. El cobrable nuevo es base + IVA − retenciones. Las OT anteriores a esta regla quedan marcadas LEGACY para no reescribir saldos históricos durante la migración.
 
+Al editar una OT de FACT a REM, las tres retenciones y sus certificados se eliminan automáticamente; el total y el saldo vuelven a calcularse únicamente sobre el valor base REM.
+
 Cuando finaliza Corte Láser, sus minutos se suman a la base y el IVA se actualiza. Las retenciones guardadas no se recalculan ni vuelven a evaluar el umbral de $524.000.
 
 Cada usuario de Administración o Diseño puede mantener un solo borrador incompleto de OT. El borrador pertenece exclusivamente al creador, no genera consecutivo y se elimina al crear la OT o mediante su icono en el historial.
@@ -49,4 +51,4 @@ No incluye urgencias, inventario, exportación Excel/CSV, contabilidad integral,
 
 Frontend React/TypeScript/Vite y backend Express/TypeScript con PostgreSQL productivo o PGlite en desarrollo. Autenticación por cookie HttpOnly, CSRF, Argon2, roles server-side, idempotencia en operaciones sensibles y control de versión de OT. Vercel utiliza el adaptador api/ y PostgreSQL externo.
 
-El usuario confirmó la aplicación de las migraciones 008 y 009 en Supabase. El cambio de entrega de Impresión a Taller quedó implementado, verificado y enviado a `origin/main` el 03/10/2026. Para la puesta en marcha existe una consulta manual de reinicio total que preserva usuarios y configuración, vacía todos los datos comerciales y deja la próxima OT en 1; no se ejecuta automáticamente. El despliegue productivo posterior no se comprueba desde este entorno. Al cerrar cada entrega se hace commit y push salvo indicación expresa en contrario o una dependencia de producción que haga inseguro publicarla. Consultar docs/ESTADO.md para el punto exacto, el contador comercial acumulado y docs/LIMPIEZA_DATOS_2026-09-21.md para distinguir la depuración histórica del reinicio total de entrega.
+El usuario confirmó la aplicación de las migraciones 008 y 009 en Supabase y posteriormente ejecutó la limpieza total de entrega, obteniendo todos los contadores comerciales en cero. El cambio de entrega de Impresión a Taller y la corrección FACT → REM quedaron implementados, verificados y enviados a `origin/main`. El despliegue productivo posterior no se comprueba desde este entorno. Al cerrar cada entrega se hace commit y push salvo indicación expresa en contrario o una dependencia de producción que haga inseguro publicarla. Consultar docs/ESTADO.md para el punto exacto y el contador comercial acumulado.

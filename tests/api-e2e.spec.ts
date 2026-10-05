@@ -96,6 +96,20 @@ test('sesión real crea cliente y OT compuesta con abono y cálculo FACT', async
   await expect(page.getByRole('heading', { name: 'Productos y actividades' })).toBeVisible();
   await expect(page.getByText('Bancolombia', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: '1. Aviso compuesto de integración' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Editar OT' }).click();
+  await page.getByRole('radio', { name: 'REM', exact: true }).check();
+  const editResponse = page.waitForResponse(response => response.url().includes('/api/v1/orders/') && response.request().method() === 'PATCH');
+  await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+  const edited = await editResponse;
+  expect(edited.status()).toBe(200);
+  expect((await edited.json()).order).toMatchObject({
+    documentType: 'REM', reteFuente: 0, reteIva: 0, ica: 0,
+    certificates: { reteFuente: false, reteIva: false, ica: false },
+    financials: { iva: 0, retentions: 0, collectible: 600000, balance: 500000 },
+  });
+  await expect(page).toHaveURL(/\/orders\/[\w-]+$/);
+  await expect(page.getByText('REM', { exact: true }).first()).toBeVisible();
 });
 
 test('corte láser registra minutos, exige el tiempo y actualiza base e IVA', async ({ page }) => {

@@ -1,6 +1,6 @@
 # Estado de continuidad
 
-Actualizado: 2026-10-03.
+Actualizado: 2026-10-05.
 
 ## Estado actual
 
@@ -13,6 +13,8 @@ El 01/10/2026 quedó implementada, verificada, versionada y enviada a `origin/ma
 El 03/10/2026 el usuario confirmó que `server/migrations/009_printing_handoff.sql` fue ejecutada en Supabase. El registro obligatorio de quién recibe en Taller al finalizar Impresión quedó implementado, verificado, versionado en `eea5e25` y enviado a `origin/main`. Cubre actividades por producto, Corte Láser y OT heredadas. El despliegue productivo posterior al `push` no se ha comprobado desde este entorno.
 
 El 03/10/2026 se preparó `server/maintenance/borrar_todos_los_datos_para_entrega_2026-10-03.sql` para dejar en cero todos los datos comerciales y operativos antes del inicio real. La consulta elimina clientes, OT, pagos, multiabonos, productos, materiales, actividades, eventos y borradores; conserva usuarios, sesiones, bloqueos e historial de migraciones, y deja la siguiente OT en 1. Es una utilidad manual, no una migración, y no se ejecutó desde este entorno.
+
+El usuario ejecutó la limpieza total en Supabase y mostró los nueve contadores comerciales en cero, con 7 usuarios y 3 sesiones conservadas. El 05/10/2026 se corrigió la edición FACT → REM: el formulario y el adaptador API envían las tres retenciones en cero, y el servidor limpia también los certificados relacionados. La corrección quedó verificada localmente y enviada a `origin/main`; no requiere migración SQL.
 
 ## Funcionalidades terminadas en este tramo
 
@@ -74,13 +76,15 @@ El 03/10/2026 se preparó `server/maintenance/borrar_todos_los_datos_para_entreg
 - `npm test`: 149/149 en 3 archivos.
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
-- `npm --prefix server test`: 268/268 en 8 archivos.
+- `npm --prefix server test`: 269/269 en 8 archivos.
 - La prueba de limpieza total confirma las nueve tablas comerciales vacías, usuarios/sesiones/configuración conservados y la siguiente OT en 1.
+- La regresión FACT → REM confirma documento REM, IVA y retenciones en cero, certificados desmarcados y saldo recalculado.
 - Pruebas dirigidas de órdenes, actividades y Corte Láser: 119/119.
 - Pruebas E2E locales de Impresión, Taller y materiales: 3/3.
 - Prueba E2E dirigida para Impresión y Taller: 2/2; ambos perfiles visualizan al creador en el detalle.
 - `npm run test:e2e`: los 32 casos funcionales aprobaron, incluidos el desplegable abierto en móvil y la restauración de la página 4. Dos recorridos completos cerraron 31/32 por incidencias transitorias del entorno de Playwright (un artefacto de traza y una espera de carga antes del login); ambos casos restantes aprobaron 1/1 al repetirlos aisladamente.
 - `npm run test:e2e:api`: 5/5 con API y PGlite reales.
+- El nuevo recorrido E2E FACT → REM quedó añadido; no pudo repetirse en este cierre porque faltaba el binario local de Chromium y su descarga agotó el tiempo de red. La misma regla sí quedó cubierta por la prueba de integración del servidor y los 269 casos aprobaron.
 - La prueba del servidor confirma varias coincidencias por descripción con `TALONARIOS`.
 - La prueba de sesión confirma que la carga inicial es silenciosa y que los avisos posteriores continúan activos.
 - La prueba de navegación confirma página 4 → detalle de OT → Atrás → página 4, y luego menú Órdenes → página 1 sin filtros heredados.
@@ -112,8 +116,7 @@ El registro obligatorio de entrega solicitado el 02/10 se considera significativ
 ## Pendiente para producción
 
 1. Comprobar en producción una finalización de Impresión normal y una de Corte Láser con el receptor registrado.
-2. Antes del inicio real y con el aplicativo temporalmente sin uso, respaldar Supabase y ejecutar manualmente `server/maintenance/borrar_todos_los_datos_para_entrega_2026-10-03.sql`.
-3. Confirmar que la fila de verificación devuelve cero en todos los contadores comerciales y `siguiente_numero_ot = 1`; no crear una OT de prueba si la entrega debe permanecer vacía.
+2. Después del despliegue automático de `main`, comprobar en producción la edición de una FACT con retenciones hacia REM.
 
 ## Comando para retomar
 

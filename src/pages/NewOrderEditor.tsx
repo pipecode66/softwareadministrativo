@@ -90,7 +90,9 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   const autoRetentions = documentType === 'FACT' && base > 524000 ? {
     reteFuente: roundMoney(base * .04), reteIva: roundMoney(base * .0285), ica: roundMoney(base * .007),
   } : { reteFuente: 0, reteIva: 0, ica: 0 };
-  const retentions = existing ? { reteFuente: Number(reteFuente) || 0, reteIva: Number(reteIva) || 0, ica: Number(ica) || 0 } : autoRetentions;
+  const retentions = documentType === 'REM'
+    ? { reteFuente: 0, reteIva: 0, ica: 0 }
+    : existing ? { reteFuente: Number(reteFuente) || 0, reteIva: Number(reteIva) || 0, ica: Number(ica) || 0 } : autoRetentions;
   const preview = financials({ value: base, documentType, financialRule: existing?.financialRule || 'NEW', specialPayment: client?.specialPayment,
     ...retentions, payments: existing?.payments || (paymentAmount ? [{ id: '', date: today(), amount: moneyInput(paymentAmount), recordedBy: user?.id || '' }] : []) });
   const initialPaymentRequired = preview.collectible > 0 && !client?.specialPayment;

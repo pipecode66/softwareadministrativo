@@ -643,6 +643,25 @@ describe('Cambios financieros y ruta externa', () => {
     expect(edited.body.order.financials.collectible).toBe(129000);
   });
 
+  it('permite cambiar una FACT a REM limpiando retenciones y certificados', async () => {
+    const order = await create({documentType:'FACT',reteFuente:5000,reteIva:3000,ica:2000});
+    await db.query(`UPDATE orders SET certificate_rete_fuente=true,
+      certificate_rete_iva=true,certificate_ica=true WHERE id=$1`, [order.id]);
+    const edited = await edit(order,
+      {documentType:'REM',reteFuente:0,reteIva:0,ica:0}, admin,
+      input({documentType:'FACT',reteFuente:5000,reteIva:3000,ica:2000}));
+    expect(edited.status).toBe(200);
+    expect(edited.body.order).toMatchObject({
+      documentType:'REM',reteFuente:0,reteIva:0,ica:0,
+      certificates:{reteFuente:false,reteIva:false,ica:false},
+      financials:{iva:0,retentions:0,collectible:100000},
+    });
+    expect((await db.query(`SELECT document_type,rete_fuente,rete_iva,ica,
+      certificate_rete_fuente,certificate_rete_iva,certificate_ica FROM orders WHERE id=$1`, [order.id])).rows[0])
+      .toMatchObject({document_type:'REM',rete_fuente:'0.00',rete_iva:'0.00',ica:'0.00',
+        certificate_rete_fuente:false,certificate_rete_iva:false,certificate_ica:false});
+  });
+
   it('mantiene EXTERNO en su propia etapa hasta que Administración lo finalice', async () => {
     let order = await create({route:'EXTERNO',printing:undefined});
     order = await move(order,'send');

@@ -155,7 +155,9 @@ function orderFields(input: OrderInput) {
   return { clientId: input.clientId, description: input.description, value: input.value,
     documentType: input.documentType, category: input.category, route: input.route,
     requiresInstallation: input.requiresInstallation, printing: input.printing,
-    reteFuente: input.reteFuente, reteIva: input.reteIva, ica: input.ica };
+    reteFuente: input.documentType === 'FACT' ? input.reteFuente : 0,
+    reteIva: input.documentType === 'FACT' ? input.reteIva : 0,
+    ica: input.documentType === 'FACT' ? input.ica : 0 };
 }
 function productFields(products: OrderProductInput[] | undefined) {
   return products?.map(product => ({ description: product.description, quantity: product.quantity,
