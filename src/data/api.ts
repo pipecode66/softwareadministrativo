@@ -253,6 +253,17 @@ export function apiUpdateDesignDetails(id: string, input: { description?: string
   }).then(result => result.activity);
 }
 
+export interface AuditChange { label: string; before?: string | number | boolean | null; after?: string | number | boolean | null; sensitive?: boolean }
+export interface AuditEvent {
+  id: string; orderId: string; orderNumber: number; action: string;
+  actor: { id: string; name: string; role: import('../domain/types').Role };
+  fromStatus: string | null; toStatus: string; occurredAt: string;
+  details: { summary?: string; changes: AuditChange[] };
+}
+export function apiHistory(query: { page?: number; pageSize?: number; orderId?: string } = {}) {
+  return request<{ items: AuditEvent[]; page: number; pageSize: number; total: number }>(`/history?${queryString(query)}`);
+}
+
 export interface SalesReport {
   from: string; to: string; groupBy: 'day' | 'month';
   totals: { count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; collectibleWithoutIva: number; received: number; balance: number; balanceWithIva: number; balanceWithoutIva: number; ivaDue: number };

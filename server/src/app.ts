@@ -11,6 +11,7 @@ import { createClientsRouter } from './clients/router.js';
 import { createOrdersRouter } from './orders/router.js';
 import { createReportsRouter } from './reports/router.js';
 import { createWorkRouter } from './work/router.js';
+import { createHistoryRouter } from './history/router.js';
 
 const JSON_LIMIT = '32kb';
 
@@ -155,6 +156,7 @@ export async function createApp(db: Database, config: AppConfig): Promise<Expres
   api.use('/orders', auth.requireAuth, auth.requirePasswordReady, auth.requireCsrf, createOrdersRouter(db));
   api.use('/reports', auth.requireAuth, auth.requirePasswordReady, auth.requireCsrf, createReportsRouter(db));
   api.use('/work', auth.requireAuth, auth.requirePasswordReady, auth.requireCsrf, createWorkRouter(db));
+  api.use('/history', auth.requireAuth, auth.requirePasswordReady, auth.requireCsrf, createHistoryRouter(db));
   api.use((request: Request) => {
     throw new ApiError(404, 'NOT_FOUND', `No existe ${request.method} ${request.path}.`);
   });

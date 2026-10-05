@@ -88,8 +88,48 @@ async function lockedOrder(tx: SqlConnection, id: string): Promise<OrderRow> {
 function checkVersion(row: OrderRow, version: number) {
   if (row.version !== version) throw conflict('Otra persona actualizó esta orden. Recarga sus datos antes de continuar.');
 }
-async function event(tx: SqlConnection, row: OrderRow, actor: string, action: string, before?: string) {
-  await tx.query('INSERT INTO order_events (id, order_id, actor_id, action, from_status, to_status) VALUES ($1,$2,$3,$4,$5,$6)', [randomUUID(), row.id, actor, action, before ?? null, row.status]);
+interface AuditChange { label: string; before?: string | number | boolean | null; after?: string | number | boolean | null; sensitive?: boolean }
+interface AuditDetails { summary: string; changes?: AuditChange[] }
+async function event(tx: SqlConnection, row: OrderRow, actor: string, action: string, before?: string, details?: AuditDetails) {
+  await tx.query(`INSERT INTO order_events
+    (id,order_id,actor_id,action,from_status,to_status,details) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+  [randomUUID(), row.id, actor, action, before ?? null, row.status, JSON.stringify(details ?? {})]);
+}
+function editChanges(before: OrderRow, after: OrderRow): AuditChange[] {
+  const fields: Array<[keyof OrderRow, string, boolean?]> = [
+    ['description','Descripción'], ['value','Valor base',true], ['document_type','Tipo de documento'],
+    ['category','Categoría'], ['route','Recorrido'], ['requires_installation','Requiere instalación'],
+    ['rete_fuente','RETE FUENTE',true], ['rete_iva','RETE IVA',true], ['ica','ICA',true],
+  ];
+  const changes: AuditChange[] = fields.flatMap(([key,label,sensitive]) => String(before[key] ?? '') === String(after[key] ?? '') ? [] : [{
+    label, before: before[key] as string | number | boolean | null, after: after[key] as string | number | boolean | null, sensitive,
+  }]);
+  if (before.client_id !== after.client_id) changes.push({ label: 'Cliente', before: before.client_id, after: after.client_id });
+  return changes;
+}
+async function productChanges(tx: SqlConnection, orderId: string, products: NonNullable<OrderInput['products']>): Promise<AuditChange[]> {
+  const current = (await tx.query<{ position:number; description:string; quantity:string; unit_value:string; materials:string; activities:string }>(`
+    SELECT p.position,p.description,p.quantity,p.unit_value,
+      coalesce((SELECT string_agg(m.material || ' ' || m.length::float8::text || '×' || m.width::float8::text || ' m','; ' ORDER BY m.position)
+        FROM order_product_materials m WHERE m.product_id=p.id),'') AS materials,
+      coalesce((SELECT string_agg(a.area || coalesce(' (' || a.printing_type || ')','') || coalesce(' [' || a.assigned_user_id::text || ']',''),' → ' ORDER BY a.position)
+        FROM order_activities a WHERE a.product_id=p.id),'') AS activities
+    FROM order_products p WHERE p.order_id=$1 ORDER BY p.position
+  `,[orderId])).rows;
+  const changes: AuditChange[]=[];
+  if(current.length!==products.length) changes.push({label:'Cantidad de productos',before:current.length,after:products.length});
+  products.forEach((product,index)=>{
+    const old=current[index],prefix=`Producto ${index+1}`;
+    if(!old){changes.push({label:prefix,after:'Producto agregado'});return;}
+    if(old.description!==product.description) changes.push({label:`${prefix} · Descripción`,before:old.description,after:product.description});
+    if(Number(old.quantity)!==product.quantity) changes.push({label:`${prefix} · Cantidad`,before:Number(old.quantity),after:product.quantity});
+    if(Number(old.unit_value)!==product.unitValue) changes.push({label:`${prefix} · Valor unitario`,before:Number(old.unit_value),after:product.unitValue,sensitive:true});
+    const materials=product.materials.map(item=>`${item.material} ${item.length}×${item.width} m`).join('; ');
+    if(old.materials!==materials) changes.push({label:`${prefix} · Materiales`,before:old.materials||'Sin materiales',after:materials||'Sin materiales'});
+    const activities=product.activities.map(item=>`${item.area}${item.area==='PRINTING'?` (${item.printingType??'PRINT'})`:''}${item.assignedUserId?` [${item.assignedUserId}]`:''}`).join(' → ');
+    if(old.activities!==activities) changes.push({label:`${prefix} · Áreas y responsables`,before:old.activities||'Sin actividades',after:activities||'Sin actividades'});
+  });
+  return changes;
 }
 function inputParams(input: OrderInput): unknown[] {
   return [input.clientId, input.description, input.value, input.documentType, input.category, input.route, input.requiresInstallation,
@@ -150,11 +190,13 @@ export async function createOrder(db: Database, auth: AuthSession, input: z.infe
         (id,order_id,product_id,position,material,length,width)
         VALUES ($1,$2,$3,1,$4,$5,$6)`, [randomUUID(),row.id,productId,row.material,row.length,row.width]);
     }
-    await event(tx, row, actor.id, 'create');
+    await event(tx, row, actor.id, 'create', undefined, { summary: 'Creó la orden de trabajo.' });
     if (input.initialPayment) {
       await tx.query('INSERT INTO payments (id,order_id,date,amount,method,recorded_by,request_key) VALUES ($1,$2,$3,$4,$5,$6,$7)',
         [randomUUID(),row.id,input.initialPayment.date,input.initialPayment.amount,input.initialPayment.method,actor.id,randomUUID()]);
-      await event(tx,row,actor.id,'payment',row.status);
+      await event(tx,row,actor.id,'payment',row.status,{ summary:'Registró el abono inicial.', changes:[
+        { label:'Valor recibido', after:input.initialPayment.amount, sensitive:true }, { label:'Medio', after:input.initialPayment.method, sensitive:true },
+      ] });
     }
     await tx.query('DELETE FROM order_drafts WHERE created_by=$1', [actor.id]);
     return { order: orderDto({ ...row, special_payment: client.special_payment }, await paymentsOf(tx,row.id), actor.role), replayed: false };
@@ -172,6 +214,7 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
     if (existingComposite && !input.products) throw new ApiError(400, 'PRODUCTS_REQUIRED', 'Incluye los productos de esta orden en la edición.', 'products');
     if (row.status === 'IN_PRODUCTION' && !input.products) throw conflict('La orden compuesta requiere productos para editarse.');
     if (input.initialPayment) throw new ApiError(400, 'INITIAL_PAYMENT_EDIT', 'Los abonos se registran en pagos, no en edición de OT.', 'initialPayment');
+    const workChanges = input.products ? await productChanges(tx,id,input.products) : [];
     const client = await checkClient(tx, input.clientId, input.documentType);
     const payments = await paymentsOf(tx, id);
     if (!client.special_payment && input.value > 0 && payments.length === 0) {
@@ -202,7 +245,9 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
         [randomUUID(),id,legacy.id,normalized.printing.material,normalized.printing.length,normalized.printing.width]);
       }
     }
-    await event(tx, updated, actor.id, 'edit', row.status);
+    await event(tx, updated, actor.id, 'edit', row.status, {
+      summary: 'Editó la orden de trabajo.', changes: [...editChanges(row, updated),...workChanges],
+    });
     return orderDto({ ...updated, special_payment: client.special_payment }, payments, actor.role);
   });
 }
@@ -222,7 +267,10 @@ export async function recordPayment(db: Database, auth: AuthSession, id: string,
     if (cents(input.amount) > cents(financials(row, payments).balance)) throw conflict('El abono supera el saldo actual de la orden.');
     await tx.query('INSERT INTO payments (id,order_id,date,amount,method,recorded_by,request_key) VALUES ($1,$2,$3,$4,$5,$6,$7)', [randomUUID(), id, input.date, input.amount, input.method, actor.id, input.requestId]);
     const updated = (await tx.query<OrderRow>('UPDATE orders SET updated_at=clock_timestamp(),version=version+1 WHERE id=$1 RETURNING *', [id])).rows[0];
-    await event(tx, updated, actor.id, 'payment', row.status);
+    await event(tx, updated, actor.id, 'payment', row.status, { summary:'Registró un pago.', changes:[
+      { label:'Valor recibido', after:input.amount, sensitive:true }, { label:'Medio', after:input.method, sensitive:true },
+      { label:'Fecha del pago', after:input.date, sensitive:true },
+    ] });
     return { order: orderDto({ ...updated, special_payment: row.special_payment }, await paymentsOf(tx, id), actor.role), replayed: false };
   });
 }
@@ -271,7 +319,9 @@ export async function allocateBulkPayment(db: Database, auth: AuthSession, input
       await tx.query(`INSERT INTO payments (id,order_id,date,amount,method,recorded_by,request_key,bulk_batch_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,[randomUUID(),row.id,input.date,allocated/100,input.method,actor.id,randomUUID(),batchId]);
       const updated = (await tx.query<OrderRow>('UPDATE orders SET updated_at=clock_timestamp(),version=version+1 WHERE id=$1 RETURNING *',[row.id])).rows[0];
-      await event(tx,updated,actor.id,'payment',row.status);
+      await event(tx,updated,actor.id,'payment',row.status,{ summary:'Aplicó un multiabono a la OT.', changes:[
+        { label:'Valor aplicado', after:allocated/100, sensitive:true }, { label:'Medio', after:input.method, sensitive:true },
+      ] });
       allocations.push({orderId:row.id,amount:allocated/100});
       remaining -= allocated;
     }
@@ -331,7 +381,16 @@ export async function transitionOrder(db: Database, auth: AuthSession, id: strin
     `, [id, next.status, next.printing_completed_at, next.workshop_started_at, next.ready_for_installation_at, next.installed_at, next.installation_note, next.closed_at, next.printing_received_by_workshop])).rows[0];
     if (input.action === 'finishPrinting') await tx.query(`UPDATE order_product_materials
       SET consumed_at=$2 WHERE order_id=$1 AND consumed_at IS NULL`, [id, next.printing_completed_at]);
-    await event(tx, updated, actor.id, input.action, row.status);
+    const transitionSummary: Record<typeof input.action,string> = {
+      send:'Envió la OT a producción.', finishPrinting:'Finalizó Impresión.', finishExternal:'Finalizó el servicio Externo.',
+      startWorkshop:'Inició el trabajo de Taller.', finishWorkshop:'Finalizó el trabajo de Taller.',
+      install:'Registró la instalación.', close:'Cerró administrativamente la OT.',
+    };
+    const transitionChanges: AuditChange[] = row.status === updated.status ? [] : [{ label:'Estado', before:row.status, after:updated.status }];
+    if (input.receivedByWorkshop) transitionChanges.push({ label:'Recibe en Taller', after:input.receivedByWorkshop.trim() });
+    if (input.date) transitionChanges.push({ label:'Fecha de instalación', after:input.date });
+    if (input.note) transitionChanges.push({ label:'Observaciones', after:input.note });
+    await event(tx, updated, actor.id, input.action, row.status, { summary:transitionSummary[input.action], changes:transitionChanges });
     return orderDto({ ...updated, special_payment: row.special_payment }, isAdmin(actor.role) ? await paymentsOf(tx, id) : [], actor.role);
   });
 }

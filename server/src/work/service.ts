@@ -35,6 +35,12 @@ const date = (value: Date | string | null) => value ? new Date(value).toISOStrin
 const missing = () => new ApiError(404, 'ACTIVITY_NOT_FOUND', 'No encontramos esta actividad.');
 const conflict = (message: string) => new ApiError(409, 'ACTIVITY_CONFLICT', message);
 const admin = (role: Role) => role === 'ADMINMASTER' || role === 'ADMIN_GENERAL';
+async function auditEvent(tx: SqlConnection, orderId: string, actorId: string, action: string, status: string,
+  summary: string, changes: Array<{ label: string; before?: unknown; after?: unknown; sensitive?: boolean }> = []) {
+  await tx.query(`INSERT INTO order_events
+    (id,order_id,actor_id,action,from_status,to_status,details) VALUES ($1,$2,$3,$4,$5,$5,$6::jsonb)`,
+  [randomUUID(), orderId, actorId, action, status, JSON.stringify({ summary, changes })]);
+}
 
 function lineCents(quantity: number, unitValue: number): number {
   const units = Math.round(quantity);
@@ -352,6 +358,10 @@ export async function saveLaserMinutes(
     if (parent.status !== 'IN_PRODUCTION') throw conflict('La OT no está en producción.');
     await tx.query('UPDATE order_activities SET laser_minutes=$2,updated_at=clock_timestamp() WHERE id=$1',
       [id, parsed.minutes]);
+    await auditEvent(tx, current.order_id, actor.id, 'laserMinutes', parent.status, 'Registró el tiempo de Corte Láser.', [
+      { label:'Minutos', before:current.laser_minutes, after:parsed.minutes },
+      { label:'Valor del corte', after:parsed.minutes * LASER_RATE, sensitive:true },
+    ]);
     const updated = await listedById(tx, id);
     return activityDto(updated, []);
   });
@@ -406,10 +416,10 @@ export async function editDesignDetails(
         ) FROM order_products p WHERE p.order_id=orders.id),
         version=version+1,updated_at=clock_timestamp() WHERE id=$1
     `, [current.order_id]);
-    await tx.query(`
-      INSERT INTO order_events (id,order_id,actor_id,action,from_status,to_status)
-      VALUES ($1,$2,$3,'designDetails',$4,$4)
-    `, [randomUUID(), current.order_id, actor.id, parent.status]);
+    await auditEvent(tx, current.order_id, actor.id, 'designDetails', parent.status, 'Editó la preparación técnica de Diseño.', [
+      ...(parsed.description !== undefined ? [{ label:'Descripción del producto', after:parsed.description }] : []),
+      ...(parsed.materials !== undefined ? [{ label:'Materiales de impresión', after:`${parsed.materials.length} material(es) guardado(s)` }] : []),
+    ]);
     const updated = await listedById(tx, id);
     const materials = await activityMaterials(tx, [updated.product_id]);
     return activityDto(updated, materials.get(updated.product_id) ?? []);
@@ -462,6 +472,9 @@ export async function changeActivity(
       if (!designer.rows.length) throw new ApiError(400, 'DESIGNER_UNAVAILABLE', 'Selecciona un diseñador activo.', 'assignedUserId');
       if (current.assigned_user_id !== details.assignedUserId) {
         await tx.query('UPDATE order_activities SET assigned_user_id=$2,updated_at=now() WHERE id=$1', [id, details.assignedUserId]);
+        await auditEvent(tx, current.order_id, actor.id, 'assignDesign', parent.status, 'Asignó la actividad de Diseño.', [
+          { label:'Diseñador responsable', before:current.assigned_user_id, after:details.assignedUserId },
+        ]);
       }
     } else {
       const roleForArea: Record<Area, Role[]> = {
@@ -486,6 +499,9 @@ export async function changeActivity(
           `, [current.product_id, current.position]);
           if (Number(blockers.rows[0].count)) throw conflict('Finaliza las actividades previas del producto antes de iniciar esta tarea.');
           await tx.query("UPDATE order_activities SET status='IN_PROGRESS',started_at=now(),updated_at=now() WHERE id=$1", [id]);
+          await auditEvent(tx, current.order_id, actor.id, 'startActivity', parent.status, `Inició la actividad de ${current.area}.`, [
+            { label:'Actividad', after:current.area }, { label:'Estado', before:'PENDING', after:'IN_PROGRESS' },
+          ]);
         }
       } else {
         if (current.status === 'PENDING') throw conflict('Primero inicia la actividad.');
@@ -516,6 +532,10 @@ export async function changeActivity(
               received_by_workshop=CASE WHEN area='PRINTING' THEN coalesce($3,received_by_workshop) ELSE received_by_workshop END
             WHERE id=$1
           `, [id, stamp, receivedByWorkshop ?? null]);
+          await auditEvent(tx, current.order_id, actor.id, 'completeActivity', parent.status, `Finalizó la actividad de ${current.area}.`, [
+            { label:'Actividad', after:current.area }, { label:'Estado', before:'IN_PROGRESS', after:'COMPLETED' },
+            ...(receivedByWorkshop ? [{ label:'Recibe en Taller', after:receivedByWorkshop }] : []),
+          ]);
           if (current.area === 'PRINTING') await tx.query(`
             UPDATE order_product_materials SET consumed_at=$2 WHERE product_id=$1 AND consumed_at IS NULL
           `, [current.product_id, stamp]);
@@ -542,10 +562,9 @@ export async function changeActivity(
                 value=coalesce($5,value)
               WHERE id=$1
             `, [current.order_id, next, stamp, parent.requires_installation, laserValue]);
-            await tx.query(`
-              INSERT INTO order_events (id,order_id,actor_id,action,from_status,to_status)
-              VALUES ($1,$2,$3,$4,$5,$6)
-            `, [randomUUID(), current.order_id, actor.id, 'finishProduction', parent.status, next]);
+            await auditEvent(tx, current.order_id, actor.id, 'finishProduction', next, 'Finalizó la producción de la OT.', [
+              { label:'Estado', before:parent.status, after:next },
+            ]);
           } else if (laserValue !== null) {
             await tx.query(`
               UPDATE orders SET value=$2,version=version+1,updated_at=$3 WHERE id=$1

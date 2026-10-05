@@ -66,11 +66,15 @@ El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al m
 - `server/src/work/schemas.ts`
 - `server/src/work/service.ts`
 - `server/migrations/009_printing_handoff.sql`
+- `server/migrations/010_audit_history.sql`
+- `server/src/history/router.ts`
+- `server/src/history/service.ts`
 - `server/maintenance/borrar_todos_los_datos_para_entrega_2026-10-03.sql`
 - `server/tests/cleanup-test-data.test.ts`
 - `server/tests/orders.test.ts`
 - `server/tests/work.test.ts`
 - `server/tests/laser_drafts.test.ts`
+- `server/tests/history.test.ts`
 
 ## Verificación local
 
@@ -78,7 +82,7 @@ El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al m
 - `npm test`: 150/150 en 3 archivos.
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
-- `npm --prefix server test`: 270/270 en 8 archivos.
+- `npm --prefix server test`: 271/271 en 9 archivos.
 - La prueba de limpieza total confirma las nueve tablas comerciales vacías, usuarios/sesiones/configuración conservados y la siguiente OT en 1.
 - La regresión FACT → REM confirma documento REM, IVA y retenciones en cero, certificados desmarcados y saldo recalculado.
 - Las pruebas confirman que Impresión normal sin materiales se rechaza tanto con Diseño como sin Diseño, mientras Corte Láser sigue admitiendo cero materiales.
@@ -86,6 +90,8 @@ El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al m
 - Se retiró la acción `Tomar tarea` de la interfaz y del servidor, por lo que ninguna actividad nueva de Diseño puede quedar libre para ser reclamada.
 - Administración puede corregir materiales de Impresión mientras Diseño está en proceso. La corrección conserva el identificador, responsable y estado de la actividad de Diseño; productos, valores, áreas y responsables siguen protegidos, y cualquier avance posterior mantiene el bloqueo completo.
 - La regresión de edición confirma que esa corrección conserva la actividad `IN_PROGRESS`, mientras un cambio tardío en la descripción comercial continúa rechazándose.
+- Cada detalle de OT incorpora un historial visible para sus perfiles autorizados con responsable, rol, fecha, hora, acción y cambios operativos; los datos financieros se eliminan de la respuesta para Diseño, Impresión y Taller.
+- Se añadió el módulo administrativo `Historial`, con todos los eventos, expansión del cambio y enlace directo a la OT. La migración `010_audit_history.sql` agrega el detalle JSON estructurado a `order_events` sin alterar registros previos.
 - Pruebas dirigidas de órdenes, actividades y Corte Láser: 120/120.
 - Pruebas E2E locales de Impresión, Taller y materiales: 3/3.
 - Prueba E2E dirigida para Impresión y Taller: 2/2; ambos perfiles visualizan al creador en el detalle.
@@ -114,7 +120,8 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Entrega de Impresión a Taller del 02/10 | 1 | 1 |
 | Material obligatorio al crear Impresión normal del 05/10 | 1 | 1 |
 | Diseñador obligatorio al seleccionar Diseño del 05/10 | 1 | 1 |
-| **Acumulado** | **38** | **20** |
+| Historial detallado y auditoría de OT del 05/10 | 1 | 1 |
+| **Acumulado** | **39** | **21** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
@@ -126,10 +133,13 @@ La obligación de registrar materiales desde la creación se considera significa
 
 La asignación obligatoria de Diseño se considera significativa porque elimina las tareas libres, bloquea la creación o edición sin responsable y modifica la distribución del trabajo entre diseñadores.
 
+El historial se considera significativo porque incorpora persistencia estructurada de auditoría, una ruta protegida, un módulo administrativo y trazabilidad dentro de cada OT con filtrado por perfil.
+
 ## Pendiente para producción
 
-1. Comprobar en producción una finalización de Impresión normal y una de Corte Láser con el receptor registrado.
-2. Después del despliegue automático de `main`, comprobar en producción la edición de una FACT con retenciones hacia REM.
+1. Ejecutar manualmente `server/migrations/010_audit_history.sql` en Supabase antes de publicar el código del historial.
+2. Comprobar en producción una finalización de Impresión normal y una de Corte Láser con el receptor registrado.
+3. Después del despliegue automático de `main`, comprobar en producción la edición de una FACT con retenciones hacia REM.
 
 ## Comando para retomar
 

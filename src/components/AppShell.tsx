@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowUpRight, ChevronRight, ClipboardList, Hammer, KeyRound, LayoutDashboard, LogOut, Menu, PanelsTopLeft, PencilRuler, Plus, Printer, Search, Settings2, SquareStack, Users, Wallet, ChartNoAxesCombined, type LucideIcon } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, ClipboardList, Hammer, History, KeyRound, LayoutDashboard, LogOut, Menu, PanelsTopLeft, PencilRuler, Plus, Printer, Search, Settings2, SquareStack, Users, Wallet, ChartNoAxesCombined, type LucideIcon } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import { canCreate, initials, isAdmin, ROLE_LABELS } from '../domain/utils';
 import { Modal } from './ui';
@@ -18,6 +18,7 @@ export function AppShell() {
     {to:'/',label:'Inicio',icon:LayoutDashboard,group:'Administración'},
     {to:'/operation',label:'Operación',icon:PanelsTopLeft,group:'Administración'},
     {to:'/orders',label:'Órdenes',icon:ClipboardList,group:'Administración'},
+    {to:'/history',label:'Historial',icon:History,group:'Administración'},
     {to:'/clients',label:'Clientes',icon:Users,group:'Administración'},
     {to:'/portfolio',label:'Cartera',icon:Wallet,group:'Administración'},
     {to:'/reports',label:'Reportes',icon:ChartNoAxesCombined,group:'Administración'},

@@ -265,8 +265,13 @@ export async function updateCertificates(db: Database, auth: AuthSession, input:
       UPDATE orders SET certificate_rete_fuente=$2,certificate_rete_iva=$3,certificate_ica=$4,
         updated_at=clock_timestamp(),version=version+1 WHERE id=$1 RETURNING version`,
     [row.id, requested.reteFuente, requested.reteIva, requested.ica])).rows[0];
-    await tx.query(`INSERT INTO order_events (id,order_id,actor_id,action,from_status,to_status)
-      VALUES ($1,$2,$3,'certificates',$4,$4)`, [randomUUID(), row.id, actor.id, row.status]);
+    await tx.query(`INSERT INTO order_events (id,order_id,actor_id,action,from_status,to_status,details)
+      VALUES ($1,$2,$3,'certificates',$4,$4,$5::jsonb)`, [randomUUID(), row.id, actor.id, row.status,
+      JSON.stringify({ summary:'Actualizó los certificados de retención.', changes:[
+        { label:'Certificado RETE FUENTE', before:row.certificate_rete_fuente, after:requested.reteFuente, sensitive:true },
+        { label:'Certificado RETE IVA', before:row.certificate_rete_iva, after:requested.reteIva, sensitive:true },
+        { label:'Certificado ICA', before:row.certificate_ica, after:requested.ica, sensitive:true },
+      ] })]);
     return { orderId: row.id, certificates: requested, version: updated.version };
   });
 }

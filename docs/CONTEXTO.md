@@ -39,6 +39,8 @@ La selección de cliente en Nueva OT es un buscador desplegable por nombre, iden
 
 Los avisos de llegada entre departamentos se activan solo después de completar la primera carga de la sesión. Las OT históricas no generan mensajes al ingresar; las llegadas y cambios de etapa posteriores sí lo hacen.
 
+Cada OT muestra su trazabilidad a todos los perfiles autorizados para consultarla: responsable, rol, fecha, hora, acción y desglose disponible. Los importes, pagos, retenciones y certificados se filtran para Diseño, Impresión y Taller. El módulo global Historial, con acceso a todas las OT y enlaces directos, corresponde únicamente a ADMINMASTER y ADMIN_GENERAL.
+
 ## Reportes
 
 Administración consulta ventas por fecha, mes o rango, filtradas por categoría y REM/FACT. FACT e IVA aparecen separados. Cartera muestra saldos al corte con IVA, sin IVA e IVA pendiente. Los certificados recibidos restan de la métrica pendiente de cada retención, no del efectivo ya cobrado. El consumo de materiales cuenta m² únicamente cuando finaliza Impresión.
