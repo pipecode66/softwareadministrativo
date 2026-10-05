@@ -25,6 +25,7 @@ let db: Database;
 let app: Express;
 let admin: Session;
 let clientId: string;
+let defaultDesignerId: string;
 
 function sessionOf(response: Response): Session {
   const header = response.headers['set-cookie'] as string[] | string | undefined;
@@ -68,9 +69,14 @@ const products = [
 ];
 
 async function create(overrides: Record<string, unknown> = {}, session = admin) {
+  const requestedProducts = (overrides.products as typeof products | undefined) ?? products;
+  const assignedProducts = requestedProducts.map(product => ({ ...product, activities: product.activities.map(activity =>
+    activity.area === 'DESIGN' && !('assignedUserId' in activity)
+      ? { ...activity, assignedUserId: defaultDesignerId }
+      : activity) }));
   const response = await post('/orders', {
     clientId, description: 'OT compuesta', value: 100000, documentType: 'REM', category: 'Proyecto',
-    route: 'MULTI_AREA', requiresInstallation: false, products, requestId: randomUUID(), ...overrides,
+    route: 'MULTI_AREA', requiresInstallation: false, ...overrides, products: assignedProducts, requestId: randomUUID(),
   }, session);
   expect(response.status).toBe(201);
   return response.body.order as { id: string; number: number; status: string; version: number };
@@ -85,6 +91,11 @@ beforeEach(async () => {
   await bootstrapAdmin(db, { name: 'Admin tareas', email: EMAIL, password: PASSWORD });
   app = await createApp(db, config);
   admin = await login(EMAIL);
+  defaultDesignerId = randomUUID();
+  await db.query(`
+    INSERT INTO users (id,name,email,role,password_hash,must_change_password)
+    SELECT $1,$2,$3,'DISENO',password_hash,false FROM users WHERE id=$4
+  `, [defaultDesignerId, 'Diseñador predeterminado', `default-${defaultDesignerId}@example.test`, admin.user.id]);
   clientId = randomUUID();
   await db.query('INSERT INTO clients (id,name,identification,phone,special_payment) VALUES ($1,$2,$3,$4,true)',
     [clientId, 'Cliente de prueba', 'NIT-800000001', '3001234567']);
@@ -92,6 +103,19 @@ beforeEach(async () => {
 afterAll(async () => { await db?.close(); });
 
 describe('Productos y trabajo interno', () => {
+  it('exige un diseñador específico al incluir Diseño', async () => {
+    const response = await post('/orders', {
+      clientId, description: 'Diseño sin responsable', value: 40000, documentType: 'REM', category: 'Proyecto',
+      route: 'MULTI_AREA', requiresInstallation: false, requestId: randomUUID(), products: [{
+        description: 'Arte pendiente', quantity: 1, unitValue: 40000, materials: [], activities: [{ area: 'DESIGN' }],
+      }],
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({ code: 'DESIGNER_REQUIRED', field: 'products.activities.assignedUserId' });
+    expect((await db.query('SELECT id FROM orders')).rows).toHaveLength(0);
+    expect((await post('/work/activities/no-existe/claim', {}, await actor('DISENO'))).status).toBe(404);
+  });
+
   it('conserva un solo valor comercial y muestra dos productos y cuatro actividades', async () => {
     const order = await create();
     expect(order.status).toBe('IN_PRODUCTION');
@@ -162,10 +186,10 @@ describe('Productos y trabajo interno', () => {
     const external = items.find(item => item.area === 'EXTERNAL')!;
     expect(printing.ready).toBe(false);
     expect((await post(`/work/activities/${printing.id}/start`, {}, printer)).status).toBe(409);
-    expect((await post(`/work/activities/${design.id}/start`, {}, designer)).status).toBe(409);
-    expect((await post(`/work/activities/${design.id}/claim`, {}, designer)).body.activity.assignedUserId).toBe(designer.user.id);
-    expect((await post(`/work/activities/${design.id}/start`, {}, designer)).status).toBe(200);
-    expect((await post(`/work/activities/${design.id}/complete`, {}, designer)).status).toBe(200);
+    expect((await post(`/work/activities/${design.id}/start`, {}, designer)).status).toBe(404);
+    const assignedDesigner = await login(`default-${defaultDesignerId}@example.test`);
+    expect((await post(`/work/activities/${design.id}/start`, {}, assignedDesigner)).status).toBe(200);
+    expect((await post(`/work/activities/${design.id}/complete`, {}, assignedDesigner)).status).toBe(200);
     expect((await post(`/work/activities/${cutting.id}/start`, {}, workshop)).status).toBe(409);
     expect((await get(`/work/activities?orderId=${order.id}`, printer)).body.items[0].materials[0].consumedAt).toBeNull();
     expect((await post(`/work/activities/${printing.id}/start`, {}, printer)).status).toBe(200);
@@ -218,7 +242,7 @@ describe('Productos y trabajo interno', () => {
     const design = ((await get(`/work/activities?orderId=${order.id}`)).body.items as Activity[])
       .find(item => item.area === 'DESIGN')!;
     const load = await get('/work/designers/load');
-    expect(load.body.unassigned).toBe(1);
+    expect(load.body.unassigned).toBe(0);
     expect((await get('/work/designers/load', designer)).status).toBe(403);
     const assigned = await patch(`/work/activities/${design.id}/assign`, { assignedUserId: designer.user.id });
     expect(assigned.status).toBe(200);
@@ -227,15 +251,15 @@ describe('Productos y trabajo interno', () => {
       expect.objectContaining({ id: designer.user.id, pending: 1, total: 1 }),
     ]));
     const replacement = [
-      { ...products[0], description: 'Pieza corregida', unitValue: 25000 },
+      { ...products[0], description: 'Pieza corregida', unitValue: 25000,
+        activities: products[0].activities.map(activity => activity.area === 'DESIGN' ? { ...activity, assignedUserId: designer.user.id } : activity) },
       { ...products[1], unitValue: 50000 },
     ];
     await db.transaction(tx => replaceOrderProducts(tx, order.id, replacement));
     expect((await get(`/work/orders/${order.id}`)).body.products[0].description).toBe('Pieza corregida');
     const nextDesign = ((await get(`/work/activities?orderId=${order.id}`)).body.items as Activity[])
       .find(item => item.area === 'DESIGN')!;
-    expect((await post(`/work/activities/${design.id}/claim`, {}, designer)).status).toBe(404);
-    await post(`/work/activities/${nextDesign.id}/claim`, {}, designer);
+    expect((await post(`/work/activities/${design.id}/start`, {}, designer)).status).toBe(404);
     await post(`/work/activities/${nextDesign.id}/start`, {}, designer);
     await expect(db.transaction(tx => replaceOrderProducts(tx, order.id, replacement)))
       .rejects.toMatchObject({ status: 409, code: 'ACTIVITY_CONFLICT' });

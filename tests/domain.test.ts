@@ -86,7 +86,7 @@ describe('Validación y creación de órdenes', () => {
     expect(() => validateInput(data(), input({
       number: 0, route: 'PRINT_ONLY', printing: undefined,
       products: [{ description: 'Diseño para imprimir', quantity: 1, unitValue: 100000, materials: [],
-        activities: [{ area: 'DESIGN' }, { area: 'PRINTING', printingType: 'PRINT' }] }],
+        activities: [{ area: 'DESIGN', assignedUserId: 'designer-1' }, { area: 'PRINTING', printingType: 'PRINT' }] }],
       initialPayment: { date: today(), amount: 1000, method: 'EFECTIVO' },
     }))).toThrow(/materiales/i);
   });
@@ -117,7 +117,7 @@ describe('Validación y creación de órdenes', () => {
   it('crea OT multiproducto con consecutivo, abono inicial y retenciones nuevas', () => {
     const products = [{ description: 'Banner', quantity: 1, unitValue: 600000,
       materials: [{ material: 'Banner' as const, length: 2, width: 1 }],
-      activities: [{ area: 'DESIGN' as const }, { area: 'PRINTING' as const }] }];
+      activities: [{ area: 'DESIGN' as const, assignedUserId: 'user-1' }, { area: 'PRINTING' as const }] }];
     const result = createWorkOrder(data([order()]), user('DISENO'), input({
       number: 0, description: 'Banner', value: 600000, route: 'PRINT_ONLY', printing: undefined,
       documentType: 'FACT', products, initialPayment: { date: today(), amount: 100000, method: 'BANCOLOMBIA' },

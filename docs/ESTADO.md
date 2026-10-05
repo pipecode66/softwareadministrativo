@@ -78,11 +78,13 @@ El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al m
 - `npm test`: 150/150 en 3 archivos.
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
-- `npm --prefix server test`: 269/269 en 8 archivos.
+- `npm --prefix server test`: 270/270 en 8 archivos.
 - La prueba de limpieza total confirma las nueve tablas comerciales vacías, usuarios/sesiones/configuración conservados y la siguiente OT en 1.
 - La regresión FACT → REM confirma documento REM, IVA y retenciones en cero, certificados desmarcados y saldo recalculado.
 - Las pruebas confirman que Impresión normal sin materiales se rechaza tanto con Diseño como sin Diseño, mientras Corte Láser sigue admitiendo cero materiales.
-- Pruebas dirigidas de órdenes, actividades y Corte Láser: 119/119.
+- Nueva OT exige un diseñador específico cuando Administración selecciona Diseño; si la OT la crea Diseño, el servidor conserva la autoasignación al creador.
+- Se retiró la acción `Tomar tarea` de la interfaz y del servidor, por lo que ninguna actividad nueva de Diseño puede quedar libre para ser reclamada.
+- Pruebas dirigidas de órdenes, actividades y Corte Láser: 120/120.
 - Pruebas E2E locales de Impresión, Taller y materiales: 3/3.
 - Prueba E2E dirigida para Impresión y Taller: 2/2; ambos perfiles visualizan al creador en el detalle.
 - `npm run test:e2e`: los 32 casos funcionales aprobaron, incluidos el desplegable abierto en móvil y la restauración de la página 4. Dos recorridos completos cerraron 31/32 por incidencias transitorias del entorno de Playwright (un artefacto de traza y una espera de carga antes del login); ambos casos restantes aprobaron 1/1 al repetirlos aisladamente.
@@ -109,7 +111,8 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Identidad del creador para producción del 01/10 | 1 | 0 |
 | Entrega de Impresión a Taller del 02/10 | 1 | 1 |
 | Material obligatorio al crear Impresión normal del 05/10 | 1 | 1 |
-| **Acumulado** | **37** | **19** |
+| Diseñador obligatorio al seleccionar Diseño del 05/10 | 1 | 1 |
+| **Acumulado** | **38** | **20** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
@@ -118,6 +121,8 @@ La identificación del creador solicitada el 01/10 se cuenta como un cambio meno
 El registro obligatorio de entrega solicitado el 02/10 se considera significativo porque cambia la regla de finalización productiva, persiste un dato nuevo y requiere migración de base de datos.
 
 La obligación de registrar materiales desde la creación se considera significativa porque cambia la responsabilidad dentro del flujo productivo y bloquea la creación o edición de la OT si falta la información técnica.
+
+La asignación obligatoria de Diseño se considera significativa porque elimina las tareas libres, bloquea la creación o edición sin responsable y modifica la distribución del trabajo entre diseñadores.
 
 ## Pendiente para producción
 

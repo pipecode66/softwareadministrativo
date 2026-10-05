@@ -258,11 +258,12 @@ describe('Corte Láser y total comercial', () => {
 
   it('permite a Administración iniciar y completar actividades de todas las áreas', async () => {
     await db.query('UPDATE clients SET special_payment=true WHERE id=$1', [clientId]);
+    const designer = await actor('DISENO', 'Diseñador asignado');
     const product = {
       description: 'Flujo completo', quantity: 1, unitValue: 600000,
       materials: [{ material: 'Banner', length: 1, width: 1 }],
       activities: [
-        { area: 'DESIGN' }, { area: 'PRINTING', printingType: 'PRINT' },
+        { area: 'DESIGN', assignedUserId: designer.user.id }, { area: 'PRINTING', printingType: 'PRINT' },
         { area: 'WORKSHOP' }, { area: 'EXTERNAL' },
       ],
     };
@@ -310,7 +311,7 @@ describe('Corte Láser y total comercial', () => {
     expect(printWithoutPreparation.body.error.code).toBe('PRINT_MATERIAL_REQUIRED');
     const printWithDesignWithoutMaterial = await post('/orders', orderInput([{
       description: 'Diseño e impresión sin material', quantity: 1, unitValue: 1000,
-      materials: [], activities: [{ area: 'DESIGN' }, { area: 'PRINTING', printingType: 'PRINT' }],
+      materials: [], activities: [{ area: 'DESIGN', assignedUserId: randomUUID() }, { area: 'PRINTING', printingType: 'PRINT' }],
     }], 1000));
     expect(printWithDesignWithoutMaterial.status).toBe(400);
     expect(printWithDesignWithoutMaterial.body.error).toMatchObject({

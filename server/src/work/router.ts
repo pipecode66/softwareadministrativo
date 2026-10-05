@@ -19,11 +19,6 @@ export function createWorkRouter(db: Database): Router {
     const { orderId } = workOrderParamsSchema.parse(req.params);
     res.json(await workOrder(db, req.auth!, orderId));
   });
-  router.post('/activities/:id/claim', async (req, res) => {
-    const { id } = activityParamsSchema.parse(req.params);
-    emptyBody.parse(req.body);
-    res.json({ activity: await changeActivity(db, req.auth!, id, 'claim') });
-  });
   router.patch('/activities/:id/assign', async (req, res) => {
     const { id } = activityParamsSchema.parse(req.params);
     const { assignedUserId } = assignSchema.parse(req.body);

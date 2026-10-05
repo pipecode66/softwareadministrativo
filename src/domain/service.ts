@@ -23,6 +23,7 @@ export function validateInput(data: AppData, input: OrderInput, exceptId?: strin
   assert(retentions.every(v => v <= 999999999999), 'Las retenciones superan el importe máximo permitido.');
   if (input.products) {
     assert(input.products.length > 0 && input.products.every(product => product.description.trim() && Number.isSafeInteger(product.quantity) && product.quantity > 0 && product.unitValue >= 0 && product.activities.length), 'Cada producto necesita descripción, cantidad entera, valor y actividades.');
+    assert(input.products.every(product => product.activities.every(activity => activity.area !== 'DESIGN' || Boolean(activity.assignedUserId))), 'Cada actividad de Diseño debe tener un diseñador asignado.');
     assert(Math.round(input.products.reduce((sum, product) => sum + roundMoney(product.quantity * product.unitValue), 0) * 100) === Math.round(input.value * 100), 'La suma de productos debe coincidir con el valor de la OT.');
     assert(!input.printing, 'Las medidas de impresión se registran en cada producto.');
     assert(input.products.every(product => {

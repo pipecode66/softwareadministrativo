@@ -226,7 +226,7 @@ export function apiListActivities(query: { orderId?: string; area?: import('../d
 export function apiDesignerLoad() {
   return request<{ items: Array<{ id: string; name: string; pending: number; inProgress: number; total: number }>; unassigned: number }>('/work/designers/load');
 }
-export function apiChangeActivity(id: string, action: 'claim' | 'start' | 'complete' | 'assign', details?: { assignedUserId?: string; receivedByWorkshop?: string }) {
+export function apiChangeActivity(id: string, action: 'start' | 'complete' | 'assign', details?: { assignedUserId?: string; receivedByWorkshop?: string }) {
   return request<{ activity: OrderActivity }>(`/work/activities/${encodeURIComponent(id)}/${action}`, {
     method: action === 'assign' ? 'PATCH' : 'POST', body: JSON.stringify(details ?? {}),
   }).then(result => result.activity);

@@ -11,7 +11,7 @@
 9. El multiabono opera solo sobre las OT elegidas por Administración y distribuye de menor a mayor saldo, con desempate determinista. No reparte sobre OT ajenas al cliente ni permite exceder la deuda seleccionada.
 10. La OT principal conserva toda la información comercial. Productos y actividades internas no tienen un segundo valor de venta y no duplican reportes ni cartera.
 11. Las áreas vigentes son Diseño, Impresión, Taller y Externo. Externo sustituye a Imprenta para nuevas OT y puede convivir en el mismo producto con las demás áreas; por sí solo no utiliza medidas ni materiales de Impresión.
-12. Diseño debe anteceder a Impresión dentro del mismo producto. Administración asigna diseñadores y un diseñador puede tomar una tarea libre.
+12. Diseño debe anteceder a Impresión dentro del mismo producto. Toda actividad de Diseño queda asignada desde la creación: Administración debe escoger un diseñador específico y una OT creada por Diseño se asigna automáticamente a su creador. No existen tareas libres ni la acción de tomarlas.
 13. Los materiales vigentes son Panaflex, V. Corte, V. Impresión y Banner. Se permiten varios por producto y su consumo se contabiliza al completar Impresión.
 14. Diseño crea clientes y OT y puede indicar su abono inicial. En el historial de un cliente ve todas las OT operativas, pero no totales, pagos, saldos, retenciones ni certificados.
 15. Solo Administración edita la información comercial y opera pagos, multiabonos, certificados y reportes. Impresión y Taller reciben exclusivamente información operativa.

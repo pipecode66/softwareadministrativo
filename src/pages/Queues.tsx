@@ -127,7 +127,7 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
     return () => { active = false; window.clearInterval(timer); };
   }, [area, page, revision]);
 
-  async function change(activity: OrderActivity, action: 'claim' | 'start' | 'complete') {
+  async function change(activity: OrderActivity, action: 'start' | 'complete') {
     if (!activity.id || busyId) return;
     const needsHandoff = action === 'complete' && user?.role === 'IMPRESION' && activity.area === 'PRINTING';
     const receivedByWorkshop = handoffRecipients[activity.id]?.trim() ?? '';
@@ -138,7 +138,7 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
       await apiChangeActivity(activity.id, action, needsHandoff ? { receivedByWorkshop } : undefined);
       setRevision(value => value + 1);
       await refreshData();
-      toast(action === 'claim' ? 'Tarea tomada.' : action === 'start' ? 'Actividad iniciada.' : 'Actividad finalizada.');
+      toast(action === 'start' ? 'Actividad iniciada.' : 'Actividad finalizada.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No fue posible actualizar la actividad.');
     } finally { setBusyId(''); }
@@ -198,7 +198,6 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
     {loading && !items.length ? <p className="muted ops-activity-loading">Cargando actividades…</p> : !items.length ? <EmptyState title="No hay actividades en esta área" description="Los trabajos por producto aparecerán aquí al crear una OT que los incluya." /> : <>
       <div className="ops-activity-grid">{items.map(activity => {
         const owner = data.users.find(person => person.id === activity.assignedUserId);
-        const canClaim = department === 'DISENO' && user?.role === 'DISENO' && !activity.assignedUserId && activity.status === 'PENDING';
         const canOperate = isAdmin(user?.role) || user?.role === department && (department !== 'DISENO' || activity.assignedUserId === user.id);
         const canEditDesign = department === 'DISENO' && user?.role === 'DISENO' && activity.assignedUserId === user.id && activity.status !== 'COMPLETED';
         const isLaser = department === 'IMPRESION' && activity.printingType === 'LASER';
@@ -212,7 +211,6 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
           {materials.length > 0 && <div className="ops-activity-materials">{materials.map((material, index) => <span key={material.id || index}>{material.material} · {formatMeasure(material.length)} × {formatMeasure(material.width)} m · {formatMeasure(material.areaM2 ?? areaOf(material))} m²</span>)}</div>}
           {activity.ready === false && activity.status === 'PENDING' && <p className="ops-activity-wait">Espera la actividad anterior de este producto.</p>}
           <div className="ops-activity-actions"><Link className="link ops-detail-link" to={`/orders/${activity.orderId}`}>Ver OT <ArrowRight size={14} /></Link>
-            {canClaim && <Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void change(activity, 'claim')}>Tomar tarea</Button>}
             {canEditDesign && <Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void openDesignEdit(activity)}><Pencil size={14} /> Editar trabajo</Button>}
             {canOperate && isLaser && activity.status !== 'COMPLETED' && !!activity.id && <div className="ops-laser-entry"><input className="input" type="number" min="1" step="1" aria-label={`Minutos de corte láser para OT ${activity.orderNumber}`} value={laserMinutes[activity.id] ?? String(activity.laserMinutes ?? '')} onChange={event => setLaserMinutes(current => ({ ...current, [activity.id!]: event.target.value }))} /><span>min</span><Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void saveLaser(activity)}>Guardar</Button></div>}
             {canOperate && activity.status === 'PENDING' && activity.ready !== false && <Button type="button" disabled={!!busyId} onClick={() => void change(activity, 'start')}>Iniciar</Button>}

@@ -58,6 +58,11 @@ function normalizeProducts(
       : product.activities,
   }));
   for (const product of normalized) {
+    const design = product.activities.find(activity => activity.area === 'DESIGN');
+    if (design && !design.assignedUserId) {
+      throw new ApiError(400, 'DESIGNER_REQUIRED',
+        'Selecciona el diseñador responsable de la actividad de Diseño.', 'products.activities.assignedUserId');
+    }
     const printing = product.activities.find(activity => activity.area === 'PRINTING');
     if (printing && (printing.printingType ?? 'PRINT') === 'PRINT' && !product.materials.length) {
       throw new ApiError(400, 'PRINT_MATERIAL_REQUIRED',
@@ -389,7 +394,7 @@ export async function designerLoad(db: Database, auth: AuthSession) {
 
 export async function changeActivity(
   db: Database, auth: AuthSession, id: string,
-  action: 'claim' | 'assign' | 'start' | 'complete',
+  action: 'assign' | 'start' | 'complete',
   details: { assignedUserId?: string; receivedByWorkshop?: string } = {},
 ) {
   return db.transaction(async tx => {
@@ -403,12 +408,7 @@ export async function changeActivity(
     if (!parent) throw missing();
     const current = (await tx.query<ActivityRow>('SELECT * FROM order_activities WHERE id=$1 FOR UPDATE', [id])).rows[0];
     if (!current || !visibleActivity(actor.role, actor.id, current) && action !== 'assign') throw missing();
-    if (action === 'claim') {
-      if (actor.role !== 'DISENO' || current.area !== 'DESIGN') throw new ApiError(403, 'FORBIDDEN', 'Solo Diseño puede tomar tareas de Diseño.');
-      if (current.status === 'COMPLETED') throw conflict('La actividad ya terminó.');
-      if (current.assigned_user_id && current.assigned_user_id !== actor.id) throw conflict('Otro diseñador ya tiene esta tarea.');
-      if (!current.assigned_user_id) await tx.query('UPDATE order_activities SET assigned_user_id=$2,updated_at=now() WHERE id=$1', [id, actor.id]);
-    } else if (action === 'assign') {
+    if (action === 'assign') {
       if (!admin(actor.role) || current.area !== 'DESIGN') throw new ApiError(403, 'FORBIDDEN', 'Solo Administración asigna tareas de Diseño.');
       if (current.status !== 'PENDING') throw conflict('Solo se pueden asignar tareas pendientes.');
       const designer = await tx.query('SELECT id FROM users WHERE id=$1 AND role=$2 AND is_active=true FOR SHARE', [details.assignedUserId, 'DISENO']);
@@ -425,7 +425,7 @@ export async function changeActivity(
         throw new ApiError(403, 'FORBIDDEN', 'Tu perfil no opera esta actividad.');
       }
       if (!actorIsAdmin && current.area === 'DESIGN' && current.assigned_user_id !== actor.id) {
-        throw conflict('Debes tomar o recibir esta tarea antes de trabajarla.');
+        throw conflict('Esta tarea de Diseño no está asignada a tu perfil.');
       }
       if (current.status !== 'COMPLETED' && parent.status !== 'IN_PRODUCTION') {
         throw conflict('La OT no esta en produccion.');
