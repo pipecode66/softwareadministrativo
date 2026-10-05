@@ -29,7 +29,7 @@ export function validateInput(data: AppData, input: OrderInput, exceptId?: strin
       const printing = product.activities.find(activity => activity.area === 'PRINTING');
       if (!printing) return product.materials.length === 0;
       if ((printing.printingType ?? 'PRINT') === 'LASER') return product.materials.length === 0;
-      return product.materials.length > 0 || product.activities.some(activity => activity.area === 'DESIGN');
+      return product.materials.length > 0;
     }), 'Los materiales corresponden únicamente a Impresión; el corte láser no los requiere.');
     if (!client.specialPayment && !exceptId && input.value > 0) assert(input.initialPayment, 'Este cliente requiere un abono inicial.');
     if (input.initialPayment) assert(input.initialPayment.amount > 0 && ['EFECTIVO','BANCOLOMBIA','DAVIVIENDA'].includes(input.initialPayment.method), 'Indica el valor y medio del abono inicial.');

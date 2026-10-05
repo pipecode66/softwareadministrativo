@@ -308,6 +308,14 @@ describe('Corte Láser y total comercial', () => {
     }], 1000));
     expect(printWithoutPreparation.status).toBe(400);
     expect(printWithoutPreparation.body.error.code).toBe('PRINT_MATERIAL_REQUIRED');
+    const printWithDesignWithoutMaterial = await post('/orders', orderInput([{
+      description: 'Diseño e impresión sin material', quantity: 1, unitValue: 1000,
+      materials: [], activities: [{ area: 'DESIGN' }, { area: 'PRINTING', printingType: 'PRINT' }],
+    }], 1000));
+    expect(printWithDesignWithoutMaterial.status).toBe(400);
+    expect(printWithDesignWithoutMaterial.body.error).toMatchObject({
+      code: 'PRINT_MATERIAL_REQUIRED', field: 'products.materials',
+    });
   });
 });
 
@@ -317,7 +325,8 @@ describe('Diseño autoasignado y edición técnica', () => {
     const designer = await actor('DISENO', 'Diseñador creador');
     const other = await actor('DISENO', 'Diseñador ajeno');
     const response = await post('/orders', orderInput([{
-      description: 'Preparación pendiente', quantity: 1, unitValue: 10000, materials: [],
+      description: 'Preparación pendiente', quantity: 1, unitValue: 10000,
+      materials: [{ material: 'Panaflex', length: 1, width: 1 }],
       activities: [
         { area: 'DESIGN', assignedUserId: other.user.id },
         { area: 'DESIGN' },
@@ -341,7 +350,8 @@ describe('Diseño autoasignado y edición técnica', () => {
     const other = await actor('DISENO', 'Otro diseñador');
     const created = await post('/orders', orderInput([
       {
-        description: 'Descripción inicial', quantity: 1, unitValue: 50000, materials: [],
+        description: 'Descripción inicial', quantity: 1, unitValue: 50000,
+        materials: [{ material: 'Panaflex', length: 1, width: 1 }],
         activities: [{ area: 'DESIGN', assignedUserId: designer.user.id }, { area: 'PRINTING', printingType: 'PRINT' }],
       },
       {
@@ -357,7 +367,6 @@ describe('Diseño autoasignado y edición técnica', () => {
     expect((await patch(endpoint, { description: 'Inválida', unitValue: 1 }, designer)).status).toBe(400);
 
     expect((await post(`/work/activities/${design.id}/start`, {}, designer)).status).toBe(200);
-    expect((await post(`/work/activities/${design.id}/complete`, {}, designer)).status).toBe(409);
     const edited = await patch(endpoint, {
       description: 'Descripción técnica final',
       materials: [

@@ -59,10 +59,9 @@ function normalizeProducts(
   }));
   for (const product of normalized) {
     const printing = product.activities.find(activity => activity.area === 'PRINTING');
-    const hasDesign = product.activities.some(activity => activity.area === 'DESIGN');
-    if (printing && (printing.printingType ?? 'PRINT') === 'PRINT' && !product.materials.length && !hasDesign) {
+    if (printing && (printing.printingType ?? 'PRINT') === 'PRINT' && !product.materials.length) {
       throw new ApiError(400, 'PRINT_MATERIAL_REQUIRED',
-        'La impresión requiere un material o una actividad previa de Diseño.', 'products.materials');
+        'La impresión normal requiere al menos un material.', 'products.materials');
     }
   }
   return normalized;

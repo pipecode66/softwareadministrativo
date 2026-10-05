@@ -16,6 +16,8 @@ El 03/10/2026 se preparó `server/maintenance/borrar_todos_los_datos_para_entreg
 
 El usuario ejecutó la limpieza total en Supabase y mostró los nueve contadores comerciales en cero, con 7 usuarios y 3 sesiones conservadas. El 05/10/2026 se corrigió la edición FACT → REM: el formulario y el adaptador API envían las tres retenciones en cero, y el servidor limpia también los certificados relacionados. La corrección quedó verificada localmente y enviada a `origin/main`; no requiere migración SQL.
 
+El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al menos un material desde su creación o edición, incluso cuando también tenga actividad de Diseño. La interfaz informa la obligación y bloquea el guardado; el servidor aplica la misma regla ante llamadas directas. Corte Láser continúa sin materiales. El cambio quedó verificado y enviado a `origin/main`; no requiere migración SQL.
+
 ## Funcionalidades terminadas en este tramo
 
 - Impresión debe escribir quién recibe el trabajo en Taller antes de finalizar su actividad.
@@ -73,12 +75,13 @@ El usuario ejecutó la limpieza total en Supabase y mostró los nueve contadores
 ## Verificación local
 
 - `npm run typecheck`: aprobado.
-- `npm test`: 149/149 en 3 archivos.
+- `npm test`: 150/150 en 3 archivos.
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
 - `npm --prefix server test`: 269/269 en 8 archivos.
 - La prueba de limpieza total confirma las nueve tablas comerciales vacías, usuarios/sesiones/configuración conservados y la siguiente OT en 1.
 - La regresión FACT → REM confirma documento REM, IVA y retenciones en cero, certificados desmarcados y saldo recalculado.
+- Las pruebas confirman que Impresión normal sin materiales se rechaza tanto con Diseño como sin Diseño, mientras Corte Láser sigue admitiendo cero materiales.
 - Pruebas dirigidas de órdenes, actividades y Corte Láser: 119/119.
 - Pruebas E2E locales de Impresión, Taller y materiales: 3/3.
 - Prueba E2E dirigida para Impresión y Taller: 2/2; ambos perfiles visualizan al creador en el detalle.
@@ -105,13 +108,16 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Selector de clientes y contexto del historial del 30/09 | 3 | 2 |
 | Identidad del creador para producción del 01/10 | 1 | 0 |
 | Entrega de Impresión a Taller del 02/10 | 1 | 1 |
-| **Acumulado** | **36** | **18** |
+| Material obligatorio al crear Impresión normal del 05/10 | 1 | 1 |
+| **Acumulado** | **37** | **19** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
 La identificación del creador solicitada el 01/10 se cuenta como un cambio menor de visibilidad operativa, no como un cambio significativo.
 
 El registro obligatorio de entrega solicitado el 02/10 se considera significativo porque cambia la regla de finalización productiva, persiste un dato nuevo y requiere migración de base de datos.
+
+La obligación de registrar materiales desde la creación se considera significativa porque cambia la responsabilidad dentro del flujo productivo y bloquea la creación o edición de la OT si falta la información técnica.
 
 ## Pendiente para producción
 

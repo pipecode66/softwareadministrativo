@@ -8,7 +8,7 @@ Intermedios Gestión centraliza clientes, ventas, cartera y producción publicit
 
 Administración y Diseño crean OT. El servidor asigna el consecutivo automáticamente. La creación actual usa una OT comercial principal y uno o más productos; cada producto genera actividades internas en Diseño, Impresión, Taller o Externo, sin crear ventas adicionales.
 
-Una actividad de Diseño debe completarse antes de la actividad de Impresión del mismo producto. Administración puede asignarla a un diseñador; los diseñadores también pueden tomar tareas disponibles. Si Diseño crea la OT, el servidor inserta Diseño como primera actividad de cada producto y la asigna al creador. El diseñador asignado puede corregir la descripción y registrar materiales/medidas para la Impresión posterior. Administración puede operar cualquier área. La instalación es opcional.
+Una actividad de Diseño debe completarse antes de la actividad de Impresión del mismo producto. Administración puede asignarla a un diseñador; los diseñadores también pueden tomar tareas disponibles. Si Diseño crea la OT, el servidor inserta Diseño como primera actividad de cada producto y la asigna al creador. Toda Impresión normal debe tener al menos un material desde la creación de la OT; el diseñador asignado puede corregir después la descripción y esos materiales/medidas. Administración puede operar cualquier área. La instalación es opcional.
 
 Externo representa trabajo de terceros y puede convivir en el mismo producto con Diseño, Impresión y Taller. Cuando es la única actividad no solicita parámetros de impresión; si también existe Impresión, se aplican los datos propios de esa actividad.
 
@@ -23,7 +23,7 @@ Administración edita OT antes de iniciar actividades, registra pagos, certifica
 - Pago: fecha, valor y método Efectivo, Bancolombia o Davivienda.
 - Multiabono: la administradora selecciona las OT; el servidor aplica el valor a sus saldos de menor a mayor.
 - Productos: descripción, cantidad entera y valor unitario. No existen especificaciones ni dimensiones generales del producto.
-- Materiales: Panaflex, V. Corte, V. Impresión y Banner, con largo, ancho y m².
+- Materiales: Panaflex, V. Corte, V. Impresión y Banner, con largo, ancho y m². Al seleccionar Impresión normal, por lo menos uno es obligatorio para crear o editar la OT; Corte Láser no utiliza materiales.
 
 Para una FACT nueva se calcula IVA 19 % sobre el valor base. Si la base es estrictamente mayor a $524.000, se proponen automáticamente RETE FUENTE 4 %, RETE IVA 2,85 % e ICA 7/1000. Administración puede editar los importes permitidos. El cobrable nuevo es base + IVA − retenciones. Las OT anteriores a esta regla quedan marcadas LEGACY para no reescribir saldos históricos durante la migración.
 

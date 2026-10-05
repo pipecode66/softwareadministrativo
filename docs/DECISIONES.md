@@ -37,6 +37,7 @@
 35. El perfil de Impresión debe registrar quién recibe en Taller antes de finalizar, tanto para impresión normal como para Corte Láser. El dato se recorta, admite hasta 200 caracteres y queda asociado a la actividad; las OT heredadas lo conservan en la etapa general de Impresión.
 36. El reinicio total autorizado para la entrega del 03/10/2026 elimina clientes y todos los datos comerciales, financieros, productivos y borradores, pero preserva usuarios, sesiones, bloqueos e historial de migraciones. Debe ejecutarse manualmente después de un respaldo; deja cero OT almacenadas y la siguiente OT en 1.
 37. Al cambiar una OT de FACT a REM, RETE FUENTE, RETE IVA e ICA deben quedar en cero y sus certificados deben desmarcarse. El servidor mantiene el rechazo de una REM que intente registrar retenciones distintas de cero.
+38. Toda actividad de Impresión normal exige al menos un material con largo y ancho desde la creación o edición de la OT, aunque el producto también pase por Diseño. Corte Láser continúa sin materiales; Diseño puede corregir posteriormente los materiales registrados, pero ya no sustituye el requisito inicial.
 
 ## Decisiones sustituidas
 
