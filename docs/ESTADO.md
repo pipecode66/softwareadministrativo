@@ -84,6 +84,8 @@ El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al m
 - Las pruebas confirman que Impresión normal sin materiales se rechaza tanto con Diseño como sin Diseño, mientras Corte Láser sigue admitiendo cero materiales.
 - Nueva OT exige un diseñador específico cuando Administración selecciona Diseño; si la OT la crea Diseño, el servidor conserva la autoasignación al creador.
 - Se retiró la acción `Tomar tarea` de la interfaz y del servidor, por lo que ninguna actividad nueva de Diseño puede quedar libre para ser reclamada.
+- Administración puede corregir materiales de Impresión mientras Diseño está en proceso. La corrección conserva el identificador, responsable y estado de la actividad de Diseño; productos, valores, áreas y responsables siguen protegidos, y cualquier avance posterior mantiene el bloqueo completo.
+- La regresión de edición confirma que esa corrección conserva la actividad `IN_PROGRESS`, mientras un cambio tardío en la descripción comercial continúa rechazándose.
 - Pruebas dirigidas de órdenes, actividades y Corte Láser: 120/120.
 - Pruebas E2E locales de Impresión, Taller y materiales: 3/3.
 - Prueba E2E dirigida para Impresión y Taller: 2/2; ambos perfiles visualizan al creador en el detalle.

@@ -261,7 +261,21 @@ describe('Productos y trabajo interno', () => {
       .find(item => item.area === 'DESIGN')!;
     expect((await post(`/work/activities/${design.id}/start`, {}, designer)).status).toBe(404);
     await post(`/work/activities/${nextDesign.id}/start`, {}, designer);
-    await expect(db.transaction(tx => replaceOrderProducts(tx, order.id, replacement)))
+    const materialCorrection = [
+      { ...replacement[0], materials: [{ material: 'V. Impresión', length: 3, width: 2 }] },
+      replacement[1],
+    ];
+    await expect(db.transaction(tx => replaceOrderProducts(tx, order.id, materialCorrection))).resolves.toBeUndefined();
+    const afterCorrection = await get(`/work/orders/${order.id}`);
+    expect(afterCorrection.body.products[0].materials).toEqual([
+      expect.objectContaining({ material: 'V. Impresión', length: 3, width: 2 }),
+    ]);
+    expect(afterCorrection.body.products[0].activities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: nextDesign.id, status: 'IN_PROGRESS' }),
+    ]));
+    await expect(db.transaction(tx => replaceOrderProducts(tx, order.id, [
+      { ...materialCorrection[0], description: 'Cambio comercial tardío' }, materialCorrection[1],
+    ])))
       .rejects.toMatchObject({ status: 409, code: 'ACTIVITY_CONFLICT' });
   });
 

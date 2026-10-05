@@ -126,15 +126,62 @@ export async function createOrderProducts(
 
 /** Replaces a draft's internal work under the parent OT lock held by the caller. */
 export async function replaceOrderProducts(tx: SqlConnection, orderId: string, products: ProductInput[]): Promise<void> {
-  productsSchema.parse(products);
-  const parent = await tx.query<{ status: string }>('SELECT status FROM orders WHERE id=$1 FOR UPDATE', [orderId]);
+  const parsed = productsSchema.parse(products);
+  const parent = await tx.query<{ status: string; value: string }>('SELECT status,value FROM orders WHERE id=$1 FOR UPDATE', [orderId]);
   if (!parent.rows.length) throw new ApiError(404, 'ORDER_NOT_FOUND', 'La orden no existe.');
   if (parent.rows[0].status !== 'IN_PRODUCTION') throw conflict('Solo se pueden cambiar los productos de una OT compuesta en produccion pendiente.');
-  const started = await tx.query<{ exists: boolean }>(`
-    SELECT EXISTS (SELECT 1 FROM order_activities WHERE order_id=$1 AND status<>'PENDING')
-      OR EXISTS (SELECT 1 FROM order_product_materials WHERE order_id=$1 AND consumed_at IS NOT NULL) AS exists
-  `, [orderId]);
-  if (started.rows[0].exists) throw conflict('No se pueden cambiar los productos cuando una actividad ya comenzo o se consumio material.');
+  const state = (await tx.query<{ restricted: boolean; design_in_progress: boolean }>(`
+    SELECT
+      EXISTS (SELECT 1 FROM order_activities WHERE order_id=$1 AND status<>'PENDING'
+        AND (area<>'DESIGN' OR status<>'IN_PROGRESS'))
+        OR EXISTS (SELECT 1 FROM order_product_materials WHERE order_id=$1 AND consumed_at IS NOT NULL) AS restricted,
+      EXISTS (SELECT 1 FROM order_activities WHERE order_id=$1 AND area='DESIGN' AND status='IN_PROGRESS') AS design_in_progress
+  `, [orderId])).rows[0];
+  if (state.restricted) throw conflict('No se pueden cambiar los productos cuando una etapa posterior a Diseño ya comenzó o se consumió material.');
+  if (state.design_in_progress) {
+    const currentProducts = (await tx.query<ProductRow>(`
+      SELECT id,order_id,position,description,quantity,unit_value,line_total
+      FROM order_products WHERE order_id=$1 ORDER BY position
+    `, [orderId])).rows;
+    const currentActivities = (await tx.query<ActivityRow>(`
+      SELECT * FROM order_activities WHERE order_id=$1 ORDER BY product_id,position
+    `, [orderId])).rows;
+    const unchangedStructure = currentProducts.length === parsed.length && parsed.every((product, index) => {
+      const current = currentProducts[index];
+      const activities = currentActivities.filter(activity => activity.product_id === current.id)
+        .sort((left, right) => left.position - right.position);
+      return current.description === product.description
+        && Number(current.quantity) === product.quantity
+        && Number(current.unit_value) === product.unitValue
+        && activities.length === product.activities.length
+        && product.activities.every((activity, activityIndex) => {
+          const existing = activities[activityIndex];
+          return existing.area === activity.area
+            && (existing.assigned_user_id ?? undefined) === activity.assignedUserId
+            && (existing.printing_type ?? undefined) === (activity.area === 'PRINTING' ? activity.printingType ?? 'PRINT' : undefined);
+        });
+    });
+    if (!unchangedStructure) {
+      throw conflict('Mientras Diseño está en proceso solo se pueden corregir los materiales de impresión.');
+    }
+    const expected = Math.round(Number(parent.rows[0].value) * 100);
+    const subtotal = parsed.reduce((sum, product) => sum + lineCents(product.quantity, product.unitValue), 0);
+    if (subtotal !== expected) throw new ApiError(400, 'PRODUCT_SUBTOTAL', 'La suma de productos debe coincidir con el valor base de la OT.', 'products');
+    for (const [index, product] of parsed.entries()) {
+      const printing = product.activities.find(activity => activity.area === 'PRINTING');
+      if (printing && (printing.printingType ?? 'PRINT') === 'PRINT' && !product.materials.length) {
+        throw new ApiError(400, 'PRINT_MATERIAL_REQUIRED', 'La impresión normal requiere al menos un material.', 'products.materials');
+      }
+      const productId = currentProducts[index].id;
+      await tx.query('DELETE FROM order_product_materials WHERE product_id=$1', [productId]);
+      for (const [position, material] of product.materials.entries()) {
+        await tx.query(`INSERT INTO order_product_materials
+          (id,order_id,product_id,position,material,length,width) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [randomUUID(), orderId, productId, position + 1, material.material, material.length, material.width]);
+      }
+    }
+    return;
+  }
   await tx.query('DELETE FROM order_activities WHERE order_id=$1', [orderId]);
   await tx.query('DELETE FROM order_product_materials WHERE order_id=$1', [orderId]);
   await tx.query('DELETE FROM order_products WHERE order_id=$1', [orderId]);
