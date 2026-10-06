@@ -70,6 +70,7 @@ export const completeActivitySchema = z.object({
     .min(1, 'Por favor, digitar quien recibe en taller.')
     .max(200, 'Quien recibe en Taller admite máximo 200 caracteres.')
     .optional(),
+  workshopNotes: z.string().trim().max(4000, 'Las observaciones de Taller admiten máximo 4000 caracteres.').optional(),
 }).strict();
 export const laserMinutesSchema = z.object({
   minutes: z.number().int().min(1).max(999999999),

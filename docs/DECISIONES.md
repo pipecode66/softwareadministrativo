@@ -39,6 +39,8 @@
 37. Al cambiar una OT de FACT a REM, RETE FUENTE, RETE IVA e ICA deben quedar en cero y sus certificados deben desmarcarse. El servidor mantiene el rechazo de una REM que intente registrar retenciones distintas de cero.
 38. Toda actividad de Impresión normal exige al menos un material con largo y ancho desde la creación o edición de la OT, aunque el producto también pase por Diseño. Corte Láser continúa sin materiales. Si Diseño ya está en proceso, Diseño puede corregir descripción y materiales desde su edición técnica, y Administración puede corregir únicamente los materiales desde la OT sin reemplazar productos ni reiniciar la actividad; al comenzar una etapa posterior se conserva el bloqueo total.
 39. La auditoría de una OT conserva actor, rol, fecha, hora, acción y cambios detectados. Todos los perfiles pueden verla dentro de una OT que ya tengan autorizada, pero el módulo global Historial es exclusivo de ADMINMASTER y ADMIN_GENERAL. Los perfiles operativos nunca reciben cambios financieros; los eventos anteriores a esta estructura conservan actor, fecha y acción aunque no tengan desglose retroactivo.
+40. Solo ADMINMASTER y ADMIN_GENERAL pueden borrar una OT. Al borrarla, todas las OT con número posterior bajan exactamente una posición dentro de la misma transacción; la secuencia automática se ajusta al nuevo máximo para que el siguiente número continúe sin saltos. El borrado exige confirmación y control de versión.
+41. Taller puede registrar hasta 4000 caracteres de observaciones opcionales al finalizar su actividad. Las observaciones quedan persistidas y visibles en la OT finalizada; no bloquean la finalización si se dejan vacías.
 
 ## Decisiones sustituidas
 

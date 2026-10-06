@@ -26,7 +26,7 @@ interface OrderView {
   printingReceivedByWorkshop?: string;
   value?: number; financials?: ReturnType<typeof financials>; payments?: unknown[];
   printingCompletedAt?: string; workshopStartedAt?: string; installedAt?: string;
-  installationNote?: string; closedAt?: string; areaM2?: number;
+  workshopNotes?: string; installationNote?: string; closedAt?: string; areaM2?: number;
 }
 let db: Database;
 let app: Express;
@@ -577,13 +577,41 @@ describe('OT: validación server-side', () => {
       .send({ ...input(), requestId: randomUUID() })).status).toBe(403);
   });
 
-  it('no expone DELETE, devuelve 404 para OT inexistente y rechaza UUID mal formado', async () => {
-    const order = await create();
+  it('devuelve 404 para OT inexistente y rechaza UUID mal formado', async () => {
     expect((await get(`/orders/${missingId}`)).status).toBe(404);
     expect([400, 422]).toContain((await get('/orders/not-uuid')).status);
-    const deletion = await request(app).delete(`${API}/orders/${order.id}`).set('Origin', ORIGIN)
-      .set('Cookie', admin.cookie).set('X-CSRF-Token', admin.csrf).send({});
-    expect([404, 405]).toContain(deletion.status);
+  });
+
+  it('Administración borra una OT y renumera todas las posteriores sin dejar saltos', async () => {
+    const first = await create();
+    const removed = await create();
+    const third = await create();
+    const fourth = await create();
+    await payment(removed, 1000);
+    const deletion = await request(app).delete(`${API}/orders/${removed.id}?expectedVersion=${removed.version + 1}`).set('Origin', ORIGIN)
+      .set('Cookie', admin.cookie).set('X-CSRF-Token', admin.csrf);
+    expect({ status: deletion.status, body: deletion.body }).toEqual({ status: 200, body: { deletedNumber: 2, shifted: 2 } });
+    expect((await get(`/orders/${removed.id}`)).status).toBe(404);
+    const remaining = (await get('/orders?pageSize=100')).body.items as OrderView[];
+    expect(remaining.sort((a,b) => a.number-b.number).map(item => [item.id,item.number])).toEqual([
+      [first.id,1], [third.id,2], [fourth.id,3],
+    ]);
+    expect((await db.query('SELECT id FROM payments WHERE order_id=$1',[removed.id])).rows).toHaveLength(0);
+    const next = await create();
+    expect(next.number).toBe(4);
+    const renumberEvents = await db.query<{ order_id: string }>("SELECT order_id FROM order_events WHERE action='renumber' ORDER BY order_id");
+    expect(renumberEvents.rows.map(row => row.order_id).sort()).toEqual([third.id,fourth.id].sort());
+  });
+
+  it('impide borrar OT a roles no administrativos y detecta versiones obsoletas', async () => {
+    const order = await create();
+    const designer = await actor('DISENO');
+    const forbidden = await request(app).delete(`${API}/orders/${order.id}?expectedVersion=${order.version}`).set('Origin', ORIGIN)
+      .set('Cookie', designer.cookie).set('X-CSRF-Token', designer.csrf);
+    expect(forbidden.status).toBe(403);
+    const stale = await request(app).delete(`${API}/orders/${order.id}?expectedVersion=${order.version + 1}`).set('Origin', ORIGIN)
+      .set('Cookie', admin.cookie).set('X-CSRF-Token', admin.csrf);
+    expect(stale.status).toBe(409);
     expect((await get(`/orders/${order.id}`)).status).toBe(200);
   });
 });

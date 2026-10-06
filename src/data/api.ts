@@ -204,6 +204,9 @@ export async function apiUpdateOrder(id: string, input: OrderInput, expectedVers
     ...(input.products ? { products: productFields(input.products) } : {}), expectedVersion }) });
   return asOrder(body.order);
 }
+export function apiDeleteOrder(id: string, expectedVersion: number): Promise<{ deletedNumber: number; shifted: number }> {
+  return request<{ deletedNumber: number; shifted: number }>(`/orders/${encodeURIComponent(id)}?${queryString({ expectedVersion })}`, { method: 'DELETE' });
+}
 export type NewPayment = { date: string; amount: number; method: Exclude<PaymentMethod, 'LEGACY'> };
 export async function apiAddPayment(id: string, payment: NewPayment, requestId: string): Promise<WorkOrder> {
   const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}/payments`, { method: 'POST', body: JSON.stringify({ ...payment, requestId }) });
@@ -213,7 +216,7 @@ export interface BulkPaymentResult { batchId: string; clientId: string; amount: 
 export function apiBulkPayment(input: { clientId: string; selectedOrderIds: string[] } & NewPayment, requestId: string): Promise<BulkPaymentResult> {
   return request<BulkPaymentResult>('/orders/bulk-payments', { method: 'POST', body: JSON.stringify({ ...input, requestId }) });
 }
-export async function apiTransitionOrder(id: string, action: OrderAction, expectedVersion: number, details?: { date?: string; note?: string; receivedByWorkshop?: string }): Promise<WorkOrder> {
+export async function apiTransitionOrder(id: string, action: OrderAction, expectedVersion: number, details?: { date?: string; note?: string; receivedByWorkshop?: string; workshopNotes?: string }): Promise<WorkOrder> {
   const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}/transitions`, { method: 'POST', body: JSON.stringify({ action, expectedVersion, ...details }) });
   return asOrder(body.order);
 }
@@ -226,7 +229,7 @@ export function apiListActivities(query: { orderId?: string; area?: import('../d
 export function apiDesignerLoad() {
   return request<{ items: Array<{ id: string; name: string; pending: number; inProgress: number; total: number }>; unassigned: number }>('/work/designers/load');
 }
-export function apiChangeActivity(id: string, action: 'start' | 'complete' | 'assign', details?: { assignedUserId?: string; receivedByWorkshop?: string }) {
+export function apiChangeActivity(id: string, action: 'start' | 'complete' | 'assign', details?: { assignedUserId?: string; receivedByWorkshop?: string; workshopNotes?: string }) {
   return request<{ activity: OrderActivity }>(`/work/activities/${encodeURIComponent(id)}/${action}`, {
     method: action === 'assign' ? 'PATCH' : 'POST', body: JSON.stringify(details ?? {}),
   }).then(result => result.activity);

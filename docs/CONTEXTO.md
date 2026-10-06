@@ -16,6 +16,10 @@ Impresión puede ser normal o Corte Láser. La normal utiliza uno o varios mater
 
 Administración edita OT antes de iniciar actividades, registra pagos, certificados y multiabonos. Diseño crea clientes y consulta su historial operativo, pero no recibe totales de órdenes, pagos, saldos, retenciones ni certificados. Impresión y Taller tampoco reciben importes comerciales. Al revisar una OT, Impresión y Taller pueden ver el nombre y rol de quien la registró, sin acceso al directorio de usuarios ni a sus correos.
 
+ADMINMASTER y ADMIN_GENERAL pueden borrar una OT desde su detalle. El borrado elimina sus datos comerciales y productivos y renumera, dentro de la misma transacción, todas las OT posteriores: si se borra la #25, las #26, #27 y #28 pasan a ser #25, #26 y #27. La siguiente creación continúa después del último número existente.
+
+Antes de finalizar una actividad de Taller, el perfil de Taller puede escribir observaciones opcionales. El texto queda guardado en la actividad y visible posteriormente en la OT; las órdenes del flujo heredado lo guardan directamente en la OT.
+
 ## Datos comerciales
 
 - Cliente: nombre y celular obligatorios; identificación opcional para REM y requerida para FACT; indicador Especial para permitir OT sin abono inicial.

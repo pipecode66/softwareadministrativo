@@ -15,6 +15,7 @@ interface ActivityRow {
   area: Area; status: Status; assigned_user_id: string | null;
   printing_type: PrintingType | null; laser_minutes: number | null;
   received_by_workshop: string | null;
+  workshop_notes: string | null;
   started_at: Date | string | null; completed_at: Date | string | null;
   created_at: Date | string; updated_at: Date | string;
 }
@@ -222,6 +223,7 @@ function activityDto(row: ListedActivityRow, materials: MaterialRow[]) {
     createdAt: date(row.created_at), updatedAt: date(row.updated_at),
     ...(row.area === 'PRINTING' ? { printingType: row.printing_type } : {}),
     ...(row.received_by_workshop ? { receivedByWorkshop: row.received_by_workshop } : {}),
+    ...(row.workshop_notes ? { workshopNotes: row.workshop_notes } : {}),
     ...(row.printing_type === 'LASER' ? {
       laserMinutes: row.laser_minutes === null ? null : Number(row.laser_minutes),
       laserRate: LASER_RATE,
@@ -323,6 +325,7 @@ export async function workOrder(db: Database, auth: AuthSession, orderId: string
           ready: activity.ready, startedAt: date(activity.started_at), completedAt: date(activity.completed_at),
           ...(activity.area === 'PRINTING' ? { printingType: activity.printing_type } : {}),
           ...(activity.received_by_workshop ? { receivedByWorkshop: activity.received_by_workshop } : {}),
+          ...(activity.workshop_notes ? { workshopNotes: activity.workshop_notes } : {}),
           ...(activity.printing_type === 'LASER' ? {
             laserMinutes: activity.laser_minutes === null ? null : Number(activity.laser_minutes),
             laserRate: LASER_RATE,
@@ -452,7 +455,7 @@ export async function designerLoad(db: Database, auth: AuthSession) {
 export async function changeActivity(
   db: Database, auth: AuthSession, id: string,
   action: 'assign' | 'start' | 'complete',
-  details: { assignedUserId?: string; receivedByWorkshop?: string } = {},
+  details: { assignedUserId?: string; receivedByWorkshop?: string; workshopNotes?: string } = {},
 ) {
   return db.transaction(async tx => {
     const actor = await requireCurrentActor(tx, auth, ['ADMINMASTER','ADMIN_GENERAL','DISENO','IMPRESION','TALLER']);
@@ -507,9 +510,14 @@ export async function changeActivity(
         if (current.status === 'PENDING') throw conflict('Primero inicia la actividad.');
         if (current.status === 'IN_PROGRESS') {
           const receivedByWorkshop = details.receivedByWorkshop?.trim();
+          const workshopNotes = details.workshopNotes?.trim() || null;
           if (actor.role === 'IMPRESION' && current.area === 'PRINTING' && !receivedByWorkshop) {
             throw new ApiError(400, 'PRINTING_HANDOFF_REQUIRED',
               'Por favor, digitar quien recibe en taller.', 'receivedByWorkshop');
+          }
+          if (details.workshopNotes !== undefined && current.area !== 'WORKSHOP') {
+            throw new ApiError(400, 'WORKSHOP_NOTES_NOT_APPLICABLE',
+              'Las observaciones solo corresponden a la actividad de Taller.', 'workshopNotes');
           }
           if (current.printing_type === 'LASER' && current.laser_minutes === null) {
             throw conflict('Indica los minutos consumidos antes de finalizar Corte Láser.');
@@ -529,12 +537,14 @@ export async function changeActivity(
           const stamp = (await tx.query<{ at: Date | string }>('SELECT now() AS at')).rows[0].at;
           await tx.query(`
             UPDATE order_activities SET status='COMPLETED',completed_at=$2,updated_at=$2,
-              received_by_workshop=CASE WHEN area='PRINTING' THEN coalesce($3,received_by_workshop) ELSE received_by_workshop END
+              received_by_workshop=CASE WHEN area='PRINTING' THEN coalesce($3,received_by_workshop) ELSE received_by_workshop END,
+              workshop_notes=CASE WHEN area='WORKSHOP' THEN $4 ELSE workshop_notes END
             WHERE id=$1
-          `, [id, stamp, receivedByWorkshop ?? null]);
+          `, [id, stamp, receivedByWorkshop ?? null, workshopNotes]);
           await auditEvent(tx, current.order_id, actor.id, 'completeActivity', parent.status, `Finalizó la actividad de ${current.area}.`, [
             { label:'Actividad', after:current.area }, { label:'Estado', before:'IN_PROGRESS', after:'COMPLETED' },
             ...(receivedByWorkshop ? [{ label:'Recibe en Taller', after:receivedByWorkshop }] : []),
+            ...(workshopNotes ? [{ label:'Observaciones de Taller', after:workshopNotes }] : []),
           ]);
           if (current.area === 'PRINTING') await tx.query(`
             UPDATE order_product_materials SET consumed_at=$2 WHERE product_id=$1 AND consumed_at IS NULL

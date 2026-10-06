@@ -36,6 +36,7 @@ export function OrderActionDialog({ order, action, label, onClose }: { order: Wo
   const { data, transitionOrder, toast } = useApp();
   const [date, setDate] = useState(today());
   const [note, setNote] = useState('');
+  const [workshopNotes, setWorkshopNotes] = useState('');
   const [receivedByWorkshop, setReceivedByWorkshop] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -51,7 +52,8 @@ export function OrderActionDialog({ order, action, label, onClose }: { order: Wo
     try {
       await transitionOrder(currentOrder.id, action,
         action === 'install' ? { date, note: note.trim() }
-          : action === 'finishPrinting' ? { receivedByWorkshop: receivedByWorkshop.trim() } : undefined);
+          : action === 'finishPrinting' ? { receivedByWorkshop: receivedByWorkshop.trim() }
+            : action === 'finishWorkshop' ? { workshopNotes: workshopNotes.trim() } : undefined);
       toast(action === 'install' ? 'Instalación registrada.' : 'Etapa de la orden actualizada.');
       onClose();
     } catch (cause) {
@@ -66,6 +68,7 @@ export function OrderActionDialog({ order, action, label, onClose }: { order: Wo
       <div className="ops-confirm-order"><span className="eyebrow">OT #{String(currentOrder.number).padStart(4, '0')}</span><h3>{client?.name ?? 'Cliente no disponible'}</h3><p>{currentOrder.description}</p><WorkBadge status={currentOrder.status} /></div>
       <p>{actionDescription(currentOrder, action)}</p>
       {action === 'finishPrinting' && <Field label="Quién recibe en Taller *" htmlFor="queue-printing-handoff"><input id="queue-printing-handoff" className="input" type="text" maxLength={200} value={receivedByWorkshop} onChange={event => { setReceivedByWorkshop(event.target.value); setError(''); }} required /></Field>}
+      {action === 'finishWorkshop' && <Field label="Observaciones de Taller" htmlFor="queue-workshop-notes" hint="Opcional"><textarea id="queue-workshop-notes" className="textarea" rows={4} maxLength={4000} value={workshopNotes} onChange={event => setWorkshopNotes(event.target.value)} /></Field>}
       {action === 'install' && <><Field label="Fecha de instalación" htmlFor="installation-date"><input id="installation-date" className="input" type="date" value={date} min={dateOnly(currentOrder.readyForInstallationAt || currentOrder.updatedAt)} max={today()} onChange={event => setDate(event.target.value)} required /></Field><Field label="Observaciones de instalación" htmlFor="installation-note" hint="Opcional"><textarea id="installation-note" className="textarea" rows={3} maxLength={1000} value={note} onChange={event => setNote(event.target.value)} placeholder="Observaciones del trabajo realizado…" /></Field></>}
       <p className="muted ops-small">El estado de pago se conserva independientemente del avance del trabajo.</p>
       {error && <p className="notice notice-warning" role="alert">{error}</p>}
@@ -99,6 +102,7 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
   const [revision, setRevision] = useState(0);
   const [laserMinutes, setLaserMinutes] = useState<Record<string, string>>({});
   const [handoffRecipients, setHandoffRecipients] = useState<Record<string, string>>({});
+  const [workshopNotes, setWorkshopNotes] = useState<Record<string, string>>({});
   const [editActivity, setEditActivity] = useState<OrderActivity | null>(null);
   const [editDescription, setEditDescription] = useState('');
   const [editMaterials, setEditMaterials] = useState<DesignMaterialDraft[]>([]);
@@ -130,12 +134,13 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
   async function change(activity: OrderActivity, action: 'start' | 'complete') {
     if (!activity.id || busyId) return;
     const needsHandoff = action === 'complete' && user?.role === 'IMPRESION' && activity.area === 'PRINTING';
+    const hasWorkshopNotes = action === 'complete' && user?.role === 'TALLER' && activity.area === 'WORKSHOP';
     const receivedByWorkshop = handoffRecipients[activity.id]?.trim() ?? '';
     if (needsHandoff && !receivedByWorkshop) { setError('Por favor, digitar quien recibe en taller.'); return; }
     setBusyId(activity.id);
     setError('');
     try {
-      await apiChangeActivity(activity.id, action, needsHandoff ? { receivedByWorkshop } : undefined);
+      await apiChangeActivity(activity.id, action, needsHandoff ? { receivedByWorkshop } : hasWorkshopNotes ? { workshopNotes: workshopNotes[activity.id]?.trim() ?? '' } : undefined);
       setRevision(value => value + 1);
       await refreshData();
       toast(action === 'start' ? 'Actividad iniciada.' : 'Actividad finalizada.');
@@ -207,6 +212,7 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
           <h3>{activity.productDescription || 'Trabajo sin descripción'}</h3>
           {department === 'DISENO' && <p className="muted ops-small">Responsable: {owner?.name || (activity.assignedUserId ? 'Diseñador asignado' : 'Sin asignar')}</p>}
           {activity.receivedByWorkshop && <p className="muted ops-small"><strong>Recibe en Taller:</strong> {activity.receivedByWorkshop}</p>}
+          {activity.workshopNotes && <p className="muted ops-small"><strong>Observaciones de Taller:</strong> {activity.workshopNotes}</p>}
           {isLaser && <div className="ops-laser-summary"><strong>Corte láser · $1.000 COP/min</strong><span>{activity.laserMinutes ? `${activity.laserMinutes} minutos registrados` : 'Tiempo pendiente por registrar'}</span></div>}
           {materials.length > 0 && <div className="ops-activity-materials">{materials.map((material, index) => <span key={material.id || index}>{material.material} · {formatMeasure(material.length)} × {formatMeasure(material.width)} m · {formatMeasure(material.areaM2 ?? areaOf(material))} m²</span>)}</div>}
           {activity.ready === false && activity.status === 'PENDING' && <p className="ops-activity-wait">Espera la actividad anterior de este producto.</p>}
@@ -215,6 +221,7 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
             {canOperate && isLaser && activity.status !== 'COMPLETED' && !!activity.id && <div className="ops-laser-entry"><input className="input" type="number" min="1" step="1" aria-label={`Minutos de corte láser para OT ${activity.orderNumber}`} value={laserMinutes[activity.id] ?? String(activity.laserMinutes ?? '')} onChange={event => setLaserMinutes(current => ({ ...current, [activity.id!]: event.target.value }))} /><span>min</span><Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void saveLaser(activity)}>Guardar</Button></div>}
             {canOperate && activity.status === 'PENDING' && activity.ready !== false && <Button type="button" disabled={!!busyId} onClick={() => void change(activity, 'start')}>Iniciar</Button>}
             {user?.role === 'IMPRESION' && activity.area === 'PRINTING' && activity.status === 'IN_PROGRESS' && !!activity.id && <div className="ops-printing-handoff"><label htmlFor={`queue-handoff-${activity.id}`}>Quién recibe en Taller *</label><input id={`queue-handoff-${activity.id}`} className="input" type="text" maxLength={200} value={handoffRecipients[activity.id] ?? ''} onChange={event => { setHandoffRecipients(current => ({ ...current, [activity.id!]: event.target.value })); setError(''); }} /></div>}
+            {user?.role === 'TALLER' && activity.area === 'WORKSHOP' && activity.status === 'IN_PROGRESS' && !!activity.id && <div className="ops-printing-handoff"><label htmlFor={`queue-workshop-notes-${activity.id}`}>Observaciones de Taller</label><textarea id={`queue-workshop-notes-${activity.id}`} className="textarea" rows={3} maxLength={4000} value={workshopNotes[activity.id] ?? ''} onChange={event => setWorkshopNotes(current => ({ ...current, [activity.id!]: event.target.value }))} /></div>}
             {canOperate && activity.status === 'IN_PROGRESS' && <Button type="button" disabled={!!busyId || isLaser && !activity.laserMinutes} onClick={() => void change(activity, 'complete')}>Finalizar</Button>}
           </div>
         </article>;

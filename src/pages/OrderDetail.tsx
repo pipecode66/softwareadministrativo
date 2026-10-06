@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Banknote, Check, CheckCircle2, ClipboardList, Clock3, FileText, Hammer, MapPin, Pencil, Plus, Printer, Ruler, Wallet } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Banknote, Check, CheckCircle2, ClipboardList, Clock3, FileText, Hammer, MapPin, Pencil, Plus, Printer, Ruler, Trash2, Wallet } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { OrderAction, OrderActivity, OrderProduct, PaymentMethod, Role, WorkOrder } from '../domain/types';
 import { apiChangeActivity, apiDesignerLoad, apiSaveLaserMinutes, apiWorkOrder, usingApi } from '../data/api';
@@ -58,6 +58,7 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
   const [busyId, setBusyId] = useState('');
   const [laserMinutes, setLaserMinutes] = useState<Record<string, string>>({});
   const [handoffRecipients, setHandoffRecipients] = useState<Record<string, string>>({});
+  const [workshopNotes, setWorkshopNotes] = useState<Record<string, string>>({});
   const [remoteDesigners, setRemoteDesigners] = useState<Array<{ id: string; name: string }>>([]);
   const designers = [...new Map([
     ...users.filter(person => person.role === 'DISENO' && person.active).map(person => ({ id: person.id, name: person.name })),
@@ -84,7 +85,7 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
     });
     return () => { active = false; };
   }, [order.id, order.version, order.products]);
-  async function changeActivity(id: string, action: 'start' | 'complete' | 'assign', details?: { assignedUserId?: string; receivedByWorkshop?: string }) {
+  async function changeActivity(id: string, action: 'start' | 'complete' | 'assign', details?: { assignedUserId?: string; receivedByWorkshop?: string; workshopNotes?: string }) {
     setBusyId(id); setError('');
     try {
       await apiChangeActivity(id, action, details);
@@ -111,9 +112,10 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
   async function completeActivity(activity: OrderActivity) {
     if (!activity.id) return;
     const needsHandoff = role === 'IMPRESION' && activity.area === 'PRINTING';
+    const hasWorkshopNotes = role === 'TALLER' && activity.area === 'WORKSHOP';
     const receivedByWorkshop = handoffRecipients[activity.id]?.trim() ?? '';
     if (needsHandoff && !receivedByWorkshop) { setError('Por favor, digitar quien recibe en taller.'); return; }
-    await changeActivity(activity.id, 'complete', needsHandoff ? { receivedByWorkshop } : undefined);
+    await changeActivity(activity.id, 'complete', needsHandoff ? { receivedByWorkshop } : hasWorkshopNotes ? { workshopNotes: workshopNotes[activity.id]?.trim() ?? '' } : undefined);
   }
   if (loading) return <Card className="order-information-card"><CardHeader title="Productos y actividades" /><p className="muted">Cargando trabajos de la OT…</p></Card>;
   if (error && !products.length) return <Card className="order-information-card"><CardHeader title="Productos y actividades" /><p className="order-field-error" role="alert">{error}</p></Card>;
@@ -128,11 +130,12 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
         const owner = designers.find(person => person.id === activity.assignedUserId);
         const canOperate = isAdmin(role) || activity.area === 'DESIGN' && role === 'DISENO' && activity.assignedUserId === userId || activity.area === 'PRINTING' && role === 'IMPRESION' || activity.area === 'WORKSHOP' && role === 'TALLER';
         const isLaser = activity.area === 'PRINTING' && activity.printingType === 'LASER';
-        return <li key={activity.id || activityIndex} className={`order-activity-row is-${activity.status?.toLowerCase() || 'pending'}`}><div><strong>{isLaser ? 'Corte láser' : activityLabels[activity.area]}</strong><span>{activityStatuses[activity.status || 'PENDING']}{owner ? ` · ${owner.name}` : activity.area === 'DESIGN' ? activity.assignedUserId ? ' · diseñador asignado' : ' · sin asignar' : ''}{activity.ready === false ? ' · espera actividad anterior' : ''}{isLaser ? ` · $1.000/min${activity.laserMinutes ? ` · ${activity.laserMinutes} min` : ''}` : ''}{activity.receivedByWorkshop ? ` · recibe en Taller: ${activity.receivedByWorkshop}` : ''}</span></div><div className="order-activity-actions">
+        return <li key={activity.id || activityIndex} className={`order-activity-row is-${activity.status?.toLowerCase() || 'pending'}`}><div><strong>{isLaser ? 'Corte láser' : activityLabels[activity.area]}</strong><span>{activityStatuses[activity.status || 'PENDING']}{owner ? ` · ${owner.name}` : activity.area === 'DESIGN' ? activity.assignedUserId ? ' · diseñador asignado' : ' · sin asignar' : ''}{activity.ready === false ? ' · espera actividad anterior' : ''}{isLaser ? ` · $1.000/min${activity.laserMinutes ? ` · ${activity.laserMinutes} min` : ''}` : ''}{activity.receivedByWorkshop ? ` · recibe en Taller: ${activity.receivedByWorkshop}` : ''}</span>{activity.workshopNotes && <small><strong>Observaciones de Taller:</strong> {activity.workshopNotes}</small>}</div><div className="order-activity-actions">
           {usingApi && isAdmin(role) && activity.area === 'DESIGN' && activity.status === 'PENDING' && !!activity.id && <select className="select" aria-label={`Asignar diseñador a ${product.description}`} value={activity.assignedUserId || ''} disabled={busyId === activity.id} onChange={event => { if (event.target.value) void changeActivity(activity.id!, 'assign', { assignedUserId: event.target.value }); }}><option value="">Asignar diseñador</option>{designers.map(designer => <option key={designer.id} value={designer.id}>{designer.name}</option>)}</select>}
           {usingApi && canOperate && isLaser && activity.status !== 'COMPLETED' && !!activity.id && <><input className="input order-laser-minutes" type="number" min="1" step="1" aria-label="Minutos de corte láser" value={laserMinutes[activity.id] ?? String(activity.laserMinutes ?? '')} onChange={event => setLaserMinutes(current => ({ ...current, [activity.id!]: event.target.value }))} /><Button type="button" variant="secondary" disabled={busyId === activity.id} onClick={() => void saveLaser(activity.id!)}>Guardar minutos</Button></>}
           {usingApi && canOperate && activity.status === 'PENDING' && activity.ready !== false && !!activity.id && <Button type="button" variant="secondary" disabled={busyId === activity.id} onClick={() => void changeActivity(activity.id!, 'start')}>Iniciar</Button>}
           {usingApi && role === 'IMPRESION' && activity.area === 'PRINTING' && activity.status === 'IN_PROGRESS' && !!activity.id && <div className="order-printing-handoff"><label htmlFor={`detail-handoff-${activity.id}`}>Quién recibe en Taller *</label><input id={`detail-handoff-${activity.id}`} className="input" type="text" maxLength={200} value={handoffRecipients[activity.id] ?? ''} onChange={event => { setHandoffRecipients(current => ({ ...current, [activity.id!]: event.target.value })); setError(''); }} /></div>}
+          {usingApi && role === 'TALLER' && activity.area === 'WORKSHOP' && activity.status === 'IN_PROGRESS' && !!activity.id && <div className="order-printing-handoff"><label htmlFor={`detail-workshop-notes-${activity.id}`}>Observaciones de Taller</label><textarea id={`detail-workshop-notes-${activity.id}`} className="textarea" rows={3} maxLength={4000} value={workshopNotes[activity.id] ?? ''} onChange={event => setWorkshopNotes(current => ({ ...current, [activity.id!]: event.target.value }))} /></div>}
           {usingApi && canOperate && activity.status === 'IN_PROGRESS' && !!activity.id && <Button type="button" variant="secondary" disabled={busyId === activity.id || isLaser && !activity.laserMinutes} onClick={() => void completeActivity(activity)}>Finalizar</Button>}
         </div></li>;
       })}</ol>}
@@ -142,20 +145,23 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
 
 export function OrderDetailPage() {
   const { id } = useParams();
-  const { data, user, addPayment, transitionOrder, refreshData, toast } = useApp();
+  const { data, user, addPayment, deleteOrder, transitionOrder, refreshData, toast } = useApp();
   const navigate = useNavigate();
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [actionOpen, setActionOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [paymentDate, setPaymentDate] = useState(today);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<Exclude<PaymentMethod, 'LEGACY'>>('EFECTIVO');
   const [installationDate, setInstallationDate] = useState(today);
   const [installationNote, setInstallationNote] = useState('');
   const [receivedByWorkshop, setReceivedByWorkshop] = useState('');
+  const [workshopNotes, setWorkshopNotes] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const order = visibleOrders(user, data.orders).find(item => item.id === id);
   if (!order) return <EmptyState title="Esta orden no está disponible en tu bandeja" description="Puedes consultar las órdenes asignadas a tu perfil desde el listado." action={<Link className="btn btn-secondary" to="/orders">Volver a órdenes</Link>} />;
+  const orderId = order.id;
   const admin = isAdmin(user?.role);
   const client = data.clients.find(item => item.id === order.clientId);
   const creator = data.users.find(person => person.id === order.createdBy);
@@ -170,7 +176,17 @@ export function OrderDetailPage() {
   const sortedPayments = [...order.payments].sort((a, b) => b.date.localeCompare(a.date));
 
   function openPayment() { setError(''); setPaymentAmount(''); setPaymentMethod('EFECTIVO'); setPaymentDate(today()); setPaymentOpen(true); }
-  function openAction() { setError(''); setInstallationDate(today()); setInstallationNote(''); setReceivedByWorkshop(''); setActionOpen(true); }
+  function openAction() { setError(''); setInstallationDate(today()); setInstallationNote(''); setReceivedByWorkshop(''); setWorkshopNotes(''); setActionOpen(true); }
+  async function submitDelete() {
+    if (saving) return;
+    setSaving(true); setError('');
+    try {
+      const result = await deleteOrder(orderId);
+      toast(`OT #${result.deletedNumber} eliminada. ${result.shifted} ${result.shifted === 1 ? 'orden fue renumerada' : 'órdenes fueron renumeradas'}.`);
+      navigate('/orders', { replace: true });
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'No fue posible eliminar la orden.'); }
+    finally { setSaving(false); }
+  }
   async function submitPayment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!order || saving) return;
@@ -191,7 +207,8 @@ export function OrderDetailPage() {
     try {
       await transitionOrder(order.id, nextAction.action,
         nextAction.action === 'install' ? { date: installationDate, note: installationNote }
-          : nextAction.action === 'finishPrinting' ? { receivedByWorkshop: receivedByWorkshop.trim() } : undefined);
+          : nextAction.action === 'finishPrinting' ? { receivedByWorkshop: receivedByWorkshop.trim() }
+            : nextAction.action === 'finishWorkshop' ? { workshopNotes: workshopNotes.trim() } : undefined);
       setActionOpen(false);
       toast(nextAction.action === 'close' ? 'Orden cerrada administrativamente.' : nextAction.action === 'install' ? 'Instalación registrada.' : 'Etapa del trabajo actualizada.');
       if (!admin && (nextAction.action === 'finishPrinting' || nextAction.action === 'install' || (nextAction.action === 'finishWorkshop' && !order.requiresInstallation))) navigate('/orders');
@@ -209,7 +226,7 @@ export function OrderDetailPage() {
 
   return <div className="page-stack order-detail-page">
     <Link className="order-back-link" to="/orders"><ArrowLeft size={17} /> Órdenes de trabajo</Link>
-    <PageHeader eyebrow="ORDEN DE TRABAJO" title={`OT #${String(order.number).padStart(4, '0')}`} description={client?.name || 'Cliente no disponible'} actions={admin ? <div className="order-detail-top-actions">{canEdit && <Link className="btn btn-secondary" to={`/orders/${order.id}/edit`}><Pencil size={16} /> Editar OT</Link>}<Link className="btn btn-secondary" to={`/orders/${order.id}/print`}><Printer size={16} /> Vista imprimible</Link></div> : undefined} />
+    <PageHeader eyebrow="ORDEN DE TRABAJO" title={`OT #${String(order.number).padStart(4, '0')}`} description={client?.name || 'Cliente no disponible'} actions={admin ? <div className="order-detail-top-actions">{canEdit && <Link className="btn btn-secondary" to={`/orders/${order.id}/edit`}><Pencil size={16} /> Editar OT</Link>}<Button variant="danger" onClick={() => { setError(''); setDeleteOpen(true); }}><Trash2 size={16} /> Borrar OT</Button><Link className="btn btn-secondary" to={`/orders/${order.id}/print`}><Printer size={16} /> Vista imprimible</Link></div> : undefined} />
     <div className="order-detail-status"><WorkBadge status={order.status} /><DocumentBadge type={order.documentType} />{admin && <PaymentBadge status={money.paymentStatus} />}{order.closedAt && <span className="badge order-closed-badge"><CheckCheckIcon /> Cierre administrativo registrado</span>}<span className="order-last-update"><Clock3 size={14} /> Último cambio: {formatDate(order.updatedAt, true)}</span></div>
     <Card className="order-workflow-card"><CardHeader title="Ruta de producción" description={`${ROUTE_LABELS[order.route]}${order.requiresInstallation ? ' · Instalación requerida' : ''}`} /><ProductionSteps order={order} /></Card>
     <div className="order-detail-grid">
@@ -217,7 +234,7 @@ export function OrderDetailPage() {
         <Card className="order-information-card"><CardHeader title="Información del trabajo" /><div className="order-detail-description"><span className="eyebrow">Descripción</span><p>{order.description}</p></div><dl className="order-info-grid"><div><dt>Categoría comercial</dt><dd>{order.category}</dd></div><div><dt>Creación</dt><dd>{formatDate(order.createdAt, true)}</dd></div><div><dt>Registrada por</dt><dd>{creatorName}{creatorRole && <small>{ROLE_LABELS[creatorRole]}</small>}</dd></div><div><dt>Recorrido</dt><dd>{ROUTE_LABELS[order.route]}</dd></div></dl></Card>
         <OrderProducts order={order} role={user?.role} userId={user?.id} users={data.users} refreshData={refreshData} toast={toast} />
         {!usingApi && order.printing && <Card className="order-information-card"><CardHeader title="Ficha de impresión" description="Dimensiones en metros y superficie calculada" /><div className="order-material-heading"><div className="order-material-icon"><Printer size={23} /></div><div><span className="muted">Material seleccionado</span><h3>{order.printing.material}</h3></div></div><div className="order-dimension-grid"><div><span>Largo</span><strong>{formatMeasure(order.printing.length)} <small>m</small></strong></div><div><span>Ancho</span><strong>{formatMeasure(order.printing.width)} <small>m</small></strong></div><div className="order-area-highlight"><span>Superficie</span><strong>{formatMeasure(areaOf(order.printing))} <small>m²</small></strong></div></div><p className="order-help-text">{order.printingCompletedAt ? `Consumo registrado al finalizar impresión: ${formatDate(order.printingCompletedAt, true)}.` : 'Esta superficie contará como consumo al finalizar la impresión.'}</p></Card>}
-        <Card className="order-information-card"><CardHeader title="Taller e instalación" /><dl className="order-info-grid"><div><dt>Paso por Taller</dt><dd>{['PRINT_ONLY', 'IMPRENTA', 'EXTERNO'].includes(order.route) ? 'No requerido' : order.route === 'MULTI_AREA' ? 'Según actividades' : 'Incluido en el recorrido'}</dd></div><div><dt>Instalación</dt><dd>{order.requiresInstallation ? order.installedAt ? 'Realizada' : 'Requerida' : 'No requerida'}</dd></div>{order.printingReceivedByWorkshop && <div><dt>Recibe en Taller</dt><dd>{order.printingReceivedByWorkshop}</dd></div>}{order.workshopStartedAt && <div><dt>Inicio en Taller</dt><dd>{formatDate(order.workshopStartedAt, true)}</dd></div>}{order.installedAt && <div><dt>Fecha de instalación</dt><dd>{formatDate(order.installedAt)}</dd></div>}</dl>{order.installationNote && <div className="order-detail-description"><span className="eyebrow">Observaciones de instalación</span><p>{order.installationNote}</p></div>}</Card>
+        <Card className="order-information-card"><CardHeader title="Taller e instalación" /><dl className="order-info-grid"><div><dt>Paso por Taller</dt><dd>{['PRINT_ONLY', 'IMPRENTA', 'EXTERNO'].includes(order.route) ? 'No requerido' : order.route === 'MULTI_AREA' ? 'Según actividades' : 'Incluido en el recorrido'}</dd></div><div><dt>Instalación</dt><dd>{order.requiresInstallation ? order.installedAt ? 'Realizada' : 'Requerida' : 'No requerida'}</dd></div>{order.printingReceivedByWorkshop && <div><dt>Recibe en Taller</dt><dd>{order.printingReceivedByWorkshop}</dd></div>}{order.workshopStartedAt && <div><dt>Inicio en Taller</dt><dd>{formatDate(order.workshopStartedAt, true)}</dd></div>}{order.installedAt && <div><dt>Fecha de instalación</dt><dd>{formatDate(order.installedAt)}</dd></div>}</dl>{order.workshopNotes && <div className="order-detail-description"><span className="eyebrow">Observaciones de Taller</span><p>{order.workshopNotes}</p></div>}{order.installationNote && <div className="order-detail-description"><span className="eyebrow">Observaciones de instalación</span><p>{order.installationNote}</p></div>}</Card>
         {admin && <Card className="order-payments-card"><CardHeader title="Pagos y abonos" description={`${order.payments.length} ${order.payments.length === 1 ? 'pago registrado' : 'pagos registrados'} · cada movimiento conserva su fecha y valor`} action={money.balance > 0 ? <Button variant="secondary" onClick={openPayment}><Plus size={16} /> Registrar pago</Button> : undefined} />{sortedPayments.length ? <DataTable rows={sortedPayments} rowKey={payment => payment.id} columns={[
           { key: 'date', label: 'Fecha del pago', render: payment => formatDate(payment.date) },
           { key: 'amount', label: 'Valor recibido', className: 'money', render: payment => <strong className="order-paid-value">{formatCOP(payment.amount)}</strong> },
@@ -238,7 +255,10 @@ export function OrderDetailPage() {
       <form className="stack" onSubmit={submitPayment} noValidate><p className="muted">{client?.name}</p><div className="order-payment-modal-balance"><Wallet size={22} /><div><span>Saldo actual por cobrar</span><strong>{formatCOP(money.balance)}</strong></div><Button type="button" variant="secondary" onClick={() => { setPaymentAmount(String(money.balance)); setError(''); }}>Pagar saldo completo</Button></div><div className="form-grid"><Field label="Fecha de recepción *" htmlFor="detail-payment-date"><input className="input" id="detail-payment-date" type="date" min={dateOnly(order.createdAt)} max={today()} value={paymentDate} onChange={event => { setPaymentDate(event.target.value); setError(''); }} required /></Field><Field label="Valor del pago (COP) *" htmlFor="detail-payment-amount"><input className="input" id="detail-payment-amount" type="number" min="0.01" step="0.01" max={money.balance} inputMode="decimal" value={paymentAmount} placeholder="0" onChange={event => { setPaymentAmount(event.target.value); setError(''); }} required /></Field><Field label="Medio de pago *" htmlFor="detail-payment-method"><select className="select" id="detail-payment-method" value={paymentMethod} onChange={event => setPaymentMethod(event.target.value as Exclude<PaymentMethod, 'LEGACY'>)} required><option value="EFECTIVO">Efectivo</option><option value="BANCOLOMBIA">Bancolombia</option><option value="DAVIVIENDA">Davivienda</option></select></Field></div><div className={`order-payment-result ${remainingAfterPayment < 0 ? 'is-invalid' : ''}`} aria-live="polite"><span>Saldo después del pago</span><strong>{formatCOP(remainingAfterPayment)}</strong></div>{error && <p className="order-field-error" role="alert">{error}</p>}<div className="actions"><Button type="button" variant="secondary" onClick={() => setPaymentOpen(false)}>Cancelar</Button><Button type="submit" disabled={saving || money.balance <= 0}><Check size={17} />{saving ? 'Guardando…' : 'Confirmar y registrar pago'}</Button></div></form>
     </Modal>
     <Modal open={actionOpen} onClose={() => setActionOpen(false)} title={nextAction?.label || 'Actualizar orden'}>
-      <form className="stack" onSubmit={submitAction} noValidate><div className="order-action-confirm"><span className="eyebrow">OT #{String(order.number).padStart(4, '0')}</span><h3>{client?.name}</h3><p>{order.description}</p><WorkBadge status={order.status} /></div><p>{actionDescription}</p>{nextAction?.action === 'finishPrinting' && <Field label="Quién recibe en Taller *" htmlFor="detail-printing-handoff"><input className="input" id="detail-printing-handoff" type="text" maxLength={200} value={receivedByWorkshop} onChange={event => { setReceivedByWorkshop(event.target.value); setError(''); }} required /></Field>}{nextAction?.action === 'install' && <><Field label="Fecha de instalación *" htmlFor="detail-install-date"><input className="input" id="detail-install-date" type="date" value={installationDate} min={dateOnly(order.readyForInstallationAt || order.updatedAt)} max={today()} onChange={event => setInstallationDate(event.target.value)} required /></Field><Field label="Observaciones de instalación" htmlFor="detail-install-note" hint="Opcional"><textarea className="textarea" id="detail-install-note" rows={3} maxLength={1000} value={installationNote} onChange={event => setInstallationNote(event.target.value)} /></Field></>}{error && <p className="order-field-error" role="alert">{error}</p>}<div className="actions"><Button type="button" variant="secondary" onClick={() => setActionOpen(false)}>Cancelar</Button><Button type="submit" disabled={saving}><Check size={17} />{saving ? 'Guardando…' : 'Confirmar'}</Button></div></form>
+      <form className="stack" onSubmit={submitAction} noValidate><div className="order-action-confirm"><span className="eyebrow">OT #{String(order.number).padStart(4, '0')}</span><h3>{client?.name}</h3><p>{order.description}</p><WorkBadge status={order.status} /></div><p>{actionDescription}</p>{nextAction?.action === 'finishPrinting' && <Field label="Quién recibe en Taller *" htmlFor="detail-printing-handoff"><input className="input" id="detail-printing-handoff" type="text" maxLength={200} value={receivedByWorkshop} onChange={event => { setReceivedByWorkshop(event.target.value); setError(''); }} required /></Field>}{nextAction?.action === 'finishWorkshop' && <Field label="Observaciones de Taller" htmlFor="detail-workshop-notes" hint="Opcional"><textarea className="textarea" id="detail-workshop-notes" rows={4} maxLength={4000} value={workshopNotes} onChange={event => setWorkshopNotes(event.target.value)} /></Field>}{nextAction?.action === 'install' && <><Field label="Fecha de instalación *" htmlFor="detail-install-date"><input className="input" id="detail-install-date" type="date" value={installationDate} min={dateOnly(order.readyForInstallationAt || order.updatedAt)} max={today()} onChange={event => setInstallationDate(event.target.value)} required /></Field><Field label="Observaciones de instalación" htmlFor="detail-install-note" hint="Opcional"><textarea className="textarea" id="detail-install-note" rows={3} maxLength={1000} value={installationNote} onChange={event => setInstallationNote(event.target.value)} /></Field></>}{error && <p className="order-field-error" role="alert">{error}</p>}<div className="actions"><Button type="button" variant="secondary" onClick={() => setActionOpen(false)}>Cancelar</Button><Button type="submit" disabled={saving}><Check size={17} />{saving ? 'Guardando…' : 'Confirmar'}</Button></div></form>
+    </Modal>
+    <Modal open={deleteOpen} onClose={() => { if (!saving) setDeleteOpen(false); }} title={`Borrar OT #${String(order.number).padStart(4, '0')}`}>
+      <div className="stack"><p>Esta acción eliminará definitivamente la orden y sus pagos, productos y actividades. Las OT posteriores bajarán un número para conservar la secuencia consecutiva.</p>{error && <p className="order-field-error" role="alert">{error}</p>}<div className="actions"><Button type="button" variant="secondary" onClick={() => setDeleteOpen(false)} disabled={saving}>Cancelar</Button><Button type="button" variant="danger" onClick={() => void submitDelete()} disabled={saving}><Trash2 size={17} />{saving ? 'Borrando…' : 'Borrar definitivamente'}</Button></div></div>
     </Modal>
   </div>;
 }

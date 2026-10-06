@@ -20,7 +20,7 @@ const PASSWORD = 'Una clave ficticia para tareas 2026!';
 const config = readConfig({ NODE_ENV: 'test', APP_ORIGINS: ORIGIN, LOGIN_RATE_LIMIT: '100' });
 type Session = { cookie: string; csrf: string; user: PublicUser };
 type Activity = { id: string; area: string; status: string; ready: boolean; assignedUserId: string | null;
-  receivedByWorkshop?: string; materials: { consumedAt: string | null }[] };
+  receivedByWorkshop?: string; workshopNotes?: string; materials: { consumedAt: string | null }[] };
 let db: Database;
 let app: Express;
 let admin: Session;
@@ -217,7 +217,12 @@ describe('Productos y trabajo interno', () => {
       expect.objectContaining({ material: 'Panaflex', count: 1, m2: 2 }),
     ]));
     expect((await post(`/work/activities/${cutting.id}/start`, {}, workshop)).status).toBe(200);
-    expect((await post(`/work/activities/${cutting.id}/complete`, {}, workshop)).status).toBe(200);
+    const workshopFinished = await post(`/work/activities/${cutting.id}/complete`, { workshopNotes: '  Entregar con cuidado  ' }, workshop);
+    expect(workshopFinished.status).toBe(200);
+    expect(workshopFinished.body.activity.workshopNotes).toBe('Entregar con cuidado');
+    expect((await get(`/work/orders/${order.id}`, workshop)).body.products[0].activities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ area: 'WORKSHOP', workshopNotes: 'Entregar con cuidado' }),
+    ]));
     expect((await get(`/orders/${order.id}`)).body.order.status).toBe('IN_PRODUCTION');
     expect((await post(`/work/activities/${external.id}/start`, {})).status).toBe(200);
     expect((await post(`/work/activities/${external.id}/complete`, {})).status).toBe(200);

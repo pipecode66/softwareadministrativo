@@ -78,7 +78,7 @@ export function recordPayment(user: User, order: WorkOrder, payment: { date: str
   assert(!payment.method || ['EFECTIVO', 'BANCOLOMBIA', 'DAVIVIENDA'].includes(payment.method), 'Selecciona un medio de pago válido.');
   return { ...order, payments: [...order.payments, { id: crypto.randomUUID(), date: payment.date, amount: roundMoney(payment.amount), method: payment.method ?? 'EFECTIVO', recordedBy: user.id }] };
 }
-export function transitionWorkOrder(user: User, order: WorkOrder, action: OrderAction, details?: { date?: string; note?: string; receivedByWorkshop?: string }): WorkOrder {
+export function transitionWorkOrder(user: User, order: WorkOrder, action: OrderAction, details?: { date?: string; note?: string; receivedByWorkshop?: string; workshopNotes?: string }): WorkOrder {
   assert(user.active && canViewOrder(user, order), 'No tienes permiso para modificar esta orden.');
   const admin = isAdmin(user.role);
   const now = new Date().toISOString();
@@ -106,6 +106,8 @@ export function transitionWorkOrder(user: User, order: WorkOrder, action: OrderA
     next.workshopStartedAt = now;
   } else if (action === 'finishWorkshop') {
     assert(user.role === 'TALLER' && order.status === 'IN_WORKSHOP', 'Solo Taller puede finalizar esta fase.');
+    assert((details?.workshopNotes?.trim().length ?? 0) <= 4000, 'Las observaciones de Taller no pueden superar 4000 caracteres.');
+    next.workshopNotes = details?.workshopNotes?.trim() || '';
     next.status = order.requiresInstallation ? 'PENDING_INSTALLATION' : 'COMPLETED';
   } else if (action === 'install') {
     assert((admin || user.role === 'TALLER') && order.status === 'PENDING_INSTALLATION' && order.requiresInstallation, 'La orden no está pendiente de instalación.');
