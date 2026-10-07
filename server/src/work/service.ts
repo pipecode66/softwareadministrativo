@@ -52,7 +52,7 @@ function lineCents(quantity: number, unitValue: number): number {
 }
 
 function normalizeProducts(
-  products: ProductInput[], creator: { id: string; role: Role },
+  products: ProductInput[], creator: { id: string; role: Role }, allowDeferredMaterials = false,
 ): ParsedProduct[] {
   const parsed = productsSchema.parse(products);
   const normalized = parsed.map(product => ({
@@ -71,7 +71,8 @@ function normalizeProducts(
         'Selecciona el diseñador responsable de la actividad de Diseño.', 'products.activities.assignedUserId');
     }
     const printing = product.activities.find(activity => activity.area === 'PRINTING');
-    if (printing && (printing.printingType ?? 'PRINT') === 'PRINT' && !product.materials.length) {
+    if (printing && (printing.printingType ?? 'PRINT') === 'PRINT' && !product.materials.length
+      && !(allowDeferredMaterials && design)) {
       throw new ApiError(400, 'PRINT_MATERIAL_REQUIRED',
         'La impresión normal requiere al menos un material.', 'products.materials');
     }
@@ -89,7 +90,8 @@ export async function createOrderProducts(
     JOIN users u ON u.id=o.created_by WHERE o.id=$1 FOR UPDATE OF o
   `, [orderId])).rows[0];
   if (!parent) throw new ApiError(404, 'ORDER_NOT_FOUND', 'La orden no existe.');
-  const parsed = normalizeProducts(products, creator ?? { id: parent.created_by, role: parent.creator_role });
+  const effectiveCreator = creator ?? { id: parent.created_by, role: parent.creator_role };
+  const parsed = normalizeProducts(products, effectiveCreator, admin(effectiveCreator.role));
   const existing = await tx.query('SELECT id FROM order_products WHERE order_id = $1 LIMIT 1', [orderId]);
   if (existing.rows.length) throw conflict('La orden ya tiene productos registrados.');
   const expected = Math.round(Number(parent.value) * 100);
@@ -132,7 +134,7 @@ export async function createOrderProducts(
 }
 
 /** Replaces a draft's internal work under the parent OT lock held by the caller. */
-export async function replaceOrderProducts(tx: SqlConnection, orderId: string, products: ProductInput[]): Promise<void> {
+export async function replaceOrderProducts(tx: SqlConnection, orderId: string, products: ProductInput[], allowDeferredMaterials = false): Promise<void> {
   const parsed = productsSchema.parse(products);
   const parent = await tx.query<{ status: string; value: string }>('SELECT status,value FROM orders WHERE id=$1 FOR UPDATE', [orderId]);
   if (!parent.rows.length) throw new ApiError(404, 'ORDER_NOT_FOUND', 'La orden no existe.');
@@ -176,7 +178,9 @@ export async function replaceOrderProducts(tx: SqlConnection, orderId: string, p
     if (subtotal !== expected) throw new ApiError(400, 'PRODUCT_SUBTOTAL', 'La suma de productos debe coincidir con el valor base de la OT.', 'products');
     for (const [index, product] of parsed.entries()) {
       const printing = product.activities.find(activity => activity.area === 'PRINTING');
-      if (printing && (printing.printingType ?? 'PRINT') === 'PRINT' && !product.materials.length) {
+      const design = product.activities.find(activity => activity.area === 'DESIGN');
+      if (printing && (printing.printingType ?? 'PRINT') === 'PRINT' && !product.materials.length
+        && !(allowDeferredMaterials && design)) {
         throw new ApiError(400, 'PRINT_MATERIAL_REQUIRED', 'La impresión normal requiere al menos un material.', 'products.materials');
       }
       const productId = currentProducts[index].id;

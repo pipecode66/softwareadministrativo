@@ -2,7 +2,7 @@ import type { AppData, Client, OrderAction, OrderInput, PaymentMethod, User, Wor
 import { CATEGORIES, MATERIALS, canCreate, canViewOrder, dateOnly, financials, isAdmin, isCalendarDate, isFinished, roundMoney, today } from './utils';
 
 function assert(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(message); }
-export function validateInput(data: AppData, input: OrderInput, exceptId?: string) {
+export function validateInput(data: AppData, input: OrderInput, exceptId?: string, allowDeferredMaterials = false) {
   assert(Number.isSafeInteger(input.number) && (input.number > 0 || Boolean(input.products) && !exceptId && input.number === 0), 'El número de OT debe ser un entero mayor que cero.');
   assert(input.number === 0 || !data.orders.some(o => o.number === input.number && o.id !== exceptId), 'Ya existe una orden con ese número de OT.');
   const client = data.clients.find(c => c.id === input.clientId);
@@ -30,7 +30,7 @@ export function validateInput(data: AppData, input: OrderInput, exceptId?: strin
       const printing = product.activities.find(activity => activity.area === 'PRINTING');
       if (!printing) return product.materials.length === 0;
       if ((printing.printingType ?? 'PRINT') === 'LASER') return product.materials.length === 0;
-      return product.materials.length > 0;
+      return product.materials.length > 0 || allowDeferredMaterials && product.activities.some(activity => activity.area === 'DESIGN');
     }), 'Los materiales corresponden únicamente a Impresión; el corte láser no los requiere.');
     if (!client.specialPayment && !exceptId && input.value > 0) assert(input.initialPayment, 'Este cliente requiere un abono inicial.');
     if (input.initialPayment) assert(input.initialPayment.amount > 0 && ['EFECTIVO','BANCOLOMBIA','DAVIVIENDA'].includes(input.initialPayment.method), 'Indica el valor y medio del abono inicial.');
@@ -49,7 +49,7 @@ function cleanInput(input: OrderInput, onCreate = false): OrderInput {
 }
 export function createWorkOrder(data: AppData, user: User, input: OrderInput): WorkOrder {
   assert(user.active && canCreate(user.role), 'No tienes permiso para crear órdenes.');
-  validateInput(data, input);
+  validateInput(data, input, undefined, isAdmin(user.role));
   const now = new Date().toISOString();
   const number = input.number || Math.max(0, ...data.orders.map(order => order.number)) + 1;
   const payments = input.initialPayment ? [{ id: crypto.randomUUID(), date: input.initialPayment.date,
@@ -64,7 +64,7 @@ export function editWorkOrder(data: AppData, user: User, order: WorkOrder, input
   assert(user.active && isAdmin(user.role), 'Solo Administración puede editar esta orden.');
   const masterReopen = user.role === 'ADMINMASTER' && ['COMPLETED','INSTALLED'].includes(order.status) && !order.closedAt;
   assert((['NEW','PENDING_ADMIN_REVIEW'].includes(order.status) || order.status === 'IN_PRODUCTION' && Boolean(order.products?.every(product => product.activities.every(activity => !activity.status || activity.status === 'PENDING'))) || masterReopen) && !order.closedAt, 'La orden ya está en producción y sus datos están protegidos.');
-  validateInput(data,input,order.id);
+  validateInput(data,input,order.id,isAdmin(user.role));
   let prepared = cleanInput(input);
   if (masterReopen) {
     assert(order.products && input.products && order.products.length === input.products.length, 'Al reabrir una OT terminada no se pueden agregar ni eliminar productos; solo agregar áreas faltantes.');

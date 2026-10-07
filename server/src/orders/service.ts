@@ -243,7 +243,7 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
         installation_note=CASE WHEN $16 THEN NULL ELSE installation_note END,
         updated_at=clock_timestamp(),version=version+1
       WHERE id=$14 RETURNING *`, [...inputParams(normalized), id, targetStatus, reopened])).rows[0];
-    if (input.products && !masterReopen) await replaceOrderProducts(tx, id, input.products);
+    if (input.products && !masterReopen) await replaceOrderProducts(tx, id, input.products, isAdmin(actor.role));
     else {
       const legacy = (await tx.query<{ id: string }>('SELECT id FROM order_products WHERE order_id=$1 AND is_legacy=true', [id])).rows[0];
       if (legacy) {

@@ -309,18 +309,35 @@ describe('Corte Láser y total comercial', () => {
     }], 1000));
     expect(printWithoutPreparation.status).toBe(400);
     expect(printWithoutPreparation.body.error.code).toBe('PRINT_MATERIAL_REQUIRED');
-    const printWithDesignWithoutMaterial = await post('/orders', orderInput([{
-      description: 'Diseño e impresión sin material', quantity: 1, unitValue: 1000,
-      materials: [], activities: [{ area: 'DESIGN', assignedUserId: randomUUID() }, { area: 'PRINTING', printingType: 'PRINT' }],
-    }], 1000));
-    expect(printWithDesignWithoutMaterial.status).toBe(400);
-    expect(printWithDesignWithoutMaterial.body.error).toMatchObject({
-      code: 'PRINT_MATERIAL_REQUIRED', field: 'products.materials',
-    });
   });
 });
 
 describe('Diseño autoasignado y edición técnica', () => {
+  it('Administración difiere materiales a Diseño y el diseñador debe completarlos antes de finalizar', async () => {
+    await db.query('UPDATE clients SET special_payment=true WHERE id=$1', [clientId]);
+    const designer = await actor('DISENO', 'Diseñador técnico');
+    const deferredProduct = {
+      description:'Pendiente de preparación técnica', quantity:1, unitValue:10000, materials:[],
+      activities:[{ area:'DESIGN', assignedUserId:designer.user.id }, { area:'PRINTING', printingType:'PRINT' }],
+    };
+    const rejectedForDesigner = await post('/orders', orderInput([deferredProduct], 10000), designer);
+    expect(rejectedForDesigner.status).toBe(400);
+    expect(rejectedForDesigner.body.error.code).toBe('PRINT_MATERIAL_REQUIRED');
+    const created = await post('/orders', orderInput([deferredProduct], 10000));
+    expect(created.status).toBe(201);
+    const design = (await activities(created.body.order.id)).find(item => item.area === 'DESIGN')!;
+    await post(`/work/activities/${design.id}/start`, {}, designer);
+    const blocked = await post(`/work/activities/${design.id}/complete`, {}, designer);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error.message).toBe('Agrega al menos un material antes de completar Diseño.');
+    const saved = await patch(`/work/activities/${design.id}/design-details`, {
+      materials:[{ material:'Banner', length:2, width:1.5 }],
+    }, designer);
+    expect(saved.status).toBe(200);
+    expect(saved.body.activity.materials).toEqual([expect.objectContaining({ material:'Banner', length:2, width:1.5 })]);
+    expect((await post(`/work/activities/${design.id}/complete`, {}, designer)).status).toBe(200);
+  });
+
   it('fuerza una sola actividad de Diseño, primera y asignada al diseñador creador', async () => {
     await db.query('UPDATE clients SET special_payment=true WHERE id=$1', [clientId]);
     const designer = await actor('DISENO', 'Diseñador creador');

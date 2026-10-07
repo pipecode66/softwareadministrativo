@@ -90,6 +90,15 @@ describe('Validación y creación de órdenes', () => {
       initialPayment: { date: today(), amount: 1000, method: 'EFECTIVO' },
     }))).toThrow(/materiales/i);
   });
+  it('Administración puede diferir el material cuando asigna Diseño antes de Impresión', () => {
+    const deferred = input({ number:0, route:'PRINT_ONLY', printing:undefined, products:[{
+      description:'Diseño para imprimir', quantity:1, unitValue:100000, materials:[], activities:[
+        { area:'DESIGN', assignedUserId:'user-DISENO' }, { area:'PRINTING', printingType:'PRINT' },
+      ],
+    }], initialPayment:{ date:today(), amount:1000, method:'EFECTIVO' } });
+    expect(() => createWorkOrder(data(), user('ADMIN_GENERAL'), deferred)).not.toThrow();
+    expect(() => createWorkOrder(data(), user('DISENO'), deferred)).toThrow(/materiales/i);
+  });
   it('acepta retenciones redondeadas sin generar saldos negativos', () => {
     expect(() => validateInput(data(), input({ documentType: 'FACT', value: 1, reteFuente: 0.395, reteIva: 0.395, ica: 0.395 }))).not.toThrow();
     expect(() => validateInput(data(), input({ documentType: 'FACT', value: 1, reteFuente: 1.2 }))).not.toThrow();

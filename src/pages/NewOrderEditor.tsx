@@ -5,7 +5,7 @@ import { useApp } from '../data/AppContext';
 import type { Category, DocumentType, Material, OrderInput, OrderProduct, PaymentMethod, PrintingType, ProductionRoute, WorkOrder } from '../domain/types';
 import { apiDesignerLoad, apiWorkOrder, usingApi } from '../data/api';
 import { deleteOrderDraft, loadOrderDraft, saveOrderDraft, type OrderFormDraft } from '../data/orderDraft';
-import { CATEGORIES, financials, formatCOP, formatMeasure, formatPesosInput, MATERIALS, normalize, roundMoney, today } from '../domain/utils';
+import { CATEGORIES, financials, formatCOP, formatMeasure, formatPesosInput, isAdmin, MATERIALS, normalize, roundMoney, today } from '../domain/utils';
 import { Button, Card, Field, PageHeader } from '../components/ui';
 import './orders.css';
 
@@ -250,7 +250,8 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
       if (!Number.isSafeInteger(moneyInput(product.unitValue)) || moneyInput(product.unitValue) < 0) return `${label}: indica un valor unitario válido.`;
       if (!orderedActivities(product, designerCreatorId).length) return `${label}: selecciona al menos un área de trabajo.`;
       if (!designerCreatorId && product.design && !product.designerId) return `${label}: selecciona el diseñador responsable.`;
-      if (product.printing && product.printingType === 'PRINT' && !product.materials.length) return `${label}: agrega al menos un material para Impresión.`;
+      if (product.printing && product.printingType === 'PRINT' && !product.materials.length
+        && !(isAdmin(user?.role) && product.design)) return `${label}: agrega al menos un material para Impresión.`;
       for (const material of product.printing && product.printingType === 'PRINT' ? product.materials : []) {
         if (!Number.isFinite(Number(material.length)) || Number(material.length) <= 0 || !Number.isFinite(Number(material.width)) || Number(material.width) <= 0 ||
           Math.abs(Number(material.length) * 1000 - Math.round(Number(material.length) * 1000)) > .0001 ||
