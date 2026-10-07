@@ -62,9 +62,27 @@ export function createWorkOrder(data: AppData, user: User, input: OrderInput): W
 }
 export function editWorkOrder(data: AppData, user: User, order: WorkOrder, input: OrderInput): WorkOrder {
   assert(user.active && isAdmin(user.role), 'Solo Administración puede editar esta orden.');
-  assert((['NEW','PENDING_ADMIN_REVIEW'].includes(order.status) || order.status === 'IN_PRODUCTION' && Boolean(order.products?.every(product => product.activities.every(activity => !activity.status || activity.status === 'PENDING')))) && !order.closedAt, 'La orden ya está en producción y sus datos están protegidos.');
+  const masterReopen = user.role === 'ADMINMASTER' && ['COMPLETED','INSTALLED'].includes(order.status) && !order.closedAt;
+  assert((['NEW','PENDING_ADMIN_REVIEW'].includes(order.status) || order.status === 'IN_PRODUCTION' && Boolean(order.products?.every(product => product.activities.every(activity => !activity.status || activity.status === 'PENDING'))) || masterReopen) && !order.closedAt, 'La orden ya está en producción y sus datos están protegidos.');
   validateInput(data,input,order.id);
-  const updated = { ...order, ...cleanInput(input) };
+  let prepared = cleanInput(input);
+  if (masterReopen) {
+    assert(order.products && input.products && order.products.length === input.products.length, 'Al reabrir una OT terminada no se pueden agregar ni eliminar productos; solo agregar áreas faltantes.');
+    let added = false;
+    const products = input.products.map((product, index) => {
+      const previous = order.products![index];
+      for (const activity of previous.activities) assert(product.activities.some(item => item.area === activity.area), 'No se puede retirar un área que ya trabajó en una OT terminada.');
+      const activities = product.activities.map(activity => {
+        const existing = previous.activities.find(item => item.area === activity.area);
+        if (!existing) { added = true; return activity; }
+        return { ...activity, ...existing };
+      });
+      return { ...product, id:previous.id, position:previous.position, activities };
+    });
+    prepared = { ...prepared, products };
+    if (added) prepared = { ...prepared, status:'IN_PRODUCTION', installedAt:undefined, installationNote:undefined, readyForInstallationAt:undefined } as OrderInput;
+  }
+  const updated = { ...order, ...prepared };
   assert(financials(updated).balance >= 0, 'El total de la orden no puede ser inferior a los pagos registrados.');
   return updated;
 }

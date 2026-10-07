@@ -4,7 +4,7 @@ import { ROLES, type AuthSession, type Role } from '../contracts.js';
 import type { Database, SqlConnection } from '../db/types.js';
 import { ApiError } from '../errors.js';
 import { requireCurrentActor } from '../security/actor.js';
-import { createOrderProducts, replaceOrderProducts } from '../work/service.js';
+import { createOrderProducts, reopenCompletedOrderProducts, replaceOrderProducts } from '../work/service.js';
 import { cents, dateOnly, financials, isAdmin, orderDto, type DraftPayload, type OrderInput, type OrderRow, type PaymentRow, type bulkPaymentSchema, type createSchema, type editSchema, type paymentSchema, type transitionSchema } from './domain.js';
 
 const admins: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL'];
@@ -208,10 +208,12 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
     const actor = await requireCurrentActor(tx, auth, admins);
     const row = await lockedOrder(tx, id);
     checkVersion(row, input.expectedVersion);
-    if (row.closed_at || !['NEW','PENDING_ADMIN_REVIEW','IN_PRODUCTION'].includes(row.status)) throw conflict('La orden ya está en producción y sus datos están protegidos.');
+    const masterReopen = actor.role === 'ADMINMASTER' && !row.closed_at && ['COMPLETED','INSTALLED'].includes(row.status);
+    if (row.closed_at || (!['NEW','PENDING_ADMIN_REVIEW','IN_PRODUCTION'].includes(row.status) && !masterReopen)) throw conflict('La orden ya está en producción y sus datos están protegidos.');
     const existingComposite = (await tx.query<{ composite: boolean }>(
       'SELECT coalesce(bool_or(NOT is_legacy),false) AS composite FROM order_products WHERE order_id=$1', [id])).rows[0]?.composite;
     if (existingComposite && !input.products) throw new ApiError(400, 'PRODUCTS_REQUIRED', 'Incluye los productos de esta orden en la edición.', 'products');
+    if (masterReopen && (!existingComposite || !input.products)) throw conflict('Solo se pueden reabrir OT terminadas que tengan productos y actividades internas.');
     if (row.status === 'IN_PRODUCTION' && !input.products) throw conflict('La orden compuesta requiere productos para editarse.');
     if (input.initialPayment) throw new ApiError(400, 'INITIAL_PAYMENT_EDIT', 'Los abonos se registran en pagos, no en edición de OT.', 'initialPayment');
     const workChanges = input.products ? await productChanges(tx,id,input.products) : [];
@@ -225,15 +227,23 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
       rete_fuente: String(normalized.reteFuente), rete_iva: String(normalized.reteIva), ica: String(normalized.ica), financial_rule: row.financial_rule }, payments);
     if (money.collectible < 0) throw new ApiError(400, 'INVALID_COLLECTIBLE', 'El total a cobrar no puede ser negativo.', 'value');
     if (money.balance < 0) throw conflict('El total cobrable no puede ser inferior a los abonos registrados.');
+    const addedActivities = masterReopen && input.products
+      ? await reopenCompletedOrderProducts(tx, id, input.products, normalized.value)
+      : 0;
+    const reopened = masterReopen && addedActivities > 0;
+    const targetStatus = reopened ? 'IN_PRODUCTION' : input.products && !masterReopen ? 'IN_PRODUCTION' : row.status;
     const updated = (await tx.query<OrderRow>(`
       UPDATE orders SET client_id=$1,description=$2,value=$3,document_type=$4,category=$5,route=$6,requires_installation=$7,
         material=$8,length=$9,width=$10,rete_fuente=$11,rete_iva=$12,ica=$13,
         status=$15,certificate_rete_fuente=CASE WHEN rete_fuente=$11 THEN certificate_rete_fuente ELSE false END,
         certificate_rete_iva=CASE WHEN rete_iva=$12 THEN certificate_rete_iva ELSE false END,
         certificate_ica=CASE WHEN ica=$13 THEN certificate_ica ELSE false END,
+        ready_for_installation_at=CASE WHEN $16 THEN NULL ELSE ready_for_installation_at END,
+        installed_at=CASE WHEN $16 THEN NULL ELSE installed_at END,
+        installation_note=CASE WHEN $16 THEN NULL ELSE installation_note END,
         updated_at=clock_timestamp(),version=version+1
-      WHERE id=$14 RETURNING *`, [...inputParams(normalized), id, input.products ? 'IN_PRODUCTION' : row.status])).rows[0];
-    if (input.products) await replaceOrderProducts(tx, id, input.products);
+      WHERE id=$14 RETURNING *`, [...inputParams(normalized), id, targetStatus, reopened])).rows[0];
+    if (input.products && !masterReopen) await replaceOrderProducts(tx, id, input.products);
     else {
       const legacy = (await tx.query<{ id: string }>('SELECT id FROM order_products WHERE order_id=$1 AND is_legacy=true', [id])).rows[0];
       if (legacy) {

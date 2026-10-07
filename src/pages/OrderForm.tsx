@@ -33,10 +33,11 @@ export function OrderFormPage() {
   const order = id ? data.orders.find(item => item.id === id) : undefined;
   if (!canCreate(user?.role)) return <EmptyState title="No tienes acceso a crear órdenes" description="La creación corresponde a Administración y Diseño." action={<Link className="btn btn-secondary" to="/orders">Ver órdenes</Link>} />;
   if (id && !order) return <EmptyState title="No encontramos esta orden" action={<Link className="btn btn-secondary" to="/orders">Volver a órdenes</Link>} />;
-  if (order && (!isAdmin(user?.role) || !['NEW', 'PENDING_ADMIN_REVIEW', 'IN_PRODUCTION'].includes(order.status))) return <EmptyState title="Esta orden no está disponible para edición" description="Administración puede editar la OT antes de que inicie una actividad de producción." action={<Link className="btn btn-secondary" to={`/orders/${order.id}`}>Volver a la orden</Link>} />;
+  const masterReopen = order && user?.role === 'ADMINMASTER' && !order.closedAt && ['COMPLETED', 'INSTALLED'].includes(order.status);
+  if (order && (!isAdmin(user?.role) || !['NEW', 'PENDING_ADMIN_REVIEW', 'IN_PRODUCTION'].includes(order.status) && !masterReopen)) return <EmptyState title="Esta orden no está disponible para edición" description="Administración puede editar la OT antes de que inicie una actividad de producción. Adminmaster también puede corregir una OT terminada que aún no esté cerrada." action={<Link className="btn btn-secondary" to={`/orders/${order.id}`}>Volver a la orden</Link>} />;
   const initialClientId = params.get('client') || params.get('clientId') || '';
   if (!order) return <NewOrderEditor initialClientId={initialClientId} />;
-  if (order.status === 'IN_PRODUCTION') return <NewOrderEditor key={order.id} existing={order} initialClientId={initialClientId} />;
+  if (order.status === 'IN_PRODUCTION' || masterReopen) return <NewOrderEditor key={order.id} existing={order} initialClientId={initialClientId} />;
   return <OrderEditor key={id} existing={order} initialClientId={initialClientId} />;
 }
 

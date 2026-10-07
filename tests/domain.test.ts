@@ -140,6 +140,23 @@ describe('Edición protegida de órdenes', () => {
   it.each(['IN_PRINTING', 'IN_WORKSHOP', 'PENDING_INSTALLATION', 'COMPLETED', 'INSTALLED'] as WorkStatus[])('protege los datos en %s', status => {
     expect(() => editWorkOrder(data(), user(), order({ status }), input())).toThrow(/protegidos/);
   });
+  it('ADMINMASTER conserva Diseño terminado y agrega áreas faltantes al reabrir', () => {
+    const original = order({ status:'COMPLETED', route:'MULTI_AREA', printing:undefined, products:[{
+      id:'product-1', description:'Arte', quantity:1, unitValue:100000, materials:[], activities:[{
+        id:'design-1', area:'DESIGN', assignedUserId:'user-DISENO', status:'COMPLETED', completedAt:NOW,
+      }],
+    }] });
+    const result = editWorkOrder(data([original]), user('ADMINMASTER'), original, input({ route:'PRINT_WORKSHOP', printing:undefined, products:[{
+      description:'Arte', quantity:1, unitValue:100000, materials:[{ material:'Banner', length:2, width:1 }], activities:[
+        { area:'DESIGN', assignedUserId:'user-DISENO' }, { area:'PRINTING', printingType:'PRINT' }, { area:'WORKSHOP' },
+      ],
+    }] }));
+    expect(result.status).toBe('IN_PRODUCTION');
+    expect(result.products?.[0].activities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id:'design-1', area:'DESIGN', status:'COMPLETED' }),
+      expect.objectContaining({ area:'PRINTING' }), expect.objectContaining({ area:'WORKSHOP' }),
+    ]));
+  });
   it('impide bajar el total por debajo de abonos existentes', () => {
     const original = order({ payments: [{ id: 'p1', date: '2026-09-01', amount: 50000, recordedBy: 'admin' }] });
     expect(() => editWorkOrder(data([original]), user(), original, input({ value: 49999 }))).toThrow(/inferior a los pagos/);

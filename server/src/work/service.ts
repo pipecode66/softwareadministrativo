@@ -195,6 +195,82 @@ export async function replaceOrderProducts(tx: SqlConnection, orderId: string, p
   await createOrderProducts(tx, orderId, products);
 }
 
+/** Reopens a finished composite OT without erasing work already completed. */
+export async function reopenCompletedOrderProducts(
+  tx: SqlConnection, orderId: string, products: ProductInput[], expectedValue: number,
+): Promise<number> {
+  const parsed = normalizeProducts(products, { id: '', role: 'ADMINMASTER' });
+  const expected = Math.round(expectedValue * 100);
+  const subtotal = parsed.reduce((sum, product) => sum + lineCents(product.quantity, product.unitValue), 0);
+  if (subtotal !== expected) throw new ApiError(400, 'PRODUCT_SUBTOTAL', 'La suma de productos debe coincidir con el valor base de la OT.', 'products');
+  const currentProducts = (await tx.query<ProductRow>(`
+    SELECT id,order_id,position,description,quantity,unit_value,line_total
+    FROM order_products WHERE order_id=$1 ORDER BY position
+  `, [orderId])).rows;
+  if (currentProducts.length !== parsed.length) {
+    throw conflict('Al reabrir una OT terminada no se pueden agregar ni eliminar productos; solo agregar áreas faltantes a los productos existentes.');
+  }
+  const currentActivities = (await tx.query<ActivityRow>(`
+    SELECT * FROM order_activities WHERE order_id=$1 ORDER BY product_id,position
+  `, [orderId])).rows;
+  const assigned = [...new Set(parsed.flatMap(product => product.activities
+    .map(activity => activity.assignedUserId).filter((id): id is string => !!id)))];
+  for (const id of assigned) {
+    const designer = await tx.query('SELECT id FROM users WHERE id=$1 AND role=$2 AND is_active=true FOR SHARE', [id, 'DISENO']);
+    if (!designer.rows.length) throw new ApiError(400, 'DESIGNER_UNAVAILABLE', 'Selecciona un diseñador activo.', 'assignedUserId');
+  }
+  let added = 0;
+  for (const [index, product] of parsed.entries()) {
+    const current = currentProducts[index];
+    const activities = currentActivities.filter(activity => activity.product_id === current.id);
+    for (const activity of activities) {
+      const requested = product.activities.find(item => item.area === activity.area);
+      if (!requested) throw conflict('No se puede retirar un área que ya trabajó en una OT terminada.');
+      if (activity.area === 'DESIGN' && activity.assigned_user_id !== (requested.assignedUserId ?? null)) {
+        throw conflict('No se puede cambiar el diseñador de una actividad ya terminada.');
+      }
+      if (activity.area === 'PRINTING' && activity.printing_type !== (requested.printingType ?? 'PRINT')) {
+        throw conflict('No se puede cambiar el tipo de una impresión ya terminada.');
+      }
+    }
+    await tx.query(`UPDATE order_products SET description=$2,quantity=$3,unit_value=$4,updated_at=clock_timestamp() WHERE id=$1`,
+      [current.id, product.description, product.quantity, product.unitValue]);
+    const hadPrinting = activities.some(activity => activity.area === 'PRINTING');
+    if (hadPrinting) {
+      const storedMaterials = (await tx.query<MaterialRow>(`
+        SELECT id,product_id,position,material,length,width,consumed_at
+        FROM order_product_materials WHERE product_id=$1 ORDER BY position
+      `, [current.id])).rows;
+      const unchangedMaterials = storedMaterials.length === product.materials.length && product.materials.every((material, materialIndex) => {
+        const stored = storedMaterials[materialIndex];
+        return stored.material === material.material && Number(stored.length) === material.length && Number(stored.width) === material.width;
+      });
+      if (!unchangedMaterials) throw conflict('No se pueden cambiar materiales de una impresión que ya fue terminada.');
+    } else {
+      await tx.query('DELETE FROM order_product_materials WHERE product_id=$1', [current.id]);
+      for (const [position, material] of product.materials.entries()) {
+        await tx.query(`INSERT INTO order_product_materials
+          (id,order_id,product_id,position,material,length,width) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [randomUUID(), orderId, current.id, position + 1, material.material, material.length, material.width]);
+      }
+    }
+    await tx.query('UPDATE order_activities SET position=position+1000 WHERE product_id=$1', [current.id]);
+    for (const [position, requested] of product.activities.entries()) {
+      const existing = activities.find(activity => activity.area === requested.area);
+      if (existing) {
+        await tx.query('UPDATE order_activities SET position=$2,updated_at=clock_timestamp() WHERE id=$1', [existing.id, position + 1]);
+      } else {
+        await tx.query(`INSERT INTO order_activities
+          (id,order_id,product_id,position,area,assigned_user_id,printing_type)
+          VALUES ($1,$2,$3,$4,$5,$6,$7)`, [randomUUID(), orderId, current.id, position + 1, requested.area,
+          requested.assignedUserId ?? null, requested.area === 'PRINTING' ? requested.printingType ?? 'PRINT' : null]);
+        added += 1;
+      }
+    }
+  }
+  return added;
+}
+
 function visibleActivity(role: Role, userId: string, row: ActivityRow): boolean {
   if (admin(role)) return true;
   if (role === 'DISENO') return row.area === 'DESIGN' && (!row.assigned_user_id || row.assigned_user_id === userId);

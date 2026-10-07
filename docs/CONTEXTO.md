@@ -16,6 +16,8 @@ Impresión puede ser normal o Corte Láser. La normal utiliza uno o varios mater
 
 Administración edita OT antes de iniciar actividades, registra pagos, certificados y multiabonos. Diseño crea clientes y consulta su historial operativo, pero no recibe totales de órdenes, pagos, saldos, retenciones ni certificados. Impresión y Taller tampoco reciben importes comerciales. Al revisar una OT, Impresión y Taller pueden ver el nombre y rol de quien la registró, sin acceso al directorio de usuarios ni a sus correos.
 
+Como excepción exclusiva, ADMINMASTER puede editar una OT `COMPLETED` o `INSTALLED` mientras no tenga cierre administrativo. En esa corrección conserva las actividades ya terminadas y puede agregar áreas faltantes a los productos existentes; si agrega alguna, la OT vuelve a `IN_PRODUCTION` con las nuevas actividades pendientes. No puede retirar áreas ya trabajadas, cambiar responsables o tipos de actividades terminadas, modificar materiales ya consumidos, ni agregar o eliminar productos.
+
 Antes de finalizar una actividad de Taller, el perfil de Taller puede escribir observaciones opcionales. El texto queda guardado en la actividad y visible posteriormente en la OT; las órdenes del flujo heredado lo guardan directamente en la OT.
 
 ## Datos comerciales

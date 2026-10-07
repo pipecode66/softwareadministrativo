@@ -81,10 +81,10 @@ El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al m
 ## Verificación local
 
 - `npm run typecheck`: aprobado.
-- `npm test`: 150/150 en 3 archivos.
+- `npm test`: 151/151 en 3 archivos.
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
-- `npm --prefix server test`: 271/271 en 9 archivos.
+- `npm --prefix server test`: 272/272 en 9 archivos.
 - La prueba de limpieza total confirma las nueve tablas comerciales vacías, usuarios/sesiones/configuración conservados y la siguiente OT en 1.
 - La regresión FACT → REM confirma documento REM, IVA y retenciones en cero, certificados desmarcados y saldo recalculado.
 - Las pruebas confirman que Impresión normal sin materiales se rechaza tanto con Diseño como sin Diseño, mientras Corte Láser sigue admitiendo cero materiales.
@@ -96,6 +96,7 @@ El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al m
 - Se añadió el módulo administrativo `Historial`, con todos los eventos, expansión del cambio y enlace directo a la OT. La migración `010_audit_history.sql` agrega el detalle JSON estructurado a `order_events` sin alterar registros previos.
 - Se retiró por decisión del cliente la eliminación de OT: no existe botón, contrato frontend ni endpoint de servidor para borrar órdenes. La migración compensatoria `012_disable_order_deletion.sql` devuelve el consecutivo a `GENERATED ALWAYS`.
 - Taller puede guardar observaciones opcionales al finalizar, tanto en actividades por producto como en el flujo heredado; el dato permanece visible en la OT terminada.
+- ADMINMASTER puede corregir una OT terminada o instalada que todavía no esté cerrada. Al agregar áreas omitidas conserva las actividades finalizadas, crea solo las faltantes como pendientes y devuelve la OT a producción; ADMIN_GENERAL y los demás perfiles permanecen bloqueados.
 - Pruebas dirigidas de órdenes, actividades y Corte Láser: 120/120.
 - Pruebas E2E locales de Impresión, Taller y materiales: 3/3.
 - Prueba E2E dirigida para Impresión y Taller: 2/2; ambos perfiles visualizan al creador en el detalle.
@@ -128,7 +129,8 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Borrado administrativo con renumeración del 06/10 | 1 | 1 |
 | Observaciones al finalizar Taller del 06/10 | 1 | 1 |
 | Retiro del borrado de OT del 07/10 | 1 | 1 |
-| **Acumulado** | **42** | **24** |
+| Reapertura correctiva exclusiva de ADMINMASTER del 07/10 | 1 | 1 |
+| **Acumulado** | **43** | **25** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
@@ -145,6 +147,8 @@ El historial se considera significativo porque incorpora persistencia estructura
 El borrado se considera significativo porque elimina de forma transaccional toda la información de una OT, renumera los registros posteriores y reajusta el consecutivo automático sin duplicados.
 
 El retiro del borrado se considera significativo porque revierte por completo ese flujo, elimina su endpoint y devuelve la protección del consecutivo en la base de datos.
+
+La reapertura correctiva se considera significativa porque modifica las reglas de edición y el ciclo productivo de una OT terminada, preservando trabajo histórico y generando únicamente las actividades faltantes.
 
 Las observaciones de Taller se consideran significativas porque añaden persistencia nueva al cierre productivo, modifican el contrato del servidor y requieren migración de base de datos.
 

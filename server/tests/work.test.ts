@@ -330,6 +330,39 @@ describe('Productos y trabajo interno', () => {
         expect.objectContaining({ area: 'EXTERNAL' }),
       ]));
   });
+
+  it('solo ADMINMASTER reabre una OT terminada agregando áreas sin borrar Diseño finalizado', async () => {
+    const order = await create({ value:40000, route:'MULTI_AREA', products:[{
+      description:'Arte aprobado', quantity:1, unitValue:40000, materials:[],
+      activities:[{ area:'DESIGN', assignedUserId:defaultDesignerId }],
+    }] });
+    const designer = await login(`default-${defaultDesignerId}@example.test`);
+    const design = ((await get(`/work/activities?orderId=${order.id}`)).body.items as Activity[])[0];
+    await post(`/work/activities/${design.id}/start`, {}, designer);
+    await post(`/work/activities/${design.id}/complete`, {}, designer);
+    const completed = (await get(`/orders/${order.id}`)).body.order;
+    expect(completed.status).toBe('COMPLETED');
+    const general = await actor('ADMIN_GENERAL');
+    const payload = {
+      clientId, description:'Arte aprobado', value:40000, documentType:'REM', category:'Proyecto',
+      route:'PRINT_WORKSHOP', requiresInstallation:false, reteFuente:0, reteIva:0, ica:0,
+      products:[{ description:'Arte aprobado', quantity:1, unitValue:40000,
+        materials:[{ material:'Banner', length:2, width:1 }], activities:[
+          { area:'DESIGN', assignedUserId:defaultDesignerId }, { area:'PRINTING', printingType:'PRINT' }, { area:'WORKSHOP' },
+        ] }], expectedVersion:completed.version,
+    };
+    expect((await patch(`/orders/${order.id}`, payload, general)).status).toBe(409);
+    const reopened = await patch(`/orders/${order.id}`, payload, admin);
+    expect(reopened.status).toBe(200);
+    expect(reopened.body.order.status).toBe('IN_PRODUCTION');
+    const activities = (await get(`/work/activities?orderId=${order.id}`)).body.items as Activity[];
+    expect(activities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id:design.id, area:'DESIGN', status:'COMPLETED' }),
+      expect.objectContaining({ area:'PRINTING', status:'PENDING' }),
+      expect.objectContaining({ area:'WORKSHOP', status:'PENDING' }),
+    ]));
+    expect(activities).toHaveLength(3);
+  });
 });
 
 describe('Migración de materiales históricos', () => {

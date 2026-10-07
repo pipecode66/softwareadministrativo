@@ -167,7 +167,8 @@ export function OrderDetailPage() {
   const creatorRole = order.creatorRole || creator?.role;
   const money = financials(order);
   const nextAction = availableAction(order, user?.role);
-  const canEdit = admin && !order.closedAt && ['NEW', 'PENDING_ADMIN_REVIEW', 'IN_PRODUCTION'].includes(order.status);
+  const canEdit = !order.closedAt && (admin && ['NEW', 'PENDING_ADMIN_REVIEW', 'IN_PRODUCTION'].includes(order.status)
+    || user?.role === 'ADMINMASTER' && ['COMPLETED', 'INSTALLED'].includes(order.status));
   const paymentPercentage = money.collectible > 0 ? Math.min(100, Math.max(0, money.paid / money.collectible * 100)) : 100;
   const amount = Number(paymentAmount) || 0;
   const remainingAfterPayment = (Math.round(money.balance * 100) - Math.round(roundMoney(Number.isFinite(amount) ? amount : 0) * 100)) / 100;

@@ -41,6 +41,7 @@
 39. La auditoría de una OT conserva actor, rol, fecha, hora, acción y cambios detectados. Todos los perfiles pueden verla dentro de una OT que ya tengan autorizada, pero el módulo global Historial es exclusivo de ADMINMASTER y ADMIN_GENERAL. Los perfiles operativos nunca reciben cambios financieros; los eventos anteriores a esta estructura conservan actor, fecha y acción aunque no tengan desglose retroactivo.
 40. Las OT no pueden eliminarse desde la aplicación. La eliminación administrativa y la renumeración de OT posteriores fueron descartadas; el consecutivo vuelve a ser una identidad `GENERATED ALWAYS` asignada exclusivamente por el servidor.
 41. Taller puede registrar hasta 4000 caracteres de observaciones opcionales al finalizar su actividad. Las observaciones quedan persistidas y visibles en la OT finalizada; no bloquean la finalización si se dejan vacías.
+42. Solo ADMINMASTER puede editar una OT `COMPLETED` o `INSTALLED` no cerrada para corregir áreas omitidas. Las actividades terminadas se conservan y únicamente se crean las áreas faltantes como pendientes; si existe trabajo nuevo, la OT vuelve a `IN_PRODUCTION`. No se pueden retirar áreas trabajadas, alterar su responsable o tipo, modificar materiales consumidos, ni agregar o eliminar productos. ADMIN_GENERAL conserva el bloqueo de OT terminadas.
 
 ## Decisiones sustituidas
 
