@@ -252,49 +252,6 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
   });
 }
 
-export async function deleteOrder(db: Database, auth: AuthSession, id: string, expectedVersion: number) {
-  return db.transaction(async tx => {
-    const actor = await requireCurrentActor(tx, auth, admins);
-    // Serializes deletions with identity-backed inserts so the visible sequence
-    // can be compacted without duplicate OT numbers.
-    await tx.exec('LOCK TABLE orders IN ACCESS EXCLUSIVE MODE');
-    const row = await lockedOrder(tx, id);
-    checkVersion(row, expectedVersion);
-    const deletedNumber = row.number;
-    const maximum = Number((await tx.query<{ maximum: string }>(
-      'SELECT coalesce(max(number),0) AS maximum FROM orders',
-    )).rows[0].maximum);
-
-    await tx.query('DELETE FROM order_product_materials WHERE order_id=$1', [id]);
-    await tx.query('DELETE FROM order_activities WHERE order_id=$1', [id]);
-    await tx.query('DELETE FROM order_products WHERE order_id=$1', [id]);
-    await tx.query('DELETE FROM payments WHERE order_id=$1', [id]);
-    await tx.query('DELETE FROM order_events WHERE order_id=$1', [id]);
-    await tx.query('DELETE FROM orders WHERE id=$1', [id]);
-
-    let shifted: Array<{ id: string; number: number; status: string }> = [];
-    if (deletedNumber < maximum) {
-      await tx.query('UPDATE orders SET number=number+$1 WHERE number>$2', [maximum, deletedNumber]);
-      shifted = (await tx.query<{ id: string; number: number; status: string }>(`
-        UPDATE orders SET number=number-$1-1,version=version+1,updated_at=clock_timestamp()
-        WHERE number>$1 RETURNING id,number,status
-      `, [maximum])).rows;
-      for (const order of shifted) {
-        await event(tx, { id:order.id, status:order.status } as OrderRow, actor.id, 'renumber', order.status, {
-          summary:'Renumeró la OT por eliminación de una orden anterior.',
-          changes:[{ label:'Número de OT', before:order.number+1, after:order.number }],
-        });
-      }
-    }
-    const nextMaximum = Number((await tx.query<{ maximum: string }>(
-      'SELECT coalesce(max(number),0) AS maximum FROM orders',
-    )).rows[0].maximum);
-    await tx.query(`SELECT setval(pg_get_serial_sequence('orders','number'),$1,$2)`,
-      [Math.max(1,nextMaximum), nextMaximum > 0]);
-    return { deletedNumber, shifted: shifted.length };
-  });
-}
-
 export async function recordPayment(db: Database, auth: AuthSession, id: string, input: z.infer<typeof paymentSchema>) {
   return db.transaction(async tx => {
     const actor = await requireCurrentActor(tx, auth, admins);

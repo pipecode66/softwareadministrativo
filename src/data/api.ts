@@ -204,9 +204,6 @@ export async function apiUpdateOrder(id: string, input: OrderInput, expectedVers
     ...(input.products ? { products: productFields(input.products) } : {}), expectedVersion }) });
   return asOrder(body.order);
 }
-export function apiDeleteOrder(id: string, expectedVersion: number): Promise<{ deletedNumber: number; shifted: number }> {
-  return request<{ deletedNumber: number; shifted: number }>(`/orders/${encodeURIComponent(id)}?${queryString({ expectedVersion })}`, { method: 'DELETE' });
-}
 export type NewPayment = { date: string; amount: number; method: Exclude<PaymentMethod, 'LEGACY'> };
 export async function apiAddPayment(id: string, payment: NewPayment, requestId: string): Promise<WorkOrder> {
   const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}/payments`, { method: 'POST', body: JSON.stringify({ ...payment, requestId }) });

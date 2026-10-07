@@ -5,7 +5,7 @@ import { createWorkOrder, editWorkOrder, recordPayment, transitionWorkOrder, val
 import { financials, isAdmin, ROLE_LABELS } from '../domain/utils';
 import {
   apiAddPayment, apiBulkPayment, apiCertificateReport, apiSetCertificates, apiChangePassword, apiCreateOrder, apiCreateUser, apiListClients, apiListOrders, apiListUsers, apiLogin, apiLogout, apiResetPassword,
-  apiDeleteOrder, apiMaterialReport, apiPortfolioReport, apiSalesReport, apiSaveClient, apiSession, apiTransitionOrder, apiUpdateOrder, apiUpdateUser,
+  apiMaterialReport, apiPortfolioReport, apiSalesReport, apiSaveClient, apiSession, apiTransitionOrder, apiUpdateOrder, apiUpdateUser,
   ApiRequestError, forgetApiSession, usingApi,
 } from './api';
 import type { BulkPaymentResult, CertificateReport, MaterialReport, NewPayment, PortfolioReport, SalesReport } from './api';
@@ -30,7 +30,6 @@ interface AppContextValue {
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   createOrder: (input: OrderInput) => Promise<WorkOrder>; updateOrder: (id: string, input: OrderInput) => Promise<void>;
-  deleteOrder: (id: string) => Promise<{ deletedNumber: number; shifted: number }>;
   addPayment: (id: string, payment: NewPayment) => Promise<void>;
   bulkPayment: (input: { clientId: string; selectedOrderIds: string[] } & NewPayment, requestId: string) => Promise<BulkPaymentResult>;
   transitionOrder: (id: string, action: OrderAction, details?: { date?: string; note?: string; receivedByWorkshop?: string; workshopNotes?: string }) => Promise<void>;
@@ -251,21 +250,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
       modifyOrder(id, (order, current, account) => editWorkOrder(current, account, order, input));
-    },
-    async deleteOrder(id) {
-      const current = dataRef.current;
-      const order = current.orders.find(item => item.id === id);
-      if (!order) throw new Error('No encontramos esta orden.');
-      if (!isAdmin(actor(current).role)) throw new Error('Solo Administración puede eliminar órdenes.');
-      if (usingApi) {
-        const result = await remote(() => apiDeleteOrder(id, order.version ?? 1));
-        await refreshData();
-        return result;
-      }
-      const shifted = current.orders.filter(item => item.number > order.number).length;
-      commit({ ...current, orders:current.orders.filter(item => item.id !== id)
-        .map(item => item.number > order.number ? { ...item, number:item.number-1 } : item) });
-      return { deletedNumber:order.number, shifted };
     },
     async addPayment(id, payment) {
       if (usingApi) {

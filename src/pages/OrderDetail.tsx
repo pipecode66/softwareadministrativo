@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Banknote, Check, CheckCircle2, ClipboardList, Clock3, FileText, Hammer, MapPin, Pencil, Plus, Printer, Ruler, Trash2, Wallet } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Banknote, Check, CheckCircle2, ClipboardList, Clock3, FileText, Hammer, MapPin, Pencil, Plus, Printer, Ruler, Wallet } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { OrderAction, OrderActivity, OrderProduct, PaymentMethod, Role, WorkOrder } from '../domain/types';
 import { apiChangeActivity, apiDesignerLoad, apiSaveLaserMinutes, apiWorkOrder, usingApi } from '../data/api';
@@ -145,11 +145,10 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
 
 export function OrderDetailPage() {
   const { id } = useParams();
-  const { data, user, addPayment, deleteOrder, transitionOrder, refreshData, toast } = useApp();
+  const { data, user, addPayment, transitionOrder, refreshData, toast } = useApp();
   const navigate = useNavigate();
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [actionOpen, setActionOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const [paymentDate, setPaymentDate] = useState(today);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<Exclude<PaymentMethod, 'LEGACY'>>('EFECTIVO');
@@ -161,7 +160,6 @@ export function OrderDetailPage() {
   const [saving, setSaving] = useState(false);
   const order = visibleOrders(user, data.orders).find(item => item.id === id);
   if (!order) return <EmptyState title="Esta orden no está disponible en tu bandeja" description="Puedes consultar las órdenes asignadas a tu perfil desde el listado." action={<Link className="btn btn-secondary" to="/orders">Volver a órdenes</Link>} />;
-  const orderId = order.id;
   const admin = isAdmin(user?.role);
   const client = data.clients.find(item => item.id === order.clientId);
   const creator = data.users.find(person => person.id === order.createdBy);
@@ -177,16 +175,6 @@ export function OrderDetailPage() {
 
   function openPayment() { setError(''); setPaymentAmount(''); setPaymentMethod('EFECTIVO'); setPaymentDate(today()); setPaymentOpen(true); }
   function openAction() { setError(''); setInstallationDate(today()); setInstallationNote(''); setReceivedByWorkshop(''); setWorkshopNotes(''); setActionOpen(true); }
-  async function submitDelete() {
-    if (saving) return;
-    setSaving(true); setError('');
-    try {
-      const result = await deleteOrder(orderId);
-      toast(`OT #${result.deletedNumber} eliminada. ${result.shifted} ${result.shifted === 1 ? 'orden fue renumerada' : 'órdenes fueron renumeradas'}.`);
-      navigate('/orders', { replace: true });
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'No fue posible eliminar la orden.'); }
-    finally { setSaving(false); }
-  }
   async function submitPayment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!order || saving) return;
@@ -226,7 +214,7 @@ export function OrderDetailPage() {
 
   return <div className="page-stack order-detail-page">
     <Link className="order-back-link" to="/orders"><ArrowLeft size={17} /> Órdenes de trabajo</Link>
-    <PageHeader eyebrow="ORDEN DE TRABAJO" title={`OT #${String(order.number).padStart(4, '0')}`} description={client?.name || 'Cliente no disponible'} actions={admin ? <div className="order-detail-top-actions">{canEdit && <Link className="btn btn-secondary" to={`/orders/${order.id}/edit`}><Pencil size={16} /> Editar OT</Link>}<Button variant="danger" onClick={() => { setError(''); setDeleteOpen(true); }}><Trash2 size={16} /> Borrar OT</Button><Link className="btn btn-secondary" to={`/orders/${order.id}/print`}><Printer size={16} /> Vista imprimible</Link></div> : undefined} />
+    <PageHeader eyebrow="ORDEN DE TRABAJO" title={`OT #${String(order.number).padStart(4, '0')}`} description={client?.name || 'Cliente no disponible'} actions={admin ? <div className="order-detail-top-actions">{canEdit && <Link className="btn btn-secondary" to={`/orders/${order.id}/edit`}><Pencil size={16} /> Editar OT</Link>}<Link className="btn btn-secondary" to={`/orders/${order.id}/print`}><Printer size={16} /> Vista imprimible</Link></div> : undefined} />
     <div className="order-detail-status"><WorkBadge status={order.status} /><DocumentBadge type={order.documentType} />{admin && <PaymentBadge status={money.paymentStatus} />}{order.closedAt && <span className="badge order-closed-badge"><CheckCheckIcon /> Cierre administrativo registrado</span>}<span className="order-last-update"><Clock3 size={14} /> Último cambio: {formatDate(order.updatedAt, true)}</span></div>
     <Card className="order-workflow-card"><CardHeader title="Ruta de producción" description={`${ROUTE_LABELS[order.route]}${order.requiresInstallation ? ' · Instalación requerida' : ''}`} /><ProductionSteps order={order} /></Card>
     <div className="order-detail-grid">
@@ -256,9 +244,6 @@ export function OrderDetailPage() {
     </Modal>
     <Modal open={actionOpen} onClose={() => setActionOpen(false)} title={nextAction?.label || 'Actualizar orden'}>
       <form className="stack" onSubmit={submitAction} noValidate><div className="order-action-confirm"><span className="eyebrow">OT #{String(order.number).padStart(4, '0')}</span><h3>{client?.name}</h3><p>{order.description}</p><WorkBadge status={order.status} /></div><p>{actionDescription}</p>{nextAction?.action === 'finishPrinting' && <Field label="Quién recibe en Taller *" htmlFor="detail-printing-handoff"><input className="input" id="detail-printing-handoff" type="text" maxLength={200} value={receivedByWorkshop} onChange={event => { setReceivedByWorkshop(event.target.value); setError(''); }} required /></Field>}{nextAction?.action === 'finishWorkshop' && <Field label="Observaciones de Taller" htmlFor="detail-workshop-notes" hint="Opcional"><textarea className="textarea" id="detail-workshop-notes" rows={4} maxLength={4000} value={workshopNotes} onChange={event => setWorkshopNotes(event.target.value)} /></Field>}{nextAction?.action === 'install' && <><Field label="Fecha de instalación *" htmlFor="detail-install-date"><input className="input" id="detail-install-date" type="date" value={installationDate} min={dateOnly(order.readyForInstallationAt || order.updatedAt)} max={today()} onChange={event => setInstallationDate(event.target.value)} required /></Field><Field label="Observaciones de instalación" htmlFor="detail-install-note" hint="Opcional"><textarea className="textarea" id="detail-install-note" rows={3} maxLength={1000} value={installationNote} onChange={event => setInstallationNote(event.target.value)} /></Field></>}{error && <p className="order-field-error" role="alert">{error}</p>}<div className="actions"><Button type="button" variant="secondary" onClick={() => setActionOpen(false)}>Cancelar</Button><Button type="submit" disabled={saving}><Check size={17} />{saving ? 'Guardando…' : 'Confirmar'}</Button></div></form>
-    </Modal>
-    <Modal open={deleteOpen} onClose={() => { if (!saving) setDeleteOpen(false); }} title={`Borrar OT #${String(order.number).padStart(4, '0')}`}>
-      <div className="stack"><p>Esta acción eliminará definitivamente la orden y sus pagos, productos y actividades. Las OT posteriores bajarán un número para conservar la secuencia consecutiva.</p>{error && <p className="order-field-error" role="alert">{error}</p>}<div className="actions"><Button type="button" variant="secondary" onClick={() => setDeleteOpen(false)} disabled={saving}>Cancelar</Button><Button type="button" variant="danger" onClick={() => void submitDelete()} disabled={saving}><Trash2 size={17} />{saving ? 'Borrando…' : 'Borrar definitivamente'}</Button></div></div>
     </Modal>
   </div>;
 }
