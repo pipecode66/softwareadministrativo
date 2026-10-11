@@ -18,7 +18,7 @@ export function validateInput(data: AppData, input: OrderInput, exceptId?: strin
   assert(['REM','FACT'].includes(input.documentType), 'Selecciona REM o FACT.');
   assert(CATEGORIES.includes(input.category), 'Selecciona una categoría comercial.');
   assert(['PRINT_ONLY','IMPRENTA','EXTERNO','WORKSHOP_ONLY','PRINT_WORKSHOP','MULTI_AREA'].includes(input.route), 'Selecciona un recorrido válido.');
-  const retentions = [input.reteFuente,input.reteIva,input.ica];
+  const retentions = [input.reteFuente,input.reteIva,input.ica].filter((value): value is number => value !== undefined);
   assert(retentions.every(v => Number.isFinite(v) && v >= 0), 'Las retenciones deben ser importes positivos o cero.');
   assert(retentions.every(v => v <= 999999999999), 'Las retenciones superan el importe máximo permitido.');
   if (input.products) {
@@ -42,19 +42,23 @@ export function validateInput(data: AppData, input: OrderInput, exceptId?: strin
 function cleanInput(input: OrderInput, onCreate = false): OrderInput {
   const automatic = onCreate && input.products && input.documentType === 'FACT' && input.value > 524000;
   return { ...input, description: input.description.trim(), value: roundMoney(input.value),
-    reteFuente: input.documentType === 'FACT' ? automatic ? roundMoney(input.value * .04) : roundMoney(input.reteFuente) : 0,
-    reteIva: input.documentType === 'FACT' ? automatic ? roundMoney(input.value * .0285) : roundMoney(input.reteIva) : 0,
-    ica: input.documentType === 'FACT' ? automatic ? roundMoney(input.value * .007) : roundMoney(input.ica) : 0,
+    reteFuente: input.documentType === 'FACT' ? input.reteFuente ?? (automatic ? roundMoney(input.value * .04) : 0) : 0,
+    reteIva: input.documentType === 'FACT' ? input.reteIva ?? (automatic ? roundMoney(input.value * .0285) : 0) : 0,
+    ica: input.documentType === 'FACT' ? input.ica ?? (automatic ? roundMoney(input.value * .007) : 0) : 0,
     printing: input.products || ['WORKSHOP_ONLY','EXTERNO','MULTI_AREA'].includes(input.route) ? undefined : input.printing };
 }
 export function createWorkOrder(data: AppData, user: User, input: OrderInput): WorkOrder {
   assert(user.active && canCreate(user.role), 'No tienes permiso para crear órdenes.');
+  assert(isAdmin(user.role) || [input.reteFuente,input.reteIva,input.ica].every(value => value === undefined),
+    'Solo Administración puede ajustar manualmente las retenciones.');
   validateInput(data, input, undefined, isAdmin(user.role));
   const now = new Date().toISOString();
   const number = input.number || Math.max(0, ...data.orders.map(order => order.number)) + 1;
   const payments = input.initialPayment ? [{ id: crypto.randomUUID(), date: input.initialPayment.date,
     amount: input.initialPayment.amount, method: input.initialPayment.method, recordedBy: user.id }] : [];
-  const order: WorkOrder = { ...cleanInput(input, true), number, id: crypto.randomUUID(), createdAt: now, updatedAt: now,
+  const cleaned = cleanInput(input, true);
+  const order: WorkOrder = { ...cleaned, reteFuente: cleaned.reteFuente ?? 0, reteIva: cleaned.reteIva ?? 0,
+    ica: cleaned.ica ?? 0, number, id: crypto.randomUUID(), createdAt: now, updatedAt: now,
     createdBy: user.id, payments, status: input.products ? 'IN_PRODUCTION' : 'NEW',
     financialRule: input.products ? 'NEW' : 'LEGACY', specialPayment: data.clients.find(client => client.id === input.clientId)?.specialPayment };
   assert(financials(order).balance >= 0, 'El abono inicial supera el total a cobrar.');

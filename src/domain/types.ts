@@ -46,7 +46,8 @@ export interface WorkOrder {
   workshopNotes?: string;
   installationNote?: string; closedAt?: string;
 }
-export type OrderInput = Pick<WorkOrder, 'number' | 'clientId' | 'description' | 'value' | 'documentType' | 'category' | 'route' | 'requiresInstallation' | 'printing' | 'reteFuente' | 'reteIva' | 'ica'> & {
+export type OrderInput = Pick<WorkOrder, 'number' | 'clientId' | 'description' | 'value' | 'documentType' | 'category' | 'route' | 'requiresInstallation' | 'printing'> &
+  Partial<Pick<WorkOrder, 'reteFuente' | 'reteIva' | 'ica'>> & {
   initialPayment?: { date: string; amount: number; method: Exclude<PaymentMethod, 'LEGACY'> };
   products?: OrderProductInput[];
 };

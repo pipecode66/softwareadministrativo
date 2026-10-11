@@ -129,6 +129,28 @@ test('creación FACT multiproducto: retenciones automáticas, varios materiales 
   await expect(page.locator('.order-balance-highlight')).toContainText(formatCOP(881600));
 });
 
+test('creación FACT permite ajustar retenciones y dejar en cero las no practicadas', async ({ page }) => {
+  await login(page);
+  await fillOrder(page);
+  await page.getByRole('radio', { name: /FACT/ }).check();
+  await page.locator('.order-product-card').first().getByLabel('Valor unitario antes de IVA (COP) *').fill('535000');
+  await page.getByLabel('Editar retenciones manualmente').check();
+  await expect(page.getByLabel('RETE FUENTE (COP)')).toHaveValue('21400');
+  await expect(page.getByLabel('RETE IVA (COP)')).toHaveValue('15247.5');
+  await expect(page.getByLabel('ICA (COP)')).toHaveValue('3745');
+  await page.getByLabel('RETE FUENTE (COP)').fill('13375');
+  await page.getByLabel('RETE IVA (COP)').fill('0');
+  await page.getByLabel('ICA (COP)').fill('2568');
+  await page.getByLabel('Valor recibido (COP) *').fill('620707');
+
+  await expect(page.locator('.order-preview-total strong')).toContainText(formatCOP(620707));
+  await saveOrder(page);
+
+  const order = (await storedOrders(page)).at(-1)!;
+  expect(order).toMatchObject({ reteFuente: 13375, reteIva: 0, ica: 2568 });
+  expect(financials(order)).toMatchObject({ base: 535000, iva: 101650, retentions: 15943, collectible: 620707, balance: 0 });
+});
+
 test('editor multiproducto y materiales se adapta a 320 px', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 760 });
   await login(page);

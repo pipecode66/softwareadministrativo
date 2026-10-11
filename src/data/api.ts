@@ -155,9 +155,9 @@ function orderFields(input: OrderInput) {
   return { clientId: input.clientId, description: input.description, value: input.value,
     documentType: input.documentType, category: input.category, route: input.route,
     requiresInstallation: input.requiresInstallation, printing: input.printing,
-    reteFuente: input.documentType === 'FACT' ? input.reteFuente : 0,
-    reteIva: input.documentType === 'FACT' ? input.reteIva : 0,
-    ica: input.documentType === 'FACT' ? input.ica : 0 };
+    ...(input.documentType === 'FACT' ? {
+      reteFuente: input.reteFuente, reteIva: input.reteIva, ica: input.ica,
+    } : { reteFuente: 0, reteIva: 0, ica: 0 }) };
 }
 function productFields(products: OrderProductInput[] | undefined) {
   return products?.map(product => ({ description: product.description, quantity: product.quantity,
@@ -191,11 +191,8 @@ export async function apiClientOrderHistory(clientId: string, page = 1, pageSize
   return { ...body, items: body.items.map(asOrder) };
 }
 export async function apiCreateOrder(input: OrderInput, requestId: string): Promise<WorkOrder> {
-  const { reteFuente: _reteFuente, reteIva: _reteIva, ica: _ica, ...fields } = orderFields(input);
-  const retentions = input.documentType === 'FACT' && (input.reteFuente || input.reteIva || input.ica)
-    ? { reteFuente: input.reteFuente, reteIva: input.reteIva, ica: input.ica } : {};
-  const body = await request<{ order: RestrictedOrder }>('/orders', { method: 'POST', body: JSON.stringify({ ...fields,
-    ...retentions, ...(input.initialPayment ? { initialPayment: input.initialPayment } : {}),
+  const body = await request<{ order: RestrictedOrder }>('/orders', { method: 'POST', body: JSON.stringify({ ...orderFields(input),
+    ...(input.initialPayment ? { initialPayment: input.initialPayment } : {}),
     ...(input.products ? { products: productFields(input.products) } : {}), requestId }) });
   return asOrder(body.order);
 }

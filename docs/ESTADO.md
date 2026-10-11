@@ -1,6 +1,6 @@
 # Estado de continuidad
 
-Actualizado: 2026-10-05.
+Actualizado: 2026-10-11.
 
 ## Estado actual
 
@@ -18,8 +18,14 @@ El usuario ejecutó la limpieza total en Supabase y mostró los nueve contadores
 
 El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al menos un material desde su creación o edición, incluso cuando también tenga actividad de Diseño. La interfaz informa la obligación y bloquea el guardado; el servidor aplica la misma regla ante llamadas directas. Corte Láser continúa sin materiales. El cambio quedó verificado y enviado a `origin/main`; no requiere migración SQL.
 
+El 11/10/2026 quedó implementada la edición manual optativa de los importes de retención en nuevas FACT. El formulario mantiene los valores y reglas automáticas por defecto; Administración puede activar la edición para una OT concreta, modificar cada importe y dejar en cero las retenciones que no se practicaron. El servidor acepta esos valores explícitos, incluidos ceros, y bloquea la edición manual desde Diseño. La edición de FACT existentes conserva su flujo. No requiere migración. Se compiló y pasó la suite completa de frontend y API; el caso se comprobó también en el navegador integrado con el adaptador local. Playwright automatizado no pudo arrancar porque faltaba Chromium y su descarga desde el CDN agotó el tiempo de red. El despliegue productivo posterior al push no se ha comprobado.
+
 ## Funcionalidades terminadas en este tramo
 
+- Al crear una FACT, Administración puede activar `Editar retenciones manualmente`; la opción parte de los importes calculados y permite corregir solo los necesarios, incluso indicar cero.
+- Si no activa el modo manual, el servidor continúa aplicando automáticamente RETE FUENTE 4 %, RETE IVA 2,85 % e ICA 7/1000 cuando la base supera $524.000.
+- El resumen actualiza inmediatamente el total cobrable y el saldo con los importes manuales; los borradores conservan el modo y los valores indicados.
+- El servidor diferencia importes no enviados (cálculo automático) de importes enviados como cero, solo admite edición manual de Administración y persiste los importes en la OT; las modificaciones posteriores usan la auditoría financiera existente.
 - Impresión debe escribir quién recibe el trabajo en Taller antes de finalizar su actividad.
 - Un intento vacío o compuesto solo por espacios se rechaza con `Por favor, digitar quien recibe en taller.`.
 - El servidor exige el dato incluso ante llamadas directas y lo normaliza eliminando espacios al inicio y al final.
@@ -49,6 +55,7 @@ El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al m
 - `src/pages/Queues.tsx`
 - `src/data/AppContext.tsx`
 - `src/data/api.ts`
+- `src/data/orderDraft.ts`
 - `src/domain/types.ts`
 - `src/domain/service.ts`
 - `src/data/orderNotifications.ts`
@@ -58,6 +65,7 @@ El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al m
 - `src/pages/orders.css`
 - `src/styles.css`
 - `tests/order-notifications.test.ts`
+- `tests/domain.test.ts`
 - `tests/frontend.spec.ts`
 - `tests/api-e2e.spec.ts`
 - `server/src/orders/domain.ts`
@@ -81,10 +89,11 @@ El 05/10/2026 se estableció que toda OT con Impresión normal debe incluir al m
 ## Verificación local
 
 - `npm run typecheck`: aprobado.
-- `npm test`: 152/152 en 3 archivos.
+- `npm test`: 154/154 en 3 archivos.
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
-- `npm --prefix server test`: 273/273 en 9 archivos.
+- `npm --prefix server test`: 274/274 en 9 archivos.
+- `npm run test:e2e -- tests/frontend.spec.ts -g "creación FACT permite ajustar retenciones"` no pudo iniciar: faltaba el Chromium de Playwright y la descarga desde el CDN agotó el tiempo de red. El mismo recorrido se comprobó interactivamente en el navegador integrado, en modo de revisión local: para una base de $535.000 se mostraron $40.392,50 automáticos y, tras editar RETE FUENTE $13.375, RETE IVA $0 e ICA $2.568, el total cambió a $620.707; se guardó la OT con esos importes y abono por el total.
 - La prueba de limpieza total confirma las nueve tablas comerciales vacías, usuarios/sesiones/configuración conservados y la siguiente OT en 1.
 - La regresión FACT → REM confirma documento REM, IVA y retenciones en cero, certificados desmarcados y saldo recalculado.
 - Las pruebas confirman que Impresión normal sin materiales se rechaza tanto con Diseño como sin Diseño, mientras Corte Láser sigue admitiendo cero materiales.
@@ -132,7 +141,8 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Retiro del borrado de OT del 07/10 | 1 | 1 |
 | Reapertura correctiva exclusiva de ADMINMASTER del 07/10 | 1 | 1 |
 | Materiales diferidos de Administración a Diseño del 07/10 | 1 | 1 |
-| **Acumulado** | **44** | **26** |
+| Edición manual optativa de retenciones FACT del 11/10 | 1 | 1 |
+| **Acumulado** | **45** | **27** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
@@ -161,6 +171,7 @@ Las observaciones de Taller se consideran significativas porque añaden persiste
 1. Ejecutar manualmente `server/migrations/012_disable_order_deletion.sql` en Supabase antes de publicar este código.
 2. Confirmar en producción que ninguna OT presenta una acción de eliminación.
 3. Comprobar en producción una finalización de Taller con observaciones y otra sin observaciones.
+4. Verificar en la instalación productiva la edición manual de retenciones de una FACT; esta entrega no requiere migración SQL y el despliegue no se comprobó desde aquí.
 
 ## Comando para retomar
 

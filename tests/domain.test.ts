@@ -6,8 +6,8 @@ import { areaOf, canCreate, canViewOrder, CATEGORIES, currentMonthRange, dateOnl
 const NOW = '2026-09-14T15:00:00.000Z';
 const roles: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO', 'IMPRESION', 'TALLER'];
 const user = (role: Role = 'ADMIN_GENERAL', overrides: Partial<User> = {}): User => ({ id: `user-${role}`, name: role, email: `${role}@example.test`, role, active: true, ...overrides });
-const input = (overrides: Partial<OrderInput> = {}): OrderInput => ({ number: 1, clientId: 'client-1', description: '  Trabajo publicitario  ', value: 100000, documentType: 'REM', category: 'Otras', route: 'PRINT_WORKSHOP', requiresInstallation: false, printing: { material: 'Panaflex', length: 2.5, width: 1.2 }, reteFuente: 0, reteIva: 0, ica: 0, ...overrides });
-const order = (overrides: Partial<WorkOrder> = {}): WorkOrder => ({ ...input(), id: 'order-1', createdAt: '2026-01-15T18:00:00.000Z', updatedAt: '2026-01-15T18:00:00.000Z', createdBy: user('DISENO').id, payments: [], status: 'NEW', ...overrides });
+const input = (overrides: Partial<OrderInput> = {}): OrderInput => ({ number: 1, clientId: 'client-1', description: '  Trabajo publicitario  ', value: 100000, documentType: 'REM', category: 'Otras', route: 'PRINT_WORKSHOP', requiresInstallation: false, printing: { material: 'Panaflex', length: 2.5, width: 1.2 }, ...overrides });
+const order = (overrides: Partial<WorkOrder> = {}): WorkOrder => ({ ...input(), reteFuente: 0, reteIva: 0, ica: 0, id: 'order-1', createdAt: '2026-01-15T18:00:00.000Z', updatedAt: '2026-01-15T18:00:00.000Z', createdBy: user('DISENO').id, payments: [], status: 'NEW', ...overrides });
 const data = (orders: WorkOrder[] = []): AppData => ({ version: 1, users: roles.map(role => user(role)), clients: [{ id: 'client-1', name: 'Cliente de prueba', identification: '123456', phone: '3001234567', createdAt: '2026-01-01' }], orders });
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(NOW)); });
@@ -53,6 +53,25 @@ describe('Validación y creación de órdenes', () => {
     const result = createWorkOrder(data(), user(role), input());
     expect(result).toMatchObject({ number: 1, description: 'Trabajo publicitario', createdBy: user(role).id, createdAt: NOW, updatedAt: NOW, payments: [], status: 'NEW' });
     expect(result.id).toBeTruthy();
+  });
+  it('conserva una anulación manual explícita de retenciones al crear localmente', () => {
+    const result = createWorkOrder(data(), user(), input({
+      number: 1, value: 535000, documentType: 'FACT', route: 'PRINT_WORKSHOP', printing: undefined,
+      reteFuente: 13375, reteIva: 0, ica: 2568,
+      products: [{
+        description: 'Producción prueba', quantity: 1, unitValue: 535000,
+        materials: [{ material: 'Panaflex', length: 1, width: 1 }],
+        activities: [{ area: 'PRINTING', printingType: 'PRINT' }, { area: 'WORKSHOP' }],
+      }],
+      initialPayment: { date: today(), amount: 1000, method: 'EFECTIVO' },
+    }));
+    expect(result).toMatchObject({ reteFuente: 13375, reteIva: 0, ica: 2568 });
+    expect(financials(result)).toMatchObject({ retentions: 15943, collectible: 620707 });
+  });
+  it('no permite que Diseño envíe incluso retenciones manuales en cero', () => {
+    expect(() => createWorkOrder(data(), user('DISENO'), input({
+      documentType: 'FACT', reteFuente: 0, reteIva: 0, ica: 0,
+    }))).toThrow(/solo administración/i);
   });
   it.each(['IMPRESION', 'TALLER'] as Role[])('%s no puede crear órdenes', role => {
     expect(() => createWorkOrder(data(), user(role), input())).toThrow(/permiso/);

@@ -68,7 +68,7 @@ function input(overrides: Record<string, unknown> = {}): OrderInput {
   return {
     clientId, description: 'Trabajo de prueba', value: 100000, documentType: 'REM', category: 'Proyecto',
     route: 'PRINT_WORKSHOP', requiresInstallation: false,
-    printing: { material: 'Banner', length: 2.5, width: 1.2 }, reteFuente: 0, reteIva: 0, ica: 0,
+    printing: { material: 'Banner', length: 2.5, width: 1.2 },
     ...overrides,
   } as OrderInput;
 }
@@ -552,8 +552,8 @@ describe('OT: validación server-side', () => {
     expect((await get('/orders')).body.total).toBe(0);
   });
 
-  it('Diseño no registra retenciones manuales', async () => {
-    const response = await createRequest({ ...input({ documentType: 'FACT', reteFuente: 10 }), requestId: randomUUID() }, await actor('DISENO'));
+  it('Diseño no registra retenciones manuales, ni siquiera si todas son cero', async () => {
+    const response = await createRequest({ ...input({ documentType: 'FACT', reteFuente: 0, reteIva: 0, ica: 0 }), requestId: randomUUID() }, await actor('DISENO'));
     expect(response.status).toBe(403);
   });
 
@@ -629,6 +629,12 @@ describe('Cambios financieros y ruta externa', () => {
     expect(changed.body.order.financials).toMatchObject({retentions:15084.03,collectible:608477.16});
     const manual = await create({documentType:'FACT',value:100000,reteFuente:100,reteIva:50,ica:25});
     expect(manual.financials).toMatchObject({retentions:175,collectible:118825});
+  });
+
+  it('conserva los importes manuales de FACT al crear, incluso cuando una retención es cero', async () => {
+    const order = await create({documentType:'FACT',value:535000,reteFuente:13375,reteIva:0,ica:2568});
+    expect(order).toMatchObject({reteFuente:13375,reteIva:0,ica:2568});
+    expect(order.financials).toMatchObject({base:535000,iva:101650,retentions:15943,collectible:620707});
   });
 
   it('conserva la regla LEGACY y sus saldos al editar una orden histórica', async () => {

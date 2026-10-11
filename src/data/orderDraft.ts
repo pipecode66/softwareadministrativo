@@ -11,6 +11,10 @@ export interface OrderFormDraft {
   requiresInstallation: boolean;
   paymentAmount: string;
   paymentMethod: Exclude<PaymentMethod, 'LEGACY'>;
+  manualRetentions: boolean;
+  reteFuente: string;
+  reteIva: string;
+  ica: string;
   products: Array<{
     key: string; description: string; quantity: string; unitValue: string;
     design: boolean; printing: boolean; printingType: PrintingType; workshop: boolean; external: boolean;
