@@ -235,7 +235,7 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
     if (money.collectible < 0) throw new ApiError(400, 'INVALID_COLLECTIBLE', 'El total a cobrar no puede ser negativo.', 'value');
     if (money.balance < 0) throw conflict('El total cobrable no puede ser inferior a los abonos registrados.');
     const preserveProduction = Boolean(existingComposite && input.products &&
-      !['NEW','PENDING_ADMIN_REVIEW','IN_PRODUCTION'].includes(row.status));
+      !['NEW','PENDING_ADMIN_REVIEW'].includes(row.status));
     const addedActivities = preserveProduction && input.products
       ? await reopenCompletedOrderProducts(tx, id, input.products, normalized.value, completedOrderEdit && !row.closed_at)
       : 0;

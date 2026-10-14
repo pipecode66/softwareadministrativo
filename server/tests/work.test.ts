@@ -419,6 +419,43 @@ describe('Productos y trabajo interno', () => {
     expect(rejected.status).toBe(409);
     expect(rejected.body.error.message).toContain('materiales');
   });
+
+  it('permite editar una OT IN_PRODUCTION con Impresión iniciada sin borrar su avance ni materiales', async () => {
+    const order = await create();
+    await db.query(`UPDATE order_activities SET status='COMPLETED',completed_at=now()
+      WHERE order_id=$1 AND area='DESIGN'`, [order.id]);
+    await db.query(`UPDATE order_activities SET status='IN_PROGRESS',started_at=now()
+      WHERE order_id=$1 AND area='PRINTING'`, [order.id]);
+    await db.query('UPDATE order_product_materials SET consumed_at=now() WHERE order_id=$1', [order.id]);
+    await db.query("UPDATE orders SET status='IN_PRODUCTION' WHERE id=$1", [order.id]);
+
+    const current = (await get(`/orders/${order.id}`)).body.order;
+    const updatedProducts = products.map((product, index) => ({
+      ...product,
+      description: index === 0 ? 'Pieza corregida para el cliente' : product.description,
+      activities: product.activities.map(activity => activity.area === 'DESIGN'
+        ? { ...activity, assignedUserId:defaultDesignerId }
+        : activity),
+    }));
+    const response = await patch(`/orders/${order.id}`, {
+      clientId, description:'OT corregida durante producción', value:100000, documentType:'REM',
+      category:'Proyecto', route:'MULTI_AREA', requiresInstallation:false, reteFuente:0, reteIva:0, ica:0,
+      products:updatedProducts, expectedVersion:current.version,
+    });
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body.order).toMatchObject({ status:'IN_PRODUCTION', description:'OT corregida durante producción' });
+    expect((await get(`/work/activities?orderId=${order.id}`)).body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ area:'DESIGN', status:'COMPLETED' }),
+      expect.objectContaining({ area:'PRINTING', status:'IN_PROGRESS' }),
+    ]));
+    const saved = (await get(`/work/orders/${order.id}`)).body.products[0];
+    expect(saved.description).toBe('Pieza corregida para el cliente');
+    expect(saved.materials).toEqual(expect.arrayContaining([
+      expect.objectContaining({ material:'Banner', consumedAt:expect.any(String) }),
+      expect.objectContaining({ material:'Panaflex', consumedAt:expect.any(String) }),
+    ]));
+  });
 });
 
 describe('Migración de materiales históricos', () => {

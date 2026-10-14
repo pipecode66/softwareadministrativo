@@ -212,7 +212,7 @@ export async function reopenCompletedOrderProducts(
     FROM order_products WHERE order_id=$1 ORDER BY position
   `, [orderId])).rows;
   if (currentProducts.length !== parsed.length) {
-    throw conflict('Al reabrir una OT terminada no se pueden agregar ni eliminar productos; solo agregar áreas faltantes a los productos existentes.');
+    throw conflict('No se pueden agregar ni eliminar productos después de iniciar la producción.');
   }
   const currentActivities = (await tx.query<ActivityRow>(`
     SELECT * FROM order_activities WHERE order_id=$1 ORDER BY product_id,position
@@ -229,7 +229,7 @@ export async function reopenCompletedOrderProducts(
     const activities = currentActivities.filter(activity => activity.product_id === current.id);
     for (const activity of activities) {
       const requested = product.activities.find(item => item.area === activity.area);
-      if (!requested) throw conflict('No se puede retirar un área que ya trabajó en una OT terminada.');
+      if (!requested) throw conflict('No se puede retirar un área que ya inició el trabajo.');
       if (activity.area === 'DESIGN' && activity.assigned_user_id !== (requested.assignedUserId ?? null)) {
         throw conflict('No se puede cambiar el diseñador de una actividad ya terminada.');
       }

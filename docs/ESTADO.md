@@ -30,12 +30,14 @@ El 14/10/2026, ante el reporte de que Administración no veía Editar OT #003, s
 
 El 14/10/2026, por instrucción expresa del usuario, se amplió Editar OT a todos los estados, incluidos actividades en producción e instalación y órdenes cerradas administrativamente. Las ediciones conservan el estado y las actividades existentes; los materiales se pueden corregir mientras la actividad de Impresión siga pendiente y no se hayan consumido, y quedan bloqueados cuando Impresión inicia o se consume material. No se pueden quitar actividades/productos ni cambiar responsables o tipo de impresión ya existentes. Se conserva la reapertura de OT terminadas no cerradas al agregar áreas faltantes; una OT cerrada admite correcciones, pero no reabrir su recorrido. Verificación: `npm test` (158), `npm --prefix server test` (276), typechecks y builds de frontend/servidor, E2E de Administración editando durante producción y una OT cerrada (1/1), y `git diff --check`, todo aprobado. No requiere migración SQL.
 
+El 14/10/2026 se corrigió la ruta de edición de OT compuestas en `IN_PRODUCTION`: se usa la actualización que conserva actividades y materiales en vez de intentar reemplazar productos, lo que causaba el error “No se pueden cambiar los productos cuando una etapa posterior a Diseño ya comenzó o se consumió material”. Administración puede corregir los datos de productos existentes; no puede agregar/eliminar productos o actividades nuevas tras iniciar producción ni alterar materiales una vez iniciada Impresión o consumidos. Verificación: `server/tests/work.test.ts` (13/13), `npm --prefix server test` (277), typecheck, build y `git diff --check` aprobados. Sin migración SQL.
+
 ## Funcionalidades terminadas en este tramo
 
 - Al crear una FACT, el formulario no permite ingresar retenciones; siempre se calculan automáticamente, también ante una solicitud directa al servidor.
 - Solo ADMINMASTER y ADMIN_GENERAL pueden acceder a Editar OT; el servidor también rechaza modificaciones realizadas desde Diseño.
 - Ambos perfiles administrativos pueden abrir y corregir OT en cualquier estado, incluso durante producción, instaladas y cerradas administrativamente.
-- La edición conserva etapas existentes; el recorrido de una OT cerrada no se reabre. Las limitaciones sobre productos, áreas iniciadas y materiales de Impresión iniciada o consumidos evitan borrar trazabilidad.
+- La edición conserva etapas existentes; el recorrido de una OT cerrada no se reabre. Administración puede corregir datos de los productos existentes durante producción, sin agregar/eliminar productos o nuevas actividades tras iniciar el recorrido ni modificar materiales de Impresión iniciada o consumidos.
 - Las OT FACT incluyen en la lista administrativa el estado FACTURADO; el chulo permite revelar la referencia escrita y una X indica que falta.
 - La referencia (por ejemplo `FE#2394`) se gestiona desde Editar OT FACT. La casilla no aparece durante creación, para REM ni para perfiles ajenos a Administración.
 - Para FACT especiales, Administración ajusta las retenciones después de crear la OT desde Editar OT en cualquier estado.
