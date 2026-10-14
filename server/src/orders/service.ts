@@ -204,7 +204,7 @@ export async function createOrder(db: Database, auth: AuthSession, input: z.infe
       ] });
     }
     await tx.query('DELETE FROM order_drafts WHERE created_by=$1', [actor.id]);
-    return { order: orderDto({ ...row, special_payment: client.special_payment }, await paymentsOf(tx,row.id), actor.role), replayed: false };
+    return { order: orderDto({ ...row, special_payment: client.special_payment, is_composite: Boolean(input.products) }, await paymentsOf(tx,row.id), actor.role), replayed: false };
   });
 }
 
@@ -213,13 +213,15 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
     const actor = await requireCurrentActor(tx, auth, admins);
     const row = await lockedOrder(tx, id);
     checkVersion(row, input.expectedVersion);
-    const finishedAdminEdit = isAdmin(actor.role) && !row.closed_at && ['COMPLETED','INSTALLED'].includes(row.status);
-    if (row.closed_at || (!['NEW','PENDING_ADMIN_REVIEW','IN_PRODUCTION'].includes(row.status) && !finishedAdminEdit)) throw conflict('La orden ya está en producción y sus datos están protegidos.');
+    const completedOrderEdit = ['COMPLETED','INSTALLED'].includes(row.status);
     const existingComposite = (await tx.query<{ composite: boolean }>(
       'SELECT coalesce(bool_or(NOT is_legacy),false) AS composite FROM order_products WHERE order_id=$1', [id])).rows[0]?.composite;
     if (existingComposite && !input.products) throw new ApiError(400, 'PRODUCTS_REQUIRED', 'Incluye los productos de esta orden en la edición.', 'products');
-    if (finishedAdminEdit && (!existingComposite || !input.products)) throw conflict('Solo se pueden reabrir OT terminadas que tengan productos y actividades internas.');
     if (row.status === 'IN_PRODUCTION' && !input.products) throw conflict('La orden compuesta requiere productos para editarse.');
+    if (!existingComposite && row.printing_completed_at &&
+      (input.printing?.material !== row.material || input.printing?.length !== Number(row.length) || input.printing?.width !== Number(row.width))) {
+      throw conflict('No se pueden cambiar los datos de impresión después de completar esa etapa.');
+    }
     if (input.initialPayment) throw new ApiError(400, 'INITIAL_PAYMENT_EDIT', 'Los abonos se registran en pagos, no en edición de OT.', 'initialPayment');
     const workChanges = input.products ? await productChanges(tx,id,input.products) : [];
     const client = await checkClient(tx, input.clientId, input.documentType);
@@ -232,38 +234,46 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
       rete_fuente: String(normalized.reteFuente), rete_iva: String(normalized.reteIva), ica: String(normalized.ica), financial_rule: row.financial_rule }, payments);
     if (money.collectible < 0) throw new ApiError(400, 'INVALID_COLLECTIBLE', 'El total a cobrar no puede ser negativo.', 'value');
     if (money.balance < 0) throw conflict('El total cobrable no puede ser inferior a los abonos registrados.');
-    const addedActivities = finishedAdminEdit && input.products
-      ? await reopenCompletedOrderProducts(tx, id, input.products, normalized.value)
+    const preserveProduction = Boolean(existingComposite && input.products &&
+      !['NEW','PENDING_ADMIN_REVIEW','IN_PRODUCTION'].includes(row.status));
+    const addedActivities = preserveProduction && input.products
+      ? await reopenCompletedOrderProducts(tx, id, input.products, normalized.value, completedOrderEdit && !row.closed_at)
       : 0;
-    const reopened = finishedAdminEdit && addedActivities > 0;
-    const targetStatus = reopened ? 'IN_PRODUCTION' : input.products && !finishedAdminEdit ? 'IN_PRODUCTION' : row.status;
+    const reopened = completedOrderEdit && !row.closed_at && addedActivities > 0;
+    let targetStatus = reopened ? 'IN_PRODUCTION' : input.products && !preserveProduction ? 'IN_PRODUCTION' : row.status;
+    if (!reopened && ['COMPLETED','PENDING_INSTALLATION','INSTALLED'].includes(row.status)) {
+      if (normalized.requiresInstallation && row.status === 'COMPLETED' && !row.closed_at) targetStatus = 'PENDING_INSTALLATION';
+      else if (!normalized.requiresInstallation && row.status !== 'COMPLETED') targetStatus = 'COMPLETED';
+    }
     const updated = (await tx.query<OrderRow>(`
       UPDATE orders SET client_id=$1,description=$2,value=$3,document_type=$4,category=$5,route=$6,requires_installation=$7,
         material=$8,length=$9,width=$10,rete_fuente=$11,rete_iva=$12,ica=$13,
         status=$15,certificate_rete_fuente=CASE WHEN rete_fuente=$11 THEN certificate_rete_fuente ELSE false END,
         certificate_rete_iva=CASE WHEN rete_iva=$12 THEN certificate_rete_iva ELSE false END,
         certificate_ica=CASE WHEN ica=$13 THEN certificate_ica ELSE false END,
-        ready_for_installation_at=CASE WHEN $16 THEN NULL ELSE ready_for_installation_at END,
-        installed_at=CASE WHEN $16 THEN NULL ELSE installed_at END, invoice_reference=$17,
-        installation_note=CASE WHEN $16 THEN NULL ELSE installation_note END,
+        ready_for_installation_at=CASE WHEN $16 OR $15::varchar<>'PENDING_INSTALLATION' THEN NULL ELSE ready_for_installation_at END,
+        installed_at=CASE WHEN $16 OR $15::varchar<>'INSTALLED' THEN NULL ELSE installed_at END, invoice_reference=$17,
+        installation_note=CASE WHEN $16 OR $15::varchar<>'INSTALLED' THEN NULL ELSE installation_note END,
         updated_at=clock_timestamp(),version=version+1
       WHERE id=$14 RETURNING *`, [...inputParams(normalized), id, targetStatus, reopened, normalized.invoiceReference ?? null])).rows[0];
-    if (input.products && !finishedAdminEdit) await replaceOrderProducts(tx, id, input.products, isAdmin(actor.role));
+    if (input.products && !preserveProduction) await replaceOrderProducts(tx, id, input.products, isAdmin(actor.role));
     else {
       const legacy = (await tx.query<{ id: string }>('SELECT id FROM order_products WHERE order_id=$1 AND is_legacy=true', [id])).rows[0];
       if (legacy) {
         await tx.query(`UPDATE order_products SET description=$2,unit_value=$3,updated_at=clock_timestamp()
           WHERE id=$1`, [legacy.id, normalized.description, normalized.value]);
-        await tx.query('DELETE FROM order_product_materials WHERE product_id=$1', [legacy.id]);
-        if (normalized.printing) await tx.query(`INSERT INTO order_product_materials
-          (id,order_id,product_id,position,material,length,width) VALUES ($1,$2,$3,1,$4,$5,$6)`,
-        [randomUUID(),id,legacy.id,normalized.printing.material,normalized.printing.length,normalized.printing.width]);
+        if (!row.printing_completed_at) {
+          await tx.query('DELETE FROM order_product_materials WHERE product_id=$1', [legacy.id]);
+          if (normalized.printing) await tx.query(`INSERT INTO order_product_materials
+            (id,order_id,product_id,position,material,length,width) VALUES ($1,$2,$3,1,$4,$5,$6)`,
+          [randomUUID(),id,legacy.id,normalized.printing.material,normalized.printing.length,normalized.printing.width]);
+        }
       }
     }
     await event(tx, updated, actor.id, 'edit', row.status, {
       summary: 'Editó la orden de trabajo.', changes: [...editChanges(row, updated),...workChanges],
     });
-    return orderDto({ ...updated, special_payment: client.special_payment }, payments, actor.role);
+    return orderDto({ ...updated, special_payment: client.special_payment, is_composite: existingComposite }, payments, actor.role);
   });
 }
 
@@ -436,7 +446,8 @@ export async function listOrders(db: Database, auth: AuthSession, input: ListQue
     if (input.paymentStatus === 'SPECIAL') conditions.push(`c.special_payment=true AND ${paid}<${collectible}`);
     const where = conditions.map(s => `(${s})`).join(' AND ');
     const total = Number((await tx.query<{ total: string }>(`SELECT count(*) AS total FROM orders o JOIN clients c ON c.id=o.client_id WHERE ${where}`, params)).rows[0].total);
-    const rows = (await tx.query<OrderRow>(`SELECT o.*,c.special_payment,creator.name AS creator_name,creator.role AS creator_role
+    const rows = (await tx.query<OrderRow>(`SELECT o.*,c.special_payment,creator.name AS creator_name,creator.role AS creator_role,
+      EXISTS (SELECT 1 FROM order_products p WHERE p.order_id=o.id AND NOT p.is_legacy) AS is_composite
       FROM orders o JOIN clients c ON c.id=o.client_id JOIN users creator ON creator.id=o.created_by
       WHERE ${where} ORDER BY o.number DESC LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, input.pageSize, (input.page-1)*input.pageSize])).rows;
     const ids = rows.map(row => row.id);
@@ -452,6 +463,7 @@ export async function getOrder(db: Database, auth: AuthSession, id: string) {
   return db.transaction(async tx => {
     await tx.exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const row = (await tx.query<OrderRow>(`SELECT o.*,c.special_payment,
+      EXISTS (SELECT 1 FROM order_products p WHERE p.order_id=o.id AND NOT p.is_legacy) AS is_composite,
       EXISTS (SELECT 1 FROM order_activities a WHERE a.order_id=o.id AND
         (($2='DISENO' AND a.area='DESIGN' AND (a.assigned_user_id IS NULL OR a.assigned_user_id=$3))
           OR ($2='IMPRESION' AND a.area='PRINTING')

@@ -199,9 +199,9 @@ export async function replaceOrderProducts(tx: SqlConnection, orderId: string, p
   await createOrderProducts(tx, orderId, products);
 }
 
-/** Reopens a finished composite OT without erasing work already completed. */
+/** Updates a composite OT without erasing work already completed. */
 export async function reopenCompletedOrderProducts(
-  tx: SqlConnection, orderId: string, products: ProductInput[], expectedValue: number,
+  tx: SqlConnection, orderId: string, products: ProductInput[], expectedValue: number, allowAddingActivities = true,
 ): Promise<number> {
   const parsed = normalizeProducts(products, { id: '', role: 'ADMINMASTER' });
   const expected = Math.round(expectedValue * 100);
@@ -237,19 +237,24 @@ export async function reopenCompletedOrderProducts(
         throw conflict('No se puede cambiar el tipo de una impresión ya terminada.');
       }
     }
+    if (!allowAddingActivities && product.activities.some(activity =>
+      !activities.some(existing => existing.area === activity.area))) {
+      throw conflict('No se pueden agregar áreas nuevas después de iniciar producción.');
+    }
     await tx.query(`UPDATE order_products SET description=$2,quantity=$3,unit_value=$4,updated_at=clock_timestamp() WHERE id=$1`,
       [current.id, product.description, product.quantity, product.unitValue]);
-    const hadPrinting = activities.some(activity => activity.area === 'PRINTING');
-    if (hadPrinting) {
-      const storedMaterials = (await tx.query<MaterialRow>(`
-        SELECT id,product_id,position,material,length,width,consumed_at
-        FROM order_product_materials WHERE product_id=$1 ORDER BY position
-      `, [current.id])).rows;
-      const unchangedMaterials = storedMaterials.length === product.materials.length && product.materials.every((material, materialIndex) => {
-        const stored = storedMaterials[materialIndex];
-        return stored.material === material.material && Number(stored.length) === material.length && Number(stored.width) === material.width;
-      });
-      if (!unchangedMaterials) throw conflict('No se pueden cambiar materiales de una impresión que ya fue terminada.');
+    const printing = activities.find(activity => activity.area === 'PRINTING');
+    const storedMaterials = (await tx.query<MaterialRow>(`
+      SELECT id,product_id,position,material,length,width,consumed_at
+      FROM order_product_materials WHERE product_id=$1 ORDER BY position
+    `, [current.id])).rows;
+    const unchangedMaterials = storedMaterials.length === product.materials.length && product.materials.every((material, materialIndex) => {
+      const stored = storedMaterials[materialIndex];
+      return stored.material === material.material && Number(stored.length) === material.length && Number(stored.width) === material.width;
+    });
+    const printingStarted = Boolean(printing && printing.status !== 'PENDING') || storedMaterials.some(material => material.consumed_at);
+    if (printingStarted) {
+      if (!unchangedMaterials) throw conflict('No se pueden cambiar materiales de una impresión que ya inició.');
     } else {
       await tx.query('DELETE FROM order_product_materials WHERE product_id=$1', [current.id]);
       for (const [position, material] of product.materials.entries()) {

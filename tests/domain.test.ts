@@ -180,8 +180,13 @@ describe('Edición protegida de órdenes', () => {
   it.each(['DISENO', 'IMPRESION', 'TALLER'] as Role[])('%s no edita', role => {
     expect(() => editWorkOrder(data(), user(role), order(), input())).toThrow(/Administración/);
   });
-  it.each(['IN_PRINTING', 'IN_WORKSHOP', 'PENDING_INSTALLATION'] as WorkStatus[])('protege los datos en %s', status => {
-    expect(() => editWorkOrder(data(), user(), order({ status }), input())).toThrow(/protegidos/);
+  it.each(['IN_PRINTING', 'IN_WORKSHOP', 'PENDING_INSTALLATION'] as WorkStatus[])('permite corregir OT en %s conservando su estado', status => {
+    const requiresInstallation = status === 'PENDING_INSTALLATION';
+    const original = order({ status, requiresInstallation });
+    const edited = editWorkOrder(data([original]), user(), original, input({
+      description:'Corrección durante producción', requiresInstallation,
+    }));
+    expect(edited).toMatchObject({ status, description:'Corrección durante producción' });
   });
   it.each([
     ['ADMINMASTER', 'COMPLETED'], ['ADMIN_GENERAL', 'COMPLETED'],
@@ -203,9 +208,10 @@ describe('Edición protegida de órdenes', () => {
       expect.objectContaining({ area:'PRINTING' }), expect.objectContaining({ area:'WORKSHOP' }),
     ]));
   });
-  it.each(['ADMINMASTER', 'ADMIN_GENERAL'] as Role[])('%s no edita una OT terminada con cierre administrativo', role => {
+  it.each(['ADMINMASTER', 'ADMIN_GENERAL'] as Role[])('%s puede corregir datos de una OT cerrada sin reabrirla', role => {
     const closed = order({ status:'COMPLETED', closedAt:NOW });
-    expect(() => editWorkOrder(data([closed]), user(role), closed, input())).toThrow(/protegidos/);
+    const edited = editWorkOrder(data([closed]), user(role), closed, input({ description:'Corrección después del cierre' }));
+    expect(edited).toMatchObject({ status:'COMPLETED', closedAt:NOW, description:'Corrección después del cierre' });
   });
   it('impide bajar el total por debajo de abonos existentes', () => {
     const original = order({ payments: [{ id: 'p1', date: '2026-09-01', amount: 50000, recordedBy: 'admin' }] });

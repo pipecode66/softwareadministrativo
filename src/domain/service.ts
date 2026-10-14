@@ -63,7 +63,8 @@ export function createWorkOrder(data: AppData, user: User, input: OrderInput): W
   const order: WorkOrder = { ...cleaned, reteFuente: cleaned.reteFuente ?? 0, reteIva: cleaned.reteIva ?? 0,
     ica: cleaned.ica ?? 0, number, id: crypto.randomUUID(), createdAt: now, updatedAt: now,
     createdBy: user.id, payments, status: input.products ? 'IN_PRODUCTION' : 'NEW',
-    financialRule: input.products ? 'NEW' : 'LEGACY', specialPayment: data.clients.find(client => client.id === input.clientId)?.specialPayment };
+    financialRule: input.products ? 'NEW' : 'LEGACY', isComposite: Boolean(input.products),
+    specialPayment: data.clients.find(client => client.id === input.clientId)?.specialPayment };
   assert(financials(order).balance >= 0, 'El abono inicial supera el total a cobrar.');
   return order;
 }
@@ -71,27 +72,55 @@ export function editWorkOrder(data: AppData, user: User, order: WorkOrder, input
   assert(user.active && isAdmin(user.role), 'Solo Administración puede editar esta orden.');
   assert(input.documentType === 'FACT' || !input.invoiceReference, 'La facturación corresponde únicamente a FACT.');
   assert(input.invoiceReference == null || input.invoiceReference.trim().length > 0 && input.invoiceReference.trim().length <= 100, 'La referencia de facturación debe tener entre 1 y 100 caracteres.');
-  const finishedAdminEdit = isAdmin(user.role) && ['COMPLETED','INSTALLED'].includes(order.status) && !order.closedAt;
-  assert((['NEW','PENDING_ADMIN_REVIEW'].includes(order.status) || order.status === 'IN_PRODUCTION' && Boolean(order.products?.every(product => product.activities.every(activity => !activity.status || activity.status === 'PENDING'))) || finishedAdminEdit) && !order.closedAt, 'La orden ya está en producción y sus datos están protegidos.');
+  const completedEdit = ['COMPLETED','INSTALLED'].includes(order.status);
   validateInput(data,input,order.id,isAdmin(user.role));
   let prepared = cleanInput(input);
-  if (finishedAdminEdit) {
-    assert(order.products && input.products && order.products.length === input.products.length, 'Al reabrir una OT terminada no se pueden agregar ni eliminar productos; solo agregar áreas faltantes.');
+  const productionStarted = Boolean(order.products?.some(product =>
+    product.activities.some(activity => activity.status && activity.status !== 'PENDING')));
+  const preserveProduction = Boolean(input.products && order.products?.length &&
+    !['NEW','PENDING_ADMIN_REVIEW'].includes(order.status) &&
+    (order.status !== 'IN_PRODUCTION' || productionStarted));
+  if (preserveProduction) {
+    assert(order.products && input.products && order.products.length === input.products.length, 'No se pueden agregar ni eliminar productos después de iniciar producción.');
     let added = false;
     const products = input.products.map((product, index) => {
       const previous = order.products![index];
-      for (const activity of previous.activities) assert(product.activities.some(item => item.area === activity.area), 'No se puede retirar un área que ya trabajó en una OT terminada.');
+      for (const activity of previous.activities) assert(product.activities.some(item => item.area === activity.area), 'No se puede retirar un área que ya inició su trabajo.');
       const activities = product.activities.map(activity => {
         const existing = previous.activities.find(item => item.area === activity.area);
-        if (!existing) { added = true; return activity; }
+        if (!existing) {
+          assert(completedEdit && !order.closedAt, 'No se pueden agregar áreas nuevas después de iniciar producción.');
+          added = true;
+          return activity;
+        }
+        if (activity.area === 'DESIGN') assert(existing.assignedUserId === activity.assignedUserId, 'No se puede cambiar el diseñador de un área ya iniciada.');
+        if (activity.area === 'PRINTING') assert((existing.printingType ?? 'PRINT') === (activity.printingType ?? 'PRINT'), 'No se puede cambiar el tipo de una impresión ya iniciada.');
         return { ...activity, ...existing };
       });
+      const printingStarted = previous.activities.some(activity => activity.area === 'PRINTING' && activity.status !== 'PENDING')
+        || previous.materials.some(material => material.consumedAt);
+      if (printingStarted) {
+        const unchangedMaterials = previous.materials.length === product.materials.length && product.materials.every((material, materialIndex) => {
+          const stored = previous.materials[materialIndex];
+          return stored.material === material.material && stored.length === material.length && stored.width === material.width;
+        });
+        assert(unchangedMaterials, 'No se pueden cambiar materiales de una impresión ya iniciada.');
+      }
       return { ...product, id:previous.id, position:previous.position, activities };
     });
     prepared = { ...prepared, products };
     if (added) prepared = { ...prepared, status:'IN_PRODUCTION', installedAt:undefined, installationNote:undefined, readyForInstallationAt:undefined } as OrderInput;
   }
   const updated = { ...order, ...prepared };
+  if (updated.status === order.status && !order.closedAt && ['COMPLETED','PENDING_INSTALLATION','INSTALLED'].includes(order.status)) {
+    if (prepared.requiresInstallation && order.status === 'COMPLETED') updated.status = 'PENDING_INSTALLATION';
+    else if (!prepared.requiresInstallation && order.status !== 'COMPLETED') {
+      updated.status = 'COMPLETED';
+      updated.installedAt = undefined;
+      updated.installationNote = undefined;
+      updated.readyForInstallationAt = undefined;
+    }
+  }
   assert(financials(updated).balance >= 0, 'El total de la orden no puede ser inferior a los pagos registrados.');
   return updated;
 }

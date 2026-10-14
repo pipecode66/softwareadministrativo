@@ -28,15 +28,17 @@ El 14/10/2026 se implementó un indicador FACTURADO en la lista administrativa, 
 
 El 14/10/2026, ante el reporte de que Administración no veía Editar OT #003, se centralizó la autorización de edición para que ADMINMASTER y ADMIN_GENERAL utilicen la misma regla de rol, estado y cierre administrativo tanto en el detalle como al abrir el editor. Prueba E2E con ADMIN_GENERAL: OT #003 muestra el botón y abre la edición; también se conserva la cobertura de OT terminadas, instaladas y cerradas. `npm run typecheck`, `npm test` (158), E2E dirigido (1/1) y `git diff --check` aprobados. La validación usa el adaptador local; no confirma estado de la cuenta ni despliegue productivo.
 
+El 14/10/2026, por instrucción expresa del usuario, se amplió Editar OT a todos los estados, incluidos actividades en producción e instalación y órdenes cerradas administrativamente. Las ediciones conservan el estado y las actividades existentes; los materiales se pueden corregir mientras la actividad de Impresión siga pendiente y no se hayan consumido, y quedan bloqueados cuando Impresión inicia o se consume material. No se pueden quitar actividades/productos ni cambiar responsables o tipo de impresión ya existentes. Se conserva la reapertura de OT terminadas no cerradas al agregar áreas faltantes; una OT cerrada admite correcciones, pero no reabrir su recorrido. Verificación: `npm test` (158), `npm --prefix server test` (276), typechecks y builds de frontend/servidor, E2E de Administración editando durante producción y una OT cerrada (1/1), y `git diff --check`, todo aprobado. No requiere migración SQL.
+
 ## Funcionalidades terminadas en este tramo
 
 - Al crear una FACT, el formulario no permite ingresar retenciones; siempre se calculan automáticamente, también ante una solicitud directa al servidor.
 - Solo ADMINMASTER y ADMIN_GENERAL pueden acceder a Editar OT; el servidor también rechaza modificaciones realizadas desde Diseño.
-- Ambos perfiles administrativos pueden corregir OT instaladas o terminadas que no tengan cierre administrativo; se conserva el trabajo realizado y cualquier área faltante se agrega como pendiente.
-- Una OT cerrada administrativamente sigue protegida contra edición.
+- Ambos perfiles administrativos pueden abrir y corregir OT en cualquier estado, incluso durante producción, instaladas y cerradas administrativamente.
+- La edición conserva etapas existentes; el recorrido de una OT cerrada no se reabre. Las limitaciones sobre productos, áreas iniciadas y materiales de Impresión iniciada o consumidos evitan borrar trazabilidad.
 - Las OT FACT incluyen en la lista administrativa el estado FACTURADO; el chulo permite revelar la referencia escrita y una X indica que falta.
 - La referencia (por ejemplo `FE#2394`) se gestiona desde Editar OT FACT. La casilla no aparece durante creación, para REM ni para perfiles ajenos a Administración.
-- Para FACT especiales, Administración ajusta las retenciones después de crear la OT desde Editar OT, si la orden aún admite edición.
+- Para FACT especiales, Administración ajusta las retenciones después de crear la OT desde Editar OT en cualquier estado.
 - Al recuperar un borrador de Nueva OT, el tipo vuelve a REM para evitar que un FACT antiguo se seleccione silenciosamente; la pantalla solicita confirmar o escoger el documento correcto.
 - Impresión debe escribir quién recibe el trabajo en Taller antes de finalizar su actividad.
 - Un intento vacío o compuesto solo por espacios se rechaza con `Por favor, digitar quien recibe en taller.`.
@@ -113,7 +115,7 @@ El 14/10/2026, ante el reporte de que Administración no veía Editar OT #003, s
 - `npm --prefix server test`: 274/274 en 9 archivos.
 - `npm --prefix server test`: 275/275 en 9 archivos (incluye persistencia, consulta y limpieza de referencia de facturación).
 - La regresión del dominio permite editar como ambos administradores una OT COMPLETED o INSTALLED no cerrada (137/137 pruebas de dominio).
-- La regresión de `server/tests/work.test.ts` confirma edición ADMIN_GENERAL de una OT terminada e instalada, conserva la instalación y rechaza una OT cerrada (11/11).
+- La regresión vigente de `server/tests/work.test.ts` confirma edición ADMIN_GENERAL de OT terminadas, instaladas, activas y cerradas; conserva estado y actividades, y rechaza alteraciones a materiales de Impresión durante la etapa productiva.
 - La prueba Playwright de ADMIN_GENERAL en OT terminadas/instaladas y cierre bloqueado aprobó (1/1) con Chromium 1217 local.
 - `npm --prefix server run build`: aprobado.
 - La corrección de retenciones del 14/10 pasó pruebas dirigidas de creación FACT y restauración de borrador REM (2/2) con Chromium 1217 local.
@@ -128,7 +130,7 @@ El 14/10/2026, ante el reporte de que Administración no veía Editar OT #003, s
 - Se añadió el módulo administrativo `Historial`, con todos los eventos, expansión del cambio y enlace directo a la OT. La migración `010_audit_history.sql` agrega el detalle JSON estructurado a `order_events` sin alterar registros previos.
 - Se retiró por decisión del cliente la eliminación de OT: no existe botón, contrato frontend ni endpoint de servidor para borrar órdenes. La migración compensatoria `012_disable_order_deletion.sql` devuelve el consecutivo a `GENERATED ALWAYS`.
 - Taller puede guardar observaciones opcionales al finalizar, tanto en actividades por producto como en el flujo heredado; el dato permanece visible en la OT terminada.
-- ADMINMASTER y ADMIN_GENERAL pueden corregir una OT terminada o instalada que todavía no esté cerrada administrativamente. Al agregar áreas omitidas conservan las actividades finalizadas, crean solo las faltantes como pendientes y devuelven la OT a producción; los perfiles no administrativos y las OT cerradas permanecen bloqueados.
+- ADMINMASTER y ADMIN_GENERAL pueden editar OT en cualquier estado, incluidas las etapas activas y el cierre administrativo. Se conservan las actividades ya ejecutadas y el estado; los cambios de recorrido/productos que puedan borrar trazabilidad continúan restringidos.
 - Administración puede enviar Diseño → Impresión normal sin definir todavía materiales. El diseñador asignado los completa desde su edición técnica y el servidor bloquea la finalización de Diseño mientras no exista al menos uno; Impresión sin Diseño y las OT creadas por Diseño mantienen la obligación desde el registro inicial.
 - Pruebas dirigidas de órdenes, actividades y Corte Láser: 120/120.
 - Pruebas E2E locales de Impresión, Taller y materiales: 3/3.

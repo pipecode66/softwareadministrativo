@@ -34,11 +34,12 @@ export function OrderFormPage() {
   if (!canCreate(user?.role)) return <EmptyState title="No tienes acceso a crear órdenes" description="La creación corresponde a Administración y Diseño." action={<Link className="btn btn-secondary" to="/orders">Ver órdenes</Link>} />;
   if (id && !order) return <EmptyState title="No encontramos esta orden" action={<Link className="btn btn-secondary" to="/orders">Volver a órdenes</Link>} />;
   const canEdit = order && canEditOrder(user, order);
-  const finishedAdminEdit = order && canEdit && ['COMPLETED', 'INSTALLED'].includes(order.status);
-  if (order && !canEdit) return <EmptyState title="Esta orden no está disponible para edición" description="Administración puede editar la OT antes de que inicie una actividad o corregir una OT terminada o instalada que aún no esté cerrada administrativamente." action={<Link className="btn btn-secondary" to={`/orders/${order.id}`}>Volver a la orden</Link>} />;
+  if (order && !canEdit) return <EmptyState title="Esta orden no está disponible para edición" description="La edición de órdenes corresponde exclusivamente a Administración." action={<Link className="btn btn-secondary" to={`/orders/${order.id}`}>Volver a la orden</Link>} />;
   const initialClientId = params.get('client') || params.get('clientId') || '';
   if (!order) return <NewOrderEditor initialClientId={initialClientId} />;
-  if (order.status === 'IN_PRODUCTION' || finishedAdminEdit) return <NewOrderEditor key={order.id} existing={order} initialClientId={initialClientId} />;
+  if (order.isComposite || order.products?.some(product => product.activities.length > 0) || order.status === 'IN_PRODUCTION') {
+    return <NewOrderEditor key={order.id} existing={order} initialClientId={initialClientId} />;
+  }
   return <OrderEditor key={id} existing={order} initialClientId={initialClientId} />;
 }
 

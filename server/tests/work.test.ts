@@ -371,9 +371,53 @@ describe('Productos y trabajo interno', () => {
       status:'INSTALLED', description:'Trabajo corregido después de instalar',
     });
     await db.query('UPDATE orders SET closed_at=now() WHERE id=$1', [order.id]);
-    expect((await patch(`/orders/${order.id}`, {
-      ...payload, expectedVersion:installedEdit.body.order.version,
-    }, general)).status).toBe(409);
+    const closed = await get(`/orders/${order.id}`);
+    const closedEdit = await patch(`/orders/${order.id}`, {
+      ...payload, requiresInstallation:true, expectedVersion:closed.body.order.version, description:'Corrección administrativa posterior al cierre',
+    }, general);
+    expect(closedEdit.status, JSON.stringify(closedEdit.body)).toBe(200);
+    expect(closedEdit.body.order).toMatchObject({
+      status:'INSTALLED', description:'Corrección administrativa posterior al cierre',
+      closedAt:closed.body.order.closedAt,
+    });
+  });
+
+  it('edita una OT compuesta activa sin reiniciar actividades ni alterar materiales consumidos', async () => {
+    const order = await create();
+    await db.query(`UPDATE order_activities SET status='COMPLETED',completed_at=now()
+      WHERE order_id=$1 AND area='DESIGN'`, [order.id]);
+    await db.query("UPDATE orders SET status='IN_PRINTING' WHERE id=$1", [order.id]);
+    const current = (await get(`/orders/${order.id}`)).body.order;
+    expect((await get('/orders?status=IN_PRINTING')).body.items)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ id:order.id, isComposite:true })]));
+    const payload = {
+      clientId, description:'OT compuesta corregida en impresión', value:100000, documentType:'REM', category:'Proyecto',
+      route:'MULTI_AREA', requiresInstallation:false, reteFuente:0, reteIva:0, ica:0,
+      products: products.map(product => ({ ...product, activities:product.activities.map(activity =>
+        activity.area === 'DESIGN' ? { ...activity, assignedUserId:defaultDesignerId } : activity) })),
+      expectedVersion:current.version,
+    };
+    const edited = await patch(`/orders/${order.id}`, payload);
+    expect(edited.status).toBe(200);
+    expect(edited.body.order).toMatchObject({ status:'IN_PRINTING', description:'OT compuesta corregida en impresión' });
+    const activities = (await get(`/work/activities?orderId=${order.id}`)).body.items as Activity[];
+    expect(activities.find(activity => activity.area === 'DESIGN')?.status).toBe('COMPLETED');
+
+    const first = (await get(`/work/orders/${order.id}`)).body.products[0];
+    const changedMaterials = structuredClone(payload.products);
+    changedMaterials[0]!.materials[0]!.length = 3;
+    const pendingMaterialEdit = await patch(`/orders/${order.id}`, {
+      ...payload, expectedVersion:edited.body.order.version, products:changedMaterials,
+    });
+    expect(pendingMaterialEdit.status).toBe(200);
+    await db.query('UPDATE order_product_materials SET consumed_at=now() WHERE product_id=$1',
+      [(first as { id:string }).id]);
+    changedMaterials[0]!.materials[0]!.length = 4;
+    const rejected = await patch(`/orders/${order.id}`, {
+      ...payload, expectedVersion:pendingMaterialEdit.body.order.version, products:changedMaterials,
+    });
+    expect(rejected.status).toBe(409);
+    expect(rejected.body.error.message).toContain('materiales');
   });
 });
 

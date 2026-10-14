@@ -308,7 +308,7 @@ describe('OT: finanzas y abonos', () => {
 });
 
 describe('OT: edición, versiones y flujo productivo', () => {
-  it('solo Administración modifica campos estructurales antes de producción', async () => {
+  it('solo Administración edita y puede corregir datos aun durante producción', async () => {
     const designer = await actor('DISENO');
     const order = await create({}, designer);
     expect((await edit(order, { description: 'Diseño no edita' }, designer)).status).toBe(403);
@@ -319,7 +319,9 @@ describe('OT: edición, versiones y flujo productivo', () => {
       input({ documentType:'FACT', reteFuente:undefined, reteIva:undefined, ica:undefined }))).status).toBe(403);
     const sent = await move(changed.body.order, 'send');
     expect(sent.status).toBe('IN_PRINTING');
-    expect((await edit(sent, { description: 'No cambia en producción' })).status).toBe(409);
+    const corrected = await edit(sent, { description: 'Corregida durante impresión' });
+    expect(corrected.status).toBe(200);
+    expect(corrected.body.order).toMatchObject({ status: 'IN_PRINTING', description: 'Corregida durante impresión' });
   });
 
   it('evita perder cambios al recibir dos ediciones con la misma versión', async () => {

@@ -16,7 +16,8 @@ import { parseData, readData, SESSION_KEY, STORAGE_KEY, writeData } from './repo
 type ClientInput = Pick<Client, 'name' | 'identification' | 'phone' | 'specialPayment'>;
 export type UserInput = Pick<User, 'name' | 'email' | 'role' | 'active'> & { password?: string };
 function preserveCreator(current: WorkOrder, updated: WorkOrder): WorkOrder {
-  return { ...updated, creatorName: updated.creatorName ?? current.creatorName, creatorRole: updated.creatorRole ?? current.creatorRole };
+  return { ...updated, creatorName: updated.creatorName ?? current.creatorName, creatorRole: updated.creatorRole ?? current.creatorRole,
+    isComposite: updated.isComposite ?? current.isComposite };
 }
 interface AppContextValue {
   data: AppData; user: User | null; accounts: User[]; sessionReady: boolean; usingApi: boolean;

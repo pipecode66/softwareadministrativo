@@ -35,6 +35,7 @@ export interface WorkOrder {
   documentType: DocumentType; category: Category; route: ProductionRoute;
   requiresInstallation: boolean; status: WorkStatus; createdBy: string;
   creatorName?: string; creatorRole?: Role;
+  isComposite?: boolean;
   createdAt: string; updatedAt: string; version?: number; printing?: Printing; financialRule?: FinancialRule;
   invoiceReference?: string | null;
   specialPayment?: boolean; certificates?: { reteFuente: boolean; reteIva: boolean; ica: boolean };

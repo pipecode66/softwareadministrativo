@@ -194,12 +194,23 @@ test('el borrador se recupera en REM y solo edición administrativa ofrece reten
   await expect(page.getByLabel('RETE FUENTE (COP)')).toHaveCount(0);
 });
 
-test('ADMIN_GENERAL puede editar OT terminadas e instaladas, pero no cerradas administrativamente', async ({ page }) => {
+test('ADMIN_GENERAL puede editar OT durante el flujo, instaladas y cerradas', async ({ page }) => {
   await login(page, 'administracion@intermedios.local');
+  await page.evaluate(key => {
+    const data = JSON.parse(localStorage.getItem(key)!);
+    data.orders.find((order: { id: string }) => order.id === 'ot-3').status = 'IN_PRINTING';
+    localStorage.setItem(key, JSON.stringify(data));
+  }, DATA_KEY);
   await page.goto('/orders/ot-3');
   await expect(page.getByRole('link', { name: 'Editar OT' })).toBeVisible();
   await page.getByRole('link', { name: 'Editar OT' }).click();
   await expect(page.getByRole('heading', { name: 'Editar orden de trabajo' })).toBeVisible();
+  await page.getByLabel('Descripción del trabajo *').fill('OT corregida mientras imprime');
+  await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+  await expect(page).toHaveURL(/\/orders\/ot-3$/);
+  expect((await storedOrders(page)).find(order => order.id === 'ot-3')).toMatchObject({
+    status:'IN_PRINTING', description:'OT corregida mientras imprime',
+  });
 
   await page.goto('/orders/ot-5');
   await expect(page.getByRole('link', { name: 'Editar OT' })).toBeVisible();
@@ -207,17 +218,16 @@ test('ADMIN_GENERAL puede editar OT terminadas e instaladas, pero no cerradas ad
   await expect(page.getByRole('heading', { name: 'Editar orden de trabajo' })).toBeVisible();
 
   await page.goto('/orders/ot-8');
-  await expect(page.getByRole('link', { name: 'Editar OT' })).toHaveCount(0);
-  const closedAt = await page.evaluate(key => {
-    const data = JSON.parse(localStorage.getItem(key)!);
-    const closedAt = data.orders.find((order: { id: string }) => order.id === 'ot-8').closedAt;
-    delete data.orders.find((order: { id: string }) => order.id === 'ot-8').closedAt;
-    localStorage.setItem(key, JSON.stringify(data));
-    return closedAt;
-  }, DATA_KEY);
-  expect(closedAt).toBeTruthy();
-  await page.reload();
   await expect(page.getByRole('link', { name: 'Editar OT' })).toBeVisible();
+  const closedAt = (await storedOrders(page)).find(order => order.id === 'ot-8')?.closedAt;
+  expect(closedAt).toBeTruthy();
+  await page.getByRole('link', { name: 'Editar OT' }).click();
+  await expect(page.getByRole('heading', { name: 'Editar orden de trabajo' })).toBeVisible();
+  await page.getByLabel('Descripción del trabajo *').fill('OT cerrada corregida por Administración');
+  await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+  expect((await storedOrders(page)).find(order => order.id === 'ot-8')).toMatchObject({
+    status:'INSTALLED', closedAt, description:'OT cerrada corregida por Administración',
+  });
 });
 
 test('editor multiproducto y materiales se adapta a 320 px', async ({ page }) => {

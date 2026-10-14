@@ -105,6 +105,7 @@ export type OrderRow = {
   material: typeof materials[number] | null; length: string|null; width: string|null;
   rete_fuente: string; rete_iva: string; ica: string;
   financial_rule: 'LEGACY'|'NEW'; special_payment?: boolean;
+  is_composite?: boolean;
   invoice_reference: string|null;
   has_visible_activity?: boolean;
   certificate_rete_fuente: boolean; certificate_rete_iva: boolean; certificate_ica: boolean;
@@ -131,6 +132,7 @@ export function orderDto(row: OrderRow, payments: PaymentRow[], role: Role, desi
     id: row.id, number: row.number, clientId: row.client_id, description: row.description, documentType: row.document_type,
     category: row.category, route: row.route, requiresInstallation: row.requires_installation, status: row.status,
     financialRule: row.financial_rule, specialPayment: Boolean(row.special_payment),
+    isComposite: Boolean(row.is_composite),
     createdBy: row.created_by,
     ...(row.creator_name && row.creator_role ? { creatorName: row.creator_name, creatorRole: row.creator_role } : {}),
     createdAt: iso(row.created_at), updatedAt: iso(row.updated_at), version: row.version,
