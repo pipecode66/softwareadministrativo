@@ -73,9 +73,9 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   const [reteFuente, setReteFuente] = useState(existing ? String(existing.reteFuente) : '');
   const [reteIva, setReteIva] = useState(existing ? String(existing.reteIva) : '');
   const [ica, setIca] = useState(existing ? String(existing.ica) : '');
-  const [manualRetentions, setManualRetentions] = useState(Boolean(existing));
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<Exclude<PaymentMethod, 'LEGACY'>>('EFECTIVO');
+  const [draftRestored, setDraftRestored] = useState(false);
   const [remoteDesigners, setRemoteDesigners] = useState<Array<{ id: string; name: string }>>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -93,7 +93,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   } : { reteFuente: 0, reteIva: 0, ica: 0 };
   const retentions = documentType === 'REM'
     ? { reteFuente: 0, reteIva: 0, ica: 0 }
-    : existing || manualRetentions
+    : existing
       ? { reteFuente: Number(reteFuente) || 0, reteIva: Number(reteIva) || 0, ica: Number(ica) || 0 }
       : autoRetentions;
   const preview = financials({ value: base, documentType, financialRule: existing?.financialRule || 'NEW', specialPayment: client?.specialPayment,
@@ -135,14 +135,10 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
         const payload = draft.payload;
         setClientId(payload.clientId || initialClientId);
         setCategory(payload.category || 'Otras');
-        setDocumentType(payload.documentType || 'REM');
         setRequiresInstallation(Boolean(payload.requiresInstallation));
         setPaymentAmount(payload.paymentAmount || '');
         setPaymentMethod(payload.paymentMethod || 'EFECTIVO');
-        setManualRetentions(Boolean(payload.manualRetentions));
-        setReteFuente(payload.reteFuente || '');
-        setReteIva(payload.reteIva || '');
-        setIca(payload.ica || '');
+        setDraftRestored(true);
         setProducts(payload.products?.length ? payload.products.map(product => ({
           ...product,
           key: product.key || crypto.randomUUID(),
@@ -161,10 +157,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
 
   useEffect(() => {
     if (existing || !user || !draftReady || !draftEnabledRef.current) return;
-    const payload: OrderFormDraft = {
-      clientId, category, documentType, requiresInstallation, paymentAmount, paymentMethod,
-      manualRetentions, reteFuente, reteIva, ica, products,
-    };
+    const payload: OrderFormDraft = { clientId, category, requiresInstallation, paymentAmount, paymentMethod, products };
     draftPayloadRef.current = payload;
     const timer = window.setTimeout(() => {
       if (!draftEnabledRef.current) return;
@@ -173,8 +166,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
       });
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [existing?.id, user?.id, draftReady, clientId, category, documentType, requiresInstallation, paymentAmount, paymentMethod,
-    manualRetentions, reteFuente, reteIva, ica, products]);
+  }, [existing?.id, user?.id, draftReady, clientId, category, requiresInstallation, paymentAmount, paymentMethod, products]);
 
   useEffect(() => () => {
     if (existing || !user || !draftReady || !draftEnabledRef.current || !draftPayloadRef.current) return;
@@ -252,7 +244,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
     if (!client) return 'Selecciona un cliente.';
     if (loadingProducts) return 'Espera a que carguen los productos de esta OT.';
     if (documentType === 'FACT' && !client.identification.trim()) return 'Las órdenes FACT requieren identificación del cliente.';
-    if (documentType === 'FACT' && (existing || manualRetentions)
+    if (documentType === 'FACT' && existing
       && [reteFuente, reteIva, ica].some(value => {
         const amount = Number(value);
         return !Number.isFinite(amount) || amount < 0 || amount > 999999999999.99 || Number(amount.toFixed(2)) !== amount;
@@ -294,7 +286,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
       number: existing?.number || 0, clientId, description, value: base, category, documentType, route, requiresInstallation,
       // The server derives the compatibility printing summary from product materials.
       printing: undefined,
-      ...(existing || manualRetentions ? retentions : {}),
+      ...(existing ? retentions : {}),
       products: orderProducts,
       ...(!existing && paymentAmount ? { initialPayment: { date: today(), amount: moneyInput(paymentAmount), method: paymentMethod } } : {}),
     };
@@ -326,6 +318,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
     <form onSubmit={submit} noValidate className="order-editor-layout">
       <div className="stack order-editor-main">
         {error && <div className="notice notice-warning" role="alert" tabIndex={-1} ref={errorRef}>{error}</div>}
+        {draftRestored && !existing && <div className="notice notice-info" role="status">Se recuperó el borrador. El tipo de documento inicia en REM; confirma o selecciona el documento correcto antes de guardar.</div>}
         <Card className="order-form-section">
           <div className="order-section-heading"><span>01</span><h2>Cliente y documento</h2></div>
           <div className="form-grid">
@@ -362,36 +355,19 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
           <Button type="button" variant="secondary" onClick={() => setProducts(current => [...current, draftProduct()])}><Plus size={17} /> Agregar otro producto</Button>
           <label className="order-install-toggle"><input type="checkbox" checked={requiresInstallation} onChange={event => setRequiresInstallation(event.target.checked)} /><span><strong>Esta OT requiere instalación</strong><small>Si no aplica, deja esta opción desmarcada.</small></span></label>
         </Card>
-        {documentType === 'FACT' && (existing || isAdmin(user?.role)) && <Card className="order-form-section">
+        {documentType === 'FACT' && existing && <Card className="order-form-section">
           <div className="order-section-heading"><span>03</span><h2>Retenciones de FACT</h2></div>
-          <p className="order-help-text">{existing
-            ? 'Se descuentan del valor base; el IVA se suma sobre la base original. Puedes ajustar cada importe, incluso si la OT es menor a $524.000.'
-            : 'Por defecto se calculan automáticamente cuando la base supera $524.000 (RETE FUENTE 4 %, RETE IVA 2,85 % e ICA 7 × 1000). Activa la edición manual solo si los valores reales de esta OT son distintos.'}</p>
-          {!existing && <label className="order-install-toggle"><input type="checkbox" checked={manualRetentions}
-            onChange={event => {
-              const enabled = event.target.checked;
-              setManualRetentions(enabled);
-              if (enabled) {
-                setReteFuente(String(autoRetentions.reteFuente));
-                setReteIva(String(autoRetentions.reteIva));
-                setIca(String(autoRetentions.ica));
-              }
-            }} /><span><strong>Editar retenciones manualmente</strong><small>El cambio solo aplica a esta OT; puedes ingresar cero para una retención no practicada.</small></span></label>}
-          {(existing || manualRetentions) && <>
-            <div className="order-retention-grid">
-              <Field label="RETE FUENTE (COP)" htmlFor="edit-rete-fuente"><input id="edit-rete-fuente" className="input" type="number" min="0" step="0.01" value={reteFuente} onChange={event => setReteFuente(event.target.value)} /></Field>
-              <Field label="RETE IVA (COP)" htmlFor="edit-rete-iva"><input id="edit-rete-iva" className="input" type="number" min="0" step="0.01" value={reteIva} onChange={event => setReteIva(event.target.value)} /></Field>
-              <Field label="ICA (COP)" htmlFor="edit-ica"><input id="edit-ica" className="input" type="number" min="0" step="0.01" value={ica} onChange={event => setIca(event.target.value)} /></Field>
-            </div>
-            <Button type="button" variant="secondary" onClick={() => {
-              if (!existing) setManualRetentions(false);
-              else {
-                setReteFuente(String(autoRetentions.reteFuente));
-                setReteIva(String(autoRetentions.reteIva));
-                setIca(String(autoRetentions.ica));
-              }
-            }}>{existing ? 'Recalcular según valor actual' : 'Volver al cálculo automático'}</Button>
-          </>}
+          <p className="order-help-text">Al crear una FACT las retenciones se calculan automáticamente. Solo Administración puede cambiarlas desde Editar OT.</p>
+          <div className="order-retention-grid">
+            <Field label="RETE FUENTE (COP)" htmlFor="edit-rete-fuente"><input id="edit-rete-fuente" className="input" type="number" min="0" step="0.01" value={reteFuente} onChange={event => setReteFuente(event.target.value)} /></Field>
+            <Field label="RETE IVA (COP)" htmlFor="edit-rete-iva"><input id="edit-rete-iva" className="input" type="number" min="0" step="0.01" value={reteIva} onChange={event => setReteIva(event.target.value)} /></Field>
+            <Field label="ICA (COP)" htmlFor="edit-ica"><input id="edit-ica" className="input" type="number" min="0" step="0.01" value={ica} onChange={event => setIca(event.target.value)} /></Field>
+          </div>
+          <Button type="button" variant="secondary" onClick={() => {
+            setReteFuente(String(autoRetentions.reteFuente));
+            setReteIva(String(autoRetentions.reteIva));
+            setIca(String(autoRetentions.ica));
+          }}>Recalcular según valor actual</Button>
         </Card>}
         {!existing && <Card className="order-form-section">
           <div className="order-section-heading"><span>03</span><h2>Pago al crear la OT</h2></div>

@@ -19,7 +19,7 @@ Actualizado: 2026-09-14. Este documento separa los hallazgos de las fuentes orig
 | Numeración | `crear_orden_de_trabajo_2/code.html:12`, `:18` y `:433` vuelven a mostrar AUTO y consecutivo incremental. | Captura manual de OT única desde 1 para esta revisión; confirmar con cliente antes del backend, según decisión documentada. |
 | Formulario OT | `_2/code.html:87` no exige valor. Guardar solo cambia el texto mediante temporizador. Selección REM/FACT y rutas son divs sin interacción. | Validar datos, selectores accesibles y guardado real en el adaptador local. Valor y material condicional obligatorios. |
 | Abonos | `detalle_de_orden_de_trabajo/code.html:535` usa saldo fijo 850000; `:600` liquida esa cifra, aunque pantalla muestra $1.391.500. Confirmar solo cierra modal. | Derivar saldo de la OT y todos sus pagos; validar monto y fecha; incorporar el pago al mismo registro compartido. |
-| Retenciones | El detalle muestra importes de retención con una fórmula ambigua y además impone RETEFUENTE 2,5 %. | Entradas manuales opcionales; por decisión del usuario se agregan al total cobrable y no se asumen tasas tributarias. |
+| Retenciones | Los HTML de referencia muestran importes de retención con fórmula ambigua y una tasa fija de RETEFUENTE 2,5 %. | La política vigente es automática para FACT nuevas; solo Administración puede corregir una FACT especial después de crearla desde Editar OT. Los valores se restan del total cobrable. |
 | Emisión electrónica | CUFE inventado en detalle `:374` y textos de validez tributaria en creación. | Mostrar REM/FACT como clasificación interna; no aparentar emisión legal ni integración DIAN. |
 | Reportes | El script final de `reportes` cambia siete KPIs por cifras fijas, pero conserva gráficos, subtotales y categorías del mes original. No hay selección real de fechas. | Una agregación por período para todos los indicadores, controles reales de fecha/mes/rangos y separación de ventas, recaudo y cartera. |
 | Materiales | El selector temporal solo cambia colores. La tabla administrativa incluye largo/ancho. El título dice “Procesada en Taller” y otro texto “semanas epidemiológicas”. | Cinco materiales exactos, estadísticas administrativas en m², cálculo compartido y textos del negocio. Separar superficie pendiente de consumo completado. |
@@ -94,7 +94,7 @@ Comprobaciones ejecutadas el 2026-09-13:
 
 - Integrados login, shell de navegación, dashboard, órdenes, clientes, operación, las tres bandejas, cartera, reportes, materiales y gestión local de usuarios.
 - Listado, formulario, detalle, ficha impresa y cartera consultan las mismas órdenes y pagos. La creación y edición usan el cálculo financiero compartido; no conservan los saldos fijos de los HTML originales.
-- La clasificación FACT muestra IVA adicional y retenciones manuales opcionales agregadas al total cobrable, sin CUFE ni afirmaciones de emisión electrónica. La regla está documentada en `docs/DECISIONES.md`.
+- La clasificación FACT calcula IVA y retenciones automáticamente al crear; no hay captura manual de retenciones durante la creación o producción. Solo Administración puede ajustar retenciones luego desde Editar OT para una FACT especial. No se emiten documentos electrónicos ni se genera CUFE.
 - Las acciones de interfaz utilizan el adaptador local: creación, edición permitida, abonos múltiples, avance de producción, instalación y cierre. El cierre no liquida ni elimina el saldo pendiente.
 - Navegación y elementos visibles se ajustan al perfil de revisión. Se corrigió una carrera de redirección al entrar desde login a una ruta protegida.
 
@@ -131,7 +131,7 @@ Comprobaciones ejecutadas el 2026-09-13:
 
 ## Pendientes para la siguiente etapa
 
-1. Revisar el frontend con el usuario y confirmar numeración y tratamiento de retenciones antes de implementar reglas definitivas de backend.
+1. Revisar el frontend con el usuario antes de continuar los siguientes tramos funcionales del backend.
 2. Implementar la API por módulos, comenzando por Administración: autenticación, permisos del servidor, persistencia central y controles de concurrencia deben sustituir las comprobaciones locales.
 3. Repetir las pruebas al conectar cada módulo al backend, incluyendo cambios simultáneos, errores de red y actualización de saldos/estados entre equipos.
 4. Ampliar la comprobación a navegadores y dispositivos reales acordados para la entrega, zoom y tecnologías de asistencia. No confundir la revisión actual de Chromium con cobertura universal.

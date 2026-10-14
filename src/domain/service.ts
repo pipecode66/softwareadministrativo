@@ -40,17 +40,15 @@ export function validateInput(data: AppData, input: OrderInput, exceptId?: strin
   } else assert(!input.printing, 'Este recorrido no lleva parámetros de impresión.');
 }
 function cleanInput(input: OrderInput, onCreate = false): OrderInput {
-  const automatic = onCreate && input.products && input.documentType === 'FACT' && input.value > 524000;
+  const automatic = onCreate && input.documentType === 'FACT' && input.value > 524000;
   return { ...input, description: input.description.trim(), value: roundMoney(input.value),
-    reteFuente: input.documentType === 'FACT' ? input.reteFuente ?? (automatic ? roundMoney(input.value * .04) : 0) : 0,
-    reteIva: input.documentType === 'FACT' ? input.reteIva ?? (automatic ? roundMoney(input.value * .0285) : 0) : 0,
-    ica: input.documentType === 'FACT' ? input.ica ?? (automatic ? roundMoney(input.value * .007) : 0) : 0,
+    reteFuente: input.documentType === 'FACT' ? automatic ? roundMoney(input.value * .04) : onCreate ? 0 : input.reteFuente ?? 0 : 0,
+    reteIva: input.documentType === 'FACT' ? automatic ? roundMoney(input.value * .0285) : onCreate ? 0 : input.reteIva ?? 0 : 0,
+    ica: input.documentType === 'FACT' ? automatic ? roundMoney(input.value * .007) : onCreate ? 0 : input.ica ?? 0 : 0,
     printing: input.products || ['WORKSHOP_ONLY','EXTERNO','MULTI_AREA'].includes(input.route) ? undefined : input.printing };
 }
 export function createWorkOrder(data: AppData, user: User, input: OrderInput): WorkOrder {
   assert(user.active && canCreate(user.role), 'No tienes permiso para crear órdenes.');
-  assert(isAdmin(user.role) || [input.reteFuente,input.reteIva,input.ica].every(value => value === undefined),
-    'Solo Administración puede ajustar manualmente las retenciones.');
   validateInput(data, input, undefined, isAdmin(user.role));
   const now = new Date().toISOString();
   const number = input.number || Math.max(0, ...data.orders.map(order => order.number)) + 1;

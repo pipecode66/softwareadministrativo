@@ -29,13 +29,13 @@ Antes de finalizar una actividad de Taller, el perfil de Taller puede escribir o
 - Productos: descripción, cantidad entera y valor unitario. No existen especificaciones ni dimensiones generales del producto.
 - Materiales: Panaflex, V. Corte, V. Impresión y Banner, con largo, ancho y m². Impresión normal exige por lo menos uno, salvo que Administración envíe primero el producto a un diseñador asignado; en ese caso el diseñador debe registrarlo antes de finalizar Diseño. Corte Láser no utiliza materiales.
 
-Para una FACT nueva se calcula IVA 19 % sobre el valor base. Si la base es estrictamente mayor a $524.000, se proponen automáticamente RETE FUENTE 4 %, RETE IVA 2,85 % e ICA 7/1000. Administración puede activar la edición manual de los importes para esa OT (incluido dejar una retención en cero); si no la activa, el cálculo automático no cambia. El cobrable nuevo es base + IVA − retenciones. Las OT anteriores a esta regla quedan marcadas LEGACY para no reescribir saldos históricos durante la migración.
+Para una FACT nueva se calcula IVA 19 % sobre el valor base. Si la base es estrictamente mayor a $524.000, se aplican automáticamente RETE FUENTE 4 %, RETE IVA 2,85 % e ICA 7/1000; bajo el umbral son cero. Los importes no se capturan ni se editan antes de crear la OT ni durante producción. Si una FACT especial requiere retenciones distintas, solo Administración puede corregirlas mediante Editar OT cuando la orden sea editable. El cobrable nuevo es base + IVA − retenciones. Las OT anteriores a esta regla quedan marcadas LEGACY para no reescribir saldos históricos durante la migración.
 
 Al editar una OT de FACT a REM, las tres retenciones y sus certificados se eliminan automáticamente; el total y el saldo vuelven a calcularse únicamente sobre el valor base REM.
 
 Cuando finaliza Corte Láser, sus minutos se suman a la base y el IVA se actualiza. Las retenciones guardadas no se recalculan ni vuelven a evaluar el umbral de $524.000.
 
-Cada usuario de Administración o Diseño puede mantener un solo borrador incompleto de OT. El borrador pertenece exclusivamente al creador, no genera consecutivo y se elimina al crear la OT o mediante su icono en el historial.
+Cada usuario de Administración o Diseño puede mantener un solo borrador incompleto de OT. El borrador pertenece exclusivamente al creador, no genera consecutivo y se elimina al crear la OT o mediante su icono en el historial. Al recuperar un borrador, el tipo de documento inicia en REM y se debe volver a seleccionar FACT explícitamente si corresponde.
 
 El historial permite localizar todas las OT visibles por número, cliente o descripción del trabajo, sin distinguir mayúsculas ni tildes.
 

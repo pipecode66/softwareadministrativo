@@ -146,21 +146,20 @@ function normalizedInput(input: OrderInput, existing?: OrderRow): OrderInput {
   const auto = (rate: number) => automatic ? Math.round(input.value * rate * 100) / 100 : 0;
   const keepLegacy = existing?.financial_rule === 'LEGACY' && input.documentType === 'FACT';
   const firstMaterial = input.products?.flatMap(product => product.materials)[0];
+  const retention = (provided: number | undefined, column: 'rete_fuente' | 'rete_iva' | 'ica', rate: number) =>
+    existing ? provided ?? (keepLegacy ? Number(existing[column]) : auto(rate)) : auto(rate);
   return { ...input,
     printing: input.products && ['PRINT_ONLY','PRINT_WORKSHOP'].includes(input.route) && firstMaterial
       ? { material: firstMaterial.material, length: firstMaterial.length, width: firstMaterial.width } : input.printing,
-    reteFuente: input.reteFuente ?? (keepLegacy ? Number(existing.rete_fuente) : auto(0.04)),
-    reteIva: input.reteIva ?? (keepLegacy ? Number(existing.rete_iva) : auto(0.0285)),
-    ica: input.ica ?? (keepLegacy ? Number(existing.ica) : auto(0.007)),
+    reteFuente: retention(input.reteFuente, 'rete_fuente', 0.04),
+    reteIva: retention(input.reteIva, 'rete_iva', 0.0285),
+    ica: retention(input.ica, 'ica', 0.007),
   };
 }
 
 export async function createOrder(db: Database, auth: AuthSession, input: z.infer<typeof createSchema>) {
   return db.transaction(async tx => {
     const actor = await requireCurrentActor(tx, auth, creators);
-    if (!isAdmin(actor.role) && [input.reteFuente, input.reteIva, input.ica].some(value => value !== undefined)) {
-      throw new ApiError(403, 'FORBIDDEN', 'Solo Administración registra importes de retenciones.');
-    }
     const normalized = normalizedInput(input);
     const fingerprint = createHash('sha256').update(JSON.stringify({ fields: inputParams(normalized), products: input.products ?? null, initialPayment: input.initialPayment ?? null })).digest('hex');
     const previous = (await tx.query<OrderRow>('SELECT o.*,c.special_payment FROM orders o JOIN clients c ON c.id=o.client_id WHERE o.created_by = $1 AND o.creation_key = $2', [actor.id, input.requestId])).rows[0];

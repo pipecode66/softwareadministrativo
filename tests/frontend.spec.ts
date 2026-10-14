@@ -97,7 +97,10 @@ test('creación FACT multiproducto: retenciones automáticas, varios materiales 
   await fillOrder(page);
   await page.getByRole('radio', { name: /FACT/ }).check();
   await page.locator('.order-product-card').first().getByLabel('Valor unitario antes de IVA (COP) *').fill('600000');
+  await expect(page.getByLabel('Editar retenciones manualmente')).toHaveCount(0);
+  await expect(page.getByLabel('RETE FUENTE (COP)')).toHaveCount(0);
   await page.locator('.order-product-card').first().getByRole('checkbox', { name: 'Diseño' }).check();
+  await page.locator('.order-product-card').first().getByLabel('Asignar diseñador *').selectOption('u-design');
   await page.locator('.order-product-card').first().getByRole('button', { name: 'Agregar material' }).click();
   await page.locator('.order-product-card').first().getByLabel('Material 2', { exact: true }).selectOption('Banner');
   await page.locator('.order-product-card').first().getByLabel('Largo (m)').last().fill('1');
@@ -111,6 +114,7 @@ test('creación FACT multiproducto: retenciones automáticas, varios materiales 
   await expect(external.getByRole('checkbox', { name: 'Impresión' })).toBeEnabled();
   await expect(external.getByRole('checkbox', { name: 'Taller' })).toBeEnabled();
   await external.getByRole('checkbox', { name: 'Diseño' }).check();
+  await external.getByLabel('Asignar diseñador *').selectOption('u-design');
   await external.getByRole('checkbox', { name: 'Impresión' }).check();
   await external.getByRole('checkbox', { name: 'Taller' }).check();
   await expect(external.getByLabel('Largo del producto (m)')).toHaveCount(0);
@@ -129,26 +133,19 @@ test('creación FACT multiproducto: retenciones automáticas, varios materiales 
   await expect(page.locator('.order-balance-highlight')).toContainText(formatCOP(881600));
 });
 
-test('creación FACT permite ajustar retenciones y dejar en cero las no practicadas', async ({ page }) => {
+test('el borrador se recupera en REM y solo edición administrativa ofrece retenciones manuales', async ({ page }) => {
   await login(page);
   await fillOrder(page);
   await page.getByRole('radio', { name: /FACT/ }).check();
   await page.locator('.order-product-card').first().getByLabel('Valor unitario antes de IVA (COP) *').fill('535000');
-  await page.getByLabel('Editar retenciones manualmente').check();
-  await expect(page.getByLabel('RETE FUENTE (COP)')).toHaveValue('21400');
-  await expect(page.getByLabel('RETE IVA (COP)')).toHaveValue('15247.5');
-  await expect(page.getByLabel('ICA (COP)')).toHaveValue('3745');
-  await page.getByLabel('RETE FUENTE (COP)').fill('13375');
-  await page.getByLabel('RETE IVA (COP)').fill('0');
-  await page.getByLabel('ICA (COP)').fill('2568');
-  await page.getByLabel('Valor recibido (COP) *').fill('620707');
-
-  await expect(page.locator('.order-preview-total strong')).toContainText(formatCOP(620707));
-  await saveOrder(page);
-
-  const order = (await storedOrders(page)).at(-1)!;
-  expect(order).toMatchObject({ reteFuente: 13375, reteIva: 0, ica: 2568 });
-  expect(financials(order)).toMatchObject({ base: 535000, iva: 101650, retentions: 15943, collectible: 620707, balance: 0 });
+  await expect(page.locator('.order-preview-total strong')).toContainText(formatCOP(596257.5));
+  await expect(page.getByLabel('Editar retenciones manualmente')).toHaveCount(0);
+  await page.waitForTimeout(700);
+  await page.goto('/orders');
+  await page.goto('/orders/new');
+  await expect(page.getByRole('radio', { name: 'REM', exact: true })).toBeChecked();
+  await expect(page.getByRole('status')).toContainText('El tipo de documento inicia en REM');
+  await expect(page.getByLabel('RETE FUENTE (COP)')).toHaveCount(0);
 });
 
 test('editor multiproducto y materiales se adapta a 320 px', async ({ page }) => {

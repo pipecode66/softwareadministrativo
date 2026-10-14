@@ -43,8 +43,8 @@ describe('Cálculos de dinero y cartera', () => {
     expect(isFinished(order({ status }))).toBe(true);
   });
   it('suma retenciones aunque superen el valor base', () => {
-    const result = createWorkOrder(data(), user(), input({ documentType: 'FACT', value: 100, reteFuente: 119 }));
-    expect(financials(result)).toMatchObject({ collectible: 238, balance: 238, paymentStatus: 'PENDING' });
+    const result = financials(order({ documentType: 'FACT', financialRule: 'LEGACY', value: 100, reteFuente: 119 }));
+    expect(result).toMatchObject({ collectible: 238, balance: 238, paymentStatus: 'PENDING' });
   });
 });
 
@@ -54,7 +54,7 @@ describe('Validación y creación de órdenes', () => {
     expect(result).toMatchObject({ number: 1, description: 'Trabajo publicitario', createdBy: user(role).id, createdAt: NOW, updatedAt: NOW, payments: [], status: 'NEW' });
     expect(result.id).toBeTruthy();
   });
-  it('conserva una anulación manual explícita de retenciones al crear localmente', () => {
+  it('la creación local calcula retenciones automáticamente aunque reciba importes manuales', () => {
     const result = createWorkOrder(data(), user(), input({
       number: 1, value: 535000, documentType: 'FACT', route: 'PRINT_WORKSHOP', printing: undefined,
       reteFuente: 13375, reteIva: 0, ica: 2568,
@@ -65,13 +65,14 @@ describe('Validación y creación de órdenes', () => {
       }],
       initialPayment: { date: today(), amount: 1000, method: 'EFECTIVO' },
     }));
-    expect(result).toMatchObject({ reteFuente: 13375, reteIva: 0, ica: 2568 });
-    expect(financials(result)).toMatchObject({ retentions: 15943, collectible: 620707 });
+    expect(result).toMatchObject({ reteFuente: 21400, reteIva: 15247.5, ica: 3745 });
+    expect(financials(result)).toMatchObject({ retentions: 40392.5, collectible: 596257.5 });
   });
-  it('no permite que Diseño envíe incluso retenciones manuales en cero', () => {
-    expect(() => createWorkOrder(data(), user('DISENO'), input({
-      documentType: 'FACT', reteFuente: 0, reteIva: 0, ica: 0,
-    }))).toThrow(/solo administración/i);
+  it('la creación local de Diseño ignora importes de retención y deja REM en cero', () => {
+    const result = createWorkOrder(data(), user('DISENO'), input({
+      documentType: 'REM', reteFuente: 100, reteIva: 100, ica: 100,
+    }));
+    expect(result).toMatchObject({ documentType: 'REM', reteFuente: 0, reteIva: 0, ica: 0 });
   });
   it.each(['IMPRESION', 'TALLER'] as Role[])('%s no puede crear órdenes', role => {
     expect(() => createWorkOrder(data(), user(role), input())).toThrow(/permiso/);

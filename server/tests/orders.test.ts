@@ -218,10 +218,11 @@ describe('OT: creación automática e idempotencia', () => {
 });
 
 describe('OT: finanzas y abonos', () => {
-  it('FACT nueva resta retenciones y suma IVA; REM mantiene solo la base', async () => {
-    const fact = await create({ documentType: 'FACT', reteFuente: 5000, reteIva: 3000, ica: 2000 });
-    expect(fact.financials).toEqual({ base: 100000, iva: 19000, gross: 119000, retentions: 10000,
-      collectible: 109000, paid: 0, balance: 109000, paymentStatus: 'SPECIAL' });
+  it('FACT nueva aplica retenciones automáticas y REM mantiene solo la base', async () => {
+    const fact = await create({ documentType: 'FACT', value: 535000, reteFuente: 1, reteIva: 2, ica: 3 });
+    expect(fact.financials).toEqual({ base: 535000, iva: 101650, gross: 636650, retentions: 40392.5,
+      collectible: 596257.5, paid: 0, balance: 596257.5, paymentStatus: 'SPECIAL' });
+    expect(fact).toMatchObject({ reteFuente: 21400, reteIva: 15247.5, ica: 3745 });
     expect((await create()).financials).toMatchObject({ iva: 0, retentions: 0, collectible: 100000 });
   });
 
@@ -314,6 +315,8 @@ describe('OT: edición, versiones y flujo productivo', () => {
     const changed = await edit(order, { description: 'Revisado por administración' }, await actor('ADMIN_GENERAL'));
     expect(changed.status).toBe(200);
     expect(changed.body.order.version).toBe(2);
+    expect((await edit(changed.body.order, { reteFuente: 10, reteIva: 0, ica: 0 }, designer,
+      input({ documentType:'FACT', reteFuente:undefined, reteIva:undefined, ica:undefined }))).status).toBe(403);
     const sent = await move(changed.body.order, 'send');
     expect(sent.status).toBe('IN_PRINTING');
     expect((await edit(sent, { description: 'No cambia en producción' })).status).toBe(409);
@@ -552,9 +555,15 @@ describe('OT: validación server-side', () => {
     expect((await get('/orders')).body.total).toBe(0);
   });
 
-  it('Diseño no registra retenciones manuales, ni siquiera si todas son cero', async () => {
-    const response = await createRequest({ ...input({ documentType: 'FACT', reteFuente: 0, reteIva: 0, ica: 0 }), requestId: randomUUID() }, await actor('DISENO'));
-    expect(response.status).toBe(403);
+  it('la creación de FACT por Diseño ignora importes manuales y aplica retenciones automáticas', async () => {
+    const response = await createRequest({
+      ...input({ documentType: 'FACT', value: 535000, reteFuente: 0, reteIva: 0, ica: 0 }),
+      requestId: randomUUID(),
+    }, await actor('DISENO'));
+    expect(response.status).toBe(201);
+    const order = (await get(`/orders/${response.body.order.id}`)).body.order;
+    expect(order).toMatchObject({ reteFuente: 21400, reteIva: 15247.5, ica: 3745 });
+    expect(order.financials).toMatchObject({ retentions: 40392.5, collectible: 596257.5 });
   });
 
   it.each(['Panaflex', 'V. Corte', 'V. Impresión', 'Banner'] as const)('acepta el material %s y muestra metros cuadrados', async material => {
@@ -618,29 +627,37 @@ describe('Cambios financieros y ruta externa', () => {
     expect(viewed.body.order.payments[0]).toMatchObject({amount:25000,method:'BANCOLOMBIA',recordedBy:designer.user.id});
   });
 
-  it('calcula retenciones automáticas solo sobre FACT mayor de $524.000 y admite override', async () => {
-    const threshold = await create({documentType:'FACT',value:524000,reteFuente:undefined,reteIva:undefined,ica:undefined});
+  it('calcula retenciones automáticas solo sobre FACT mayor de $524.000 y permite ajustar en edición administrativa', async () => {
+    const threshold = await create({documentType:'FACT',value:524000,reteFuente:1000,reteIva:2000,ica:3000});
     expect(threshold.financials).toMatchObject({retentions:0,collectible:623560});
-    const over = await create({documentType:'FACT',value:524001,reteFuente:undefined,reteIva:undefined,ica:undefined});
+    const over = await create({documentType:'FACT',value:524001,reteFuente:0,reteIva:0,ica:0});
     expect(over.financials).toMatchObject({retentions:39562.08,iva:99560.19,collectible:583999.11});
     const changed = await edit(over,{reteFuente:100,reteIva:undefined,ica:50},admin,
       input({documentType:'FACT',value:524001,reteFuente:undefined,reteIva:undefined,ica:undefined}));
     expect(changed.status).toBe(200);
     expect(changed.body.order.financials).toMatchObject({retentions:15084.03,collectible:608477.16});
     const manual = await create({documentType:'FACT',value:100000,reteFuente:100,reteIva:50,ica:25});
-    expect(manual.financials).toMatchObject({retentions:175,collectible:118825});
+    expect(manual.financials).toMatchObject({retentions:0,collectible:119000});
   });
 
-  it('conserva los importes manuales de FACT al crear, incluso cuando una retención es cero', async () => {
+  it('la creación ignora importes manuales enviados y Administración puede corregirlos después', async () => {
     const order = await create({documentType:'FACT',value:535000,reteFuente:13375,reteIva:0,ica:2568});
-    expect(order).toMatchObject({reteFuente:13375,reteIva:0,ica:2568});
-    expect(order.financials).toMatchObject({base:535000,iva:101650,retentions:15943,collectible:620707});
+    expect(order).toMatchObject({reteFuente:21400,reteIva:15247.5,ica:3745});
+    expect(order.financials).toMatchObject({base:535000,iva:101650,retentions:40392.5,collectible:596257.5});
+    const changed = await edit(order,{reteFuente:13375,reteIva:0,ica:2568},admin,
+      input({documentType:'FACT',value:535000,reteFuente:undefined,reteIva:undefined,ica:undefined}));
+    expect(changed.status).toBe(200);
+    expect(changed.body.order).toMatchObject({reteFuente:13375,reteIva:0,ica:2568});
+    expect(changed.body.order.financials).toMatchObject({retentions:15943,collectible:620707});
   });
 
   it('conserva la regla LEGACY y sus saldos al editar una orden histórica', async () => {
-    const order = await create({documentType:'FACT',reteFuente:5000,reteIva:3000,ica:2000});
-    await db.query("UPDATE orders SET financial_rule='LEGACY' WHERE id=$1",[order.id]);
-    const before = (await get(`/orders/${order.id}`)).body.order;
+    const created = await create({documentType:'FACT'});
+    const manuallyAdjusted = await edit(created,{reteFuente:5000,reteIva:3000,ica:2000},admin,
+      input({documentType:'FACT',reteFuente:undefined,reteIva:undefined,ica:undefined}));
+    expect(manuallyAdjusted.status).toBe(200);
+    await db.query("UPDATE orders SET financial_rule='LEGACY' WHERE id=$1",[created.id]);
+    const before = (await get(`/orders/${created.id}`)).body.order;
     expect(before.financials.collectible).toBe(129000);
     const edited = await edit(before,{description:'Ajuste descriptivo',reteFuente:undefined,reteIva:undefined,ica:undefined},admin,
       input({documentType:'FACT',reteFuente:undefined,reteIva:undefined,ica:undefined}));
@@ -650,10 +667,13 @@ describe('Cambios financieros y ruta externa', () => {
   });
 
   it('permite cambiar una FACT a REM limpiando retenciones y certificados', async () => {
-    const order = await create({documentType:'FACT',reteFuente:5000,reteIva:3000,ica:2000});
+    const created = await create({documentType:'FACT'});
+    const manuallyAdjusted = await edit(created,{reteFuente:5000,reteIva:3000,ica:2000},admin,
+      input({documentType:'FACT',reteFuente:undefined,reteIva:undefined,ica:undefined}));
+    expect(manuallyAdjusted.status).toBe(200);
     await db.query(`UPDATE orders SET certificate_rete_fuente=true,
-      certificate_rete_iva=true,certificate_ica=true WHERE id=$1`, [order.id]);
-    const edited = await edit(order,
+      certificate_rete_iva=true,certificate_ica=true WHERE id=$1`, [created.id]);
+    const edited = await edit(manuallyAdjusted.body.order,
       {documentType:'REM',reteFuente:0,reteIva:0,ica:0}, admin,
       input({documentType:'FACT',reteFuente:5000,reteIva:3000,ica:2000}));
     expect(edited.status).toBe(200);
@@ -663,7 +683,7 @@ describe('Cambios financieros y ruta externa', () => {
       financials:{iva:0,retentions:0,collectible:100000},
     });
     expect((await db.query(`SELECT document_type,rete_fuente,rete_iva,ica,
-      certificate_rete_fuente,certificate_rete_iva,certificate_ica FROM orders WHERE id=$1`, [order.id])).rows[0])
+      certificate_rete_fuente,certificate_rete_iva,certificate_ica FROM orders WHERE id=$1`, [created.id])).rows[0])
       .toMatchObject({document_type:'REM',rete_fuente:'0.00',rete_iva:'0.00',ica:'0.00',
         certificate_rete_fuente:false,certificate_rete_iva:false,certificate_ica:false});
   });

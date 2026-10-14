@@ -1,5 +1,5 @@
 import { apiDeleteOrderDraft, apiOrderDraft, apiSaveOrderDraft, type OrderDraftRecord, usingApi } from './api';
-import type { Category, DocumentType, Material, PaymentMethod, PrintingType } from '../domain/types';
+import type { Category, Material, PaymentMethod, PrintingType } from '../domain/types';
 
 const PREFIX = 'intermedios-order-draft:';
 export const ORDER_DRAFT_EVENT = 'intermedios-order-draft-changed';
@@ -7,14 +7,9 @@ export const ORDER_DRAFT_EVENT = 'intermedios-order-draft-changed';
 export interface OrderFormDraft {
   clientId: string;
   category: Category;
-  documentType: DocumentType;
   requiresInstallation: boolean;
   paymentAmount: string;
   paymentMethod: Exclude<PaymentMethod, 'LEGACY'>;
-  manualRetentions: boolean;
-  reteFuente: string;
-  reteIva: string;
-  ica: string;
   products: Array<{
     key: string; description: string; quantity: string; unitValue: string;
     design: boolean; printing: boolean; printingType: PrintingType; workshop: boolean; external: boolean;
