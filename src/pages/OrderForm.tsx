@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, FileText, Hammer, Info, Printer, Ruler, Save } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, FileText, Hammer, Info, Plus, Printer, Ruler, Save } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { Category, DocumentType, Material, OrderInput, ProductionRoute, WorkOrder } from '../domain/types';
 import { areaOf, canCreate, CATEGORIES, financials, formatCOP, formatMeasure, formatNumber, formatPesosInput, isAdmin, MATERIALS, ROUTE_LABELS } from '../domain/utils';
@@ -45,6 +45,8 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
   const { data, user, createOrder, saveClient, updateOrder, toast } = useApp();
   const navigate = useNavigate();
   const [values, setValues] = useState<FormValues>(() => initialValues(existing, initialClientId));
+  const [invoiceIncluded, setInvoiceIncluded] = useState(Boolean(existing?.invoiceReference));
+  const [invoiceReference, setInvoiceReference] = useState(existing?.invoiceReference || '');
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
@@ -94,7 +96,9 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
         if (values[key] && (!Number.isFinite(Number(values[key])) || Number(values[key]) < 0)) next[key] = 'Ingresa un importe válido, igual o mayor que cero.';
         else if (Math.abs(Math.round(Number(values[key]) * 100) - Number(values[key]) * 100) > 0.0001) next[key] = 'Ingresa un importe con máximo dos decimales.';
       });
-
+      if (existing && invoiceIncluded && !invoiceReference.trim()) {
+        next.general = 'Escribe la referencia de facturación o desmarca Incluir Facturación.';
+      }
     }
     if (existing && previewMoney.balance < 0) next.general = 'El total por cobrar no puede ser menor a los pagos registrados.';
     return next;
@@ -113,6 +117,7 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
       documentType: values.documentType, category: values.category, route: values.route, requiresInstallation: values.requiresInstallation,
       printing: hasPrinting ? { material: values.material, length: Number(values.length), width: Number(values.width) } : undefined,
       reteFuente: fact ? Number(values.reteFuente) || 0 : 0, reteIva: fact ? Number(values.reteIva) || 0 : 0, ica: fact ? Number(values.ica) || 0 : 0,
+      ...(existing && fact ? { invoiceReference: invoiceIncluded ? invoiceReference.trim() : null } : {}),
     };
     setSaving(true);
     try {
@@ -168,6 +173,17 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
             {admin && <><p className="eyebrow">Retenciones · importes en COP</p><div className="order-retention-grid">
               {([{ key: 'reteFuente', label: 'RETE FUENTE' }, { key: 'reteIva', label: 'RETE IVA 15' }, { key: 'ica', label: 'ICA 7 × 1000' }] as const).map(item => <Field key={item.key} label={item.label} htmlFor={`ot-${item.key}`}><input className="input" id={`ot-${item.key}`} type="number" min="0" step="0.01" inputMode="decimal" placeholder="0 COP" value={values[item.key]} onChange={event => change(item.key, event.target.value)} {...attrs(item.key)} />{errorFor(item.key)}</Field>)}
             </div><p className="order-help-text">{existing?.financialRule === 'NEW' ? 'Estos importes se descuentan del valor de la OT antes de sumar el IVA. Puedes corregirlos incluso bajo el umbral de $524.000.' : 'Esta orden conserva la regla financiera histórica: las retenciones ingresadas se suman al total.'}</p></>}
+            {admin && existing && <div className="order-fact-invoice">
+              <h3>FACTURADO</h3>
+              <label className="order-install-toggle">
+                <input type="checkbox" checked={invoiceIncluded} onChange={event => setInvoiceIncluded(event.target.checked)} />
+                <span className="order-invoice-include-icon"><Plus size={17} aria-hidden="true" /></span>
+                <span><strong>Incluir Facturación</strong><small>Marca esta casilla e ingresa la referencia de facturación.</small></span>
+              </label>
+              {invoiceIncluded && <Field label="Referencia de facturación *" htmlFor="invoice-reference">
+                <input id="invoice-reference" className="input" value={invoiceReference} onChange={event => setInvoiceReference(event.target.value)} maxLength={100} placeholder="FE#2394" required />
+              </Field>}
+            </div>}
             <p className="order-help-text"><Info size={15} /> Esta selección clasifica la OT; no emite una factura electrónica.</p>
           </div>}
         </Card>

@@ -42,6 +42,7 @@
 40. Las OT no pueden eliminarse desde la aplicación. La eliminación administrativa y la renumeración de OT posteriores fueron descartadas; el consecutivo vuelve a ser una identidad `GENERATED ALWAYS` asignada exclusivamente por el servidor.
 41. Taller puede registrar hasta 4000 caracteres de observaciones opcionales al finalizar su actividad. Las observaciones quedan persistidas y visibles en la OT finalizada; no bloquean la finalización si se dejan vacías.
 42. ADMINMASTER y ADMIN_GENERAL pueden editar una OT `COMPLETED` o `INSTALLED` que no tenga cierre administrativo. Las actividades terminadas se conservan y únicamente se crean las áreas faltantes como pendientes; si existe trabajo nuevo, la OT vuelve a `IN_PRODUCTION`. No se pueden retirar áreas trabajadas, alterar su responsable o tipo, modificar materiales consumidos, ni agregar o eliminar productos. Una OT con cierre administrativo sigue protegida.
+43. La facturación es una referencia textual opcional de hasta 100 caracteres, editable solo por Administración en OT FACT existentes. Ninguna creación permite incluirla, REM no la conserva; la lista administrativa presenta una X para FACT sin referencia y un chulo que revela la referencia al pulsarlo.
 
 ## Decisiones sustituidas
 

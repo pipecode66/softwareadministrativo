@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowRight, CheckCheck, ClipboardList, FilterX, Plus, Trash2, Wallet } from 'lucide-react';
+import { ArrowRight, Check, CheckCheck, ClipboardList, FilterX, Plus, Trash2, Wallet, X } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { WorkOrder } from '../domain/types';
 import { deleteOrderDraft, loadOrderDraft, ORDER_DRAFT_EVENT, type OrderFormDraft } from '../data/orderDraft';
@@ -28,9 +28,22 @@ export function OrdersPage() {
   const requestedPage = Number.parseInt(params.get('page') || '1', 10);
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const [draft, setDraft] = useState<OrderDraftRecord<OrderFormDraft> | null>(null);
+  const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null);
   const [draftBusy, setDraftBusy] = useState(false);
   const [draftError, setDraftError] = useState('');
   const admin = isAdmin(user?.role);
+  function invoiceStatus(order: WorkOrder) {
+    if (order.documentType !== 'FACT') return null;
+    if (!order.invoiceReference) return <span className="order-invoice-unbilled" aria-label={`OT ${order.number} no facturada`}><X size={19} aria-hidden="true" /></span>;
+    const isOpen = openInvoiceId === order.id;
+    return <div className="order-invoice-status">
+      <button type="button" className="order-invoice-check" aria-label={`${isOpen ? 'Ocultar' : 'Ver'} facturación ${order.invoiceReference} de OT ${order.number}`}
+        aria-expanded={isOpen} onClick={() => setOpenInvoiceId(isOpen ? null : order.id)}>
+        <Check size={19} aria-hidden="true" />
+      </button>
+      {isOpen && <span className="order-invoice-reference" role="status">{order.invoiceReference}</span>}
+    </div>;
+  }
   const clientId = params.get('client') || params.get('clientId');
   const orders = useMemo(() => user ? visibleOrders(user, data.orders) : [], [user, data.orders]);
   const clientName = (order: WorkOrder) => data.clients.find(client => client.id === order.clientId)?.name || 'Cliente no disponible';
@@ -77,6 +90,7 @@ export function OrdersPage() {
     ...(admin ? [
       { key: 'value', label: 'Total por cobrar', className: 'money', render: (order: WorkOrder) => <><span className="cell-title">{formatCOP(financials(order).collectible)}</span><span className="cell-subtitle">Saldo: {formatCOP(financials(order).balance)}</span></> },
       { key: 'payment', label: 'Pago', render: (order: WorkOrder) => <PaymentBadge status={financials(order).paymentStatus} /> },
+      { key: 'invoiced', label: 'FACTURADO', render: (order: WorkOrder) => invoiceStatus(order) },
     ] : []),
     { key: 'view', label: '', render: (order: WorkOrder) => <Link className="order-view-link" to={`/orders/${order.id}`} aria-label={`Ver orden ${order.number}`}><ArrowRight size={18} /></Link> },
   ];
@@ -134,6 +148,7 @@ export function OrdersPage() {
           <div className="order-card-heading"><Link className="order-number" to={`/orders/${order.id}`}>OT #{String(order.number).padStart(4, '0')}</Link><DocumentBadge type={order.documentType} /></div>
           <h3>{clientName(order)}</h3><p className="muted order-ellipsis">{order.description}</p>
           <div className="order-card-badges"><WorkBadge status={order.status} />{admin && <PaymentBadge status={financials(order).paymentStatus} />}</div>
+          {admin && order.documentType === 'FACT' && <div className="order-card-invoice"><strong>FACTURADO</strong>{invoiceStatus(order)}</div>}
           {admin && <div className="order-card-amount"><span>Saldo pendiente</span><strong>{formatCOP(financials(order).balance)}</strong></div>}
           <div className="order-card-footer"><span className="muted">{formatDate(order.createdAt)}</span><Link className="link" to={`/orders/${order.id}`}>Ver orden <ArrowRight size={15} /></Link></div>
         </article>} />

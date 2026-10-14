@@ -24,12 +24,16 @@ El 14/10/2026 se retiró la captura manual de retenciones al crear y se impuso e
 
 El 14/10/2026 se amplió a ADMINMASTER y ADMIN_GENERAL la edición de OT `COMPLETED` e `INSTALLED` sin cierre administrativo. Se preserva el trabajo terminado; las áreas omitidas agregadas reabren la OT en producción, y continúan bloqueadas la retirada de áreas, la alteración de responsables/tipos ya ejecutados, los materiales consumidos y las OT con cierre administrativo. Sin migración SQL. Verificado localmente.
 
+El 14/10/2026 se implementó un indicador FACTURADO en la lista administrativa, con X para FACT sin facturar y chulo interactivo que revela la referencia, además del campo FACTURADO en Editar OT FACT tanto en el editor compuesto como en el editor legado. La migración es `013_facturation_reference.sql`. No se puede ingresar al crear ni aparece para REM. Verificado: 158 pruebas frontend, 275 pruebas servidor, ambos typecheck/builds, E2E del flujo compuesto y legado, y `git diff --check`. Sin evidencia de ejecución en Supabase: aplicar la migración manualmente antes de desplegar el backend.
+
 ## Funcionalidades terminadas en este tramo
 
 - Al crear una FACT, el formulario no permite ingresar retenciones; siempre se calculan automáticamente, también ante una solicitud directa al servidor.
 - Solo ADMINMASTER y ADMIN_GENERAL pueden acceder a Editar OT; el servidor también rechaza modificaciones realizadas desde Diseño.
 - Ambos perfiles administrativos pueden corregir OT instaladas o terminadas que no tengan cierre administrativo; se conserva el trabajo realizado y cualquier área faltante se agrega como pendiente.
 - Una OT cerrada administrativamente sigue protegida contra edición.
+- Las OT FACT incluyen en la lista administrativa el estado FACTURADO; el chulo permite revelar la referencia escrita y una X indica que falta.
+- La referencia (por ejemplo `FE#2394`) se gestiona desde Editar OT FACT. La casilla no aparece durante creación, para REM ni para perfiles ajenos a Administración.
 - Para FACT especiales, Administración ajusta las retenciones después de crear la OT desde Editar OT, si la orden aún admite edición.
 - Al recuperar un borrador de Nueva OT, el tipo vuelve a REM para evitar que un FACT antiguo se seleccione silenciosamente; la pantalla solicita confirmar o escoger el documento correcto.
 - Impresión debe escribir quién recibe el trabajo en Taller antes de finalizar su actividad.
@@ -59,10 +63,12 @@ El 14/10/2026 se amplió a ADMINMASTER y ADMIN_GENERAL la edición de OT `COMPLE
 - `src/pages/Orders.tsx`
 - `src/pages/OrderDetail.tsx`
 - `src/pages/OrderForm.tsx`
+- `src/pages/Orders.tsx`
 - `src/pages/Queues.tsx`
 - `src/data/AppContext.tsx`
 - `src/data/api.ts`
 - `src/data/orderDraft.ts`
+- `src/data/api.ts`
 - `src/domain/types.ts`
 - `src/domain/service.ts`
 - `src/data/orderNotifications.ts`
@@ -70,10 +76,11 @@ El 14/10/2026 se amplió a ADMINMASTER y ADMIN_GENERAL la edición de OT `COMPLE
 - `src/pages/ChangePassword.tsx`
 - `src/pages/NewOrderEditor.tsx`
 - `src/pages/orders.css`
+- `server/migrations/013_facturation_reference.sql`
 - `src/styles.css`
 - `tests/order-notifications.test.ts`
 - `tests/domain.test.ts`
-- `tests/frontend.spec.ts` (creación FACT, borrador REM, edición administrativa de retenciones y acceso de ADMIN_GENERAL a OT terminadas/instaladas)
+- `tests/frontend.spec.ts` (creación FACT, borrador REM, edición administrativa de retenciones y FACTURADO en editores compuesto y legado)
 - `tests/api-e2e.spec.ts`
 - `server/src/orders/domain.ts`
 - `server/src/orders/service.ts`
@@ -97,9 +104,11 @@ El 14/10/2026 se amplió a ADMINMASTER y ADMIN_GENERAL la edición de OT `COMPLE
 
 - `npm run typecheck`: aprobado.
 - `npm test`: 157/157 en 3 archivos.
+- `npm test`: 158/158 en 3 archivos (incluye persistencia de referencia FACT en adaptador local).
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
 - `npm --prefix server test`: 274/274 en 9 archivos.
+- `npm --prefix server test`: 275/275 en 9 archivos (incluye persistencia, consulta y limpieza de referencia de facturación).
 - La regresión del dominio permite editar como ambos administradores una OT COMPLETED o INSTALLED no cerrada (137/137 pruebas de dominio).
 - La regresión de `server/tests/work.test.ts` confirma edición ADMIN_GENERAL de una OT terminada e instalada, conserva la instalación y rechaza una OT cerrada (11/11).
 - La prueba Playwright de ADMIN_GENERAL en OT terminadas/instaladas y cierre bloqueado aprobó (1/1) con Chromium 1217 local.
@@ -124,6 +133,9 @@ El 14/10/2026 se amplió a ADMINMASTER y ADMIN_GENERAL la edición de OT `COMPLE
 - `npm run test:e2e`: los 32 casos funcionales aprobaron, incluidos el desplegable abierto en móvil y la restauración de la página 4. Dos recorridos completos cerraron 31/32 por incidencias transitorias del entorno de Playwright (un artefacto de traza y una espera de carga antes del login); ambos casos restantes aprobaron 1/1 al repetirlos aisladamente.
 - `npm run test:e2e:api`: 5/5 con API y PGlite reales.
 - Las dos pruebas E2E dirigidas confirman retenciones automáticas al crear FACT, ausencia de captura manual durante creación y borrador recuperado como REM; además comprueban que la edición manual se ofrece solo en edición administrativa.
+- E2E de FACTURADO: 1/1; edición registra `FE#2394`, la lista muestra y revela la referencia al pulsar el chulo, FACT sin referencia muestra X y REM no muestra el indicador ni el control al editar.
+- El E2E de FACTURADO también verifica el editor legado en una FACT existente, incluyendo persistencia de la referencia.
+- La migración 013 se aplica automáticamente en PGlite durante las pruebas. No se ha ejecutado en Supabase.
 - Las pruebas para edición de OT terminadas/instaladas pasaron: dominio 137/137, servidor `work.test.ts` 11/11 y E2E de ADMIN_GENERAL 1/1; se verifican actividades conservadas y el bloqueo de cierre administrativo.
 - Tras el cambio de edición de OT terminadas/instaladas, `npm test` aprobó 157/157, `npm --prefix server test` 274/274, ambos typecheck y ambos builds finalizaron correctamente.
 - La prueba del servidor confirma varias coincidencias por descripción con `TALONARIOS`.
@@ -184,9 +196,10 @@ Las observaciones de Taller se consideran significativas porque añaden persiste
 ## Pendiente para producción
 
 1. Ejecutar manualmente `server/migrations/012_disable_order_deletion.sql` en Supabase antes de publicar este código.
-2. Confirmar en producción que ninguna OT presenta una acción de eliminación.
-3. Comprobar en producción una finalización de Taller con observaciones y otra sin observaciones.
-4. Verificar en la instalación productiva la edición manual de retenciones de una FACT; esta entrega no requiere migración SQL y el despliegue no se comprobó desde aquí.
+2. Ejecutar manualmente `server/migrations/013_facturation_reference.sql` en Supabase antes de desplegar el backend con el nuevo campo FACTURADO.
+3. Confirmar en producción que ninguna OT presenta una acción de eliminación.
+4. Comprobar en producción una finalización de Taller con observaciones y otra sin observaciones.
+5. Verificar en la instalación productiva la edición manual de retenciones y la referencia FACTURADO; el despliegue no se comprobó desde aquí.
 
 ## Comando para retomar
 

@@ -35,6 +35,16 @@
 .order-mobile-card h3 { font-size: 15px; }
 .order-card-heading, .order-card-footer, .order-card-amount { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .order-card-badges { display: flex; flex-wrap: wrap; gap: 8px; }
+.order-invoice-status { display: inline-flex; align-items: center; gap: 7px; }
+.order-invoice-check, .order-invoice-unbilled { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; border-radius: 7px; background: #ecfdf5; color: #047857; }
+.order-invoice-check { cursor: pointer; }
+.order-invoice-check:hover, .order-invoice-check[aria-expanded="true"] { background: #d1fae5; }
+.order-invoice-unbilled { background: #fef2f2; color: #b91c1c; }
+.order-invoice-reference { color: #334155; font-size: 11px; font-weight: 700; overflow-wrap: anywhere; }
+.order-card-invoice { display: flex; align-items: center; gap: 9px; color: #64748b; font-size: 10px; letter-spacing: .04em; }
+.order-invoice-include-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: 0 0 auto; border: 1px solid #fed7aa; border-radius: 7px; background: #fff7ed; color: #c2410c; }
+.order-fact-invoice { display: grid; gap: 12px; margin-top: 22px; padding-top: 18px; border-top: 1px solid #e8edf5; }
+.order-fact-invoice h3 { margin: 0; color: #334155; font: 700 13px Manrope, sans-serif; }
 .order-card-amount { padding: 12px; background: #fff8ed; border-radius: 8px; font-size: 12px; }
 .order-card-amount strong { color: #9a3412; }
 .order-card-footer { font-size: 11px; padding-top: 10px; border-top: 1px solid #f1f5f9; }

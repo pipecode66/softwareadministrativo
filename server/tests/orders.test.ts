@@ -640,6 +640,25 @@ describe('Cambios financieros y ruta externa', () => {
     expect(manual.financials).toMatchObject({retentions:0,collectible:119000});
   });
 
+  it('persiste la referencia de facturación en FACT y permite quitarla; REM no acepta referencia', async () => {
+    const created = await create({ documentType:'FACT' });
+    expect(created).not.toHaveProperty('invoiceReference');
+    const invoiced = await edit(created, { invoiceReference:'FE#2394' }, admin,
+      input({ documentType:'FACT', reteFuente:undefined, reteIva:undefined, ica:undefined }));
+    expect(invoiced.status).toBe(200);
+    expect(invoiced.body.order.invoiceReference).toBe('FE#2394');
+    const listed = await get('/orders?documentType=FACT');
+    expect(listed.body.items.find((item: OrderView) => item.id === created.id).invoiceReference).toBe('FE#2394');
+
+    const cleared = await edit(invoiced.body.order, { invoiceReference:null }, admin,
+      input({ documentType:'FACT', reteFuente:undefined, reteIva:undefined, ica:undefined }));
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.order).not.toHaveProperty('invoiceReference');
+    const invalid = await edit(cleared.body.order, { invoiceReference:'FE#2394' }, admin,
+      input({ documentType:'REM', reteFuente:0, reteIva:0, ica:0 }));
+    expect(invalid.status).toBe(400);
+  });
+
   it('la creación ignora importes manuales enviados y Administración puede corregirlos después', async () => {
     const order = await create({documentType:'FACT',value:535000,reteFuente:13375,reteIva:0,ica:2568});
     expect(order).toMatchObject({reteFuente:21400,reteIva:15247.5,ica:3745});

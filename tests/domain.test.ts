@@ -163,6 +163,20 @@ describe('Edición protegida de órdenes', () => {
     const original = order();
     expect(editWorkOrder(data([original]), user(), original, input({ description: '  Editada  ' }))).toMatchObject({ description: 'Editada', updatedAt: original.updatedAt, id: original.id });
   });
+  it('guarda y quita la referencia de facturación únicamente durante edición FACT', () => {
+    const original = order({ documentType:'FACT' });
+    const invoiced = editWorkOrder(data([original]), user(), original, input({
+      documentType:'FACT', invoiceReference:' FE#2394 ',
+    }));
+    expect(invoiced.invoiceReference).toBe('FE#2394');
+    const cleared = editWorkOrder(data([invoiced]), user(), invoiced, input({
+      documentType:'FACT', invoiceReference:null,
+    }));
+    expect(cleared.invoiceReference).toBeUndefined();
+    const switchedToRem = editWorkOrder(data([invoiced]), user(), invoiced, input({ documentType:'REM' }));
+    expect(switchedToRem.invoiceReference).toBeUndefined();
+    expect(createWorkOrder(data(), user(), input({ documentType:'FACT', invoiceReference:'FE#2394' })).invoiceReference).toBeUndefined();
+  });
   it.each(['DISENO', 'IMPRESION', 'TALLER'] as Role[])('%s no edita', role => {
     expect(() => editWorkOrder(data(), user(role), order(), input())).toThrow(/Administración/);
   });

@@ -198,7 +198,9 @@ export async function apiCreateOrder(input: OrderInput, requestId: string): Prom
 }
 export async function apiUpdateOrder(id: string, input: OrderInput, expectedVersion: number): Promise<WorkOrder> {
   const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ ...orderFields(input),
-    ...(input.products ? { products: productFields(input.products) } : {}), expectedVersion }) });
+    ...(input.products ? { products: productFields(input.products) } : {}),
+    ...(input.documentType === 'FACT' && input.invoiceReference !== undefined ? { invoiceReference: input.invoiceReference } : {}),
+    expectedVersion }) });
   return asOrder(body.order);
 }
 export type NewPayment = { date: string; amount: number; method: Exclude<PaymentMethod, 'LEGACY'> };

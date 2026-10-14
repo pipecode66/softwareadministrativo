@@ -33,6 +33,8 @@ Para una FACT nueva se calcula IVA 19 % sobre el valor base. Si la base es estri
 
 Al editar una OT de FACT a REM, las tres retenciones y sus certificados se eliminan automáticamente; el total y el saldo vuelven a calcularse únicamente sobre el valor base REM.
 
+Administración puede registrar una referencia de facturación al editar una OT FACT, mediante la opción FACTURADO; el indicador de la lista muestra X cuando no tiene referencia y un chulo que revela el texto al pulsarlo cuando ya fue facturada. El campo no aparece para REM ni para perfiles no administrativos.
+
 Cuando finaliza Corte Láser, sus minutos se suman a la base y el IVA se actualiza. Las retenciones guardadas no se recalculan ni vuelven a evaluar el umbral de $524.000.
 
 Cada usuario de Administración o Diseño puede mantener un solo borrador incompleto de OT. El borrador pertenece exclusivamente al creador, no genera consecutivo y se elimina al crear la OT o mediante su icono en el historial. Al recuperar un borrador, el tipo de documento inicia en REM y se debe volver a seleccionar FACT explícitamente si corresponde.

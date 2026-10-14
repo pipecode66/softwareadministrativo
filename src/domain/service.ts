@@ -41,7 +41,12 @@ export function validateInput(data: AppData, input: OrderInput, exceptId?: strin
 }
 function cleanInput(input: OrderInput, onCreate = false): OrderInput {
   const automatic = onCreate && input.documentType === 'FACT' && input.value > 524000;
-  return { ...input, description: input.description.trim(), value: roundMoney(input.value),
+  const { invoiceReference, ...fields } = input;
+  return { ...fields,
+    ...(onCreate || input.documentType === 'REM'
+      ? { invoiceReference: undefined }
+      : invoiceReference === undefined ? {} : { invoiceReference: invoiceReference?.trim() || undefined }),
+    description: input.description.trim(), value: roundMoney(input.value),
     reteFuente: input.documentType === 'FACT' ? automatic ? roundMoney(input.value * .04) : onCreate ? 0 : input.reteFuente ?? 0 : 0,
     reteIva: input.documentType === 'FACT' ? automatic ? roundMoney(input.value * .0285) : onCreate ? 0 : input.reteIva ?? 0 : 0,
     ica: input.documentType === 'FACT' ? automatic ? roundMoney(input.value * .007) : onCreate ? 0 : input.ica ?? 0 : 0,
@@ -64,6 +69,8 @@ export function createWorkOrder(data: AppData, user: User, input: OrderInput): W
 }
 export function editWorkOrder(data: AppData, user: User, order: WorkOrder, input: OrderInput): WorkOrder {
   assert(user.active && isAdmin(user.role), 'Solo Administración puede editar esta orden.');
+  assert(input.documentType === 'FACT' || !input.invoiceReference, 'La facturación corresponde únicamente a FACT.');
+  assert(input.invoiceReference == null || input.invoiceReference.trim().length > 0 && input.invoiceReference.trim().length <= 100, 'La referencia de facturación debe tener entre 1 y 100 caracteres.');
   const finishedAdminEdit = isAdmin(user.role) && ['COMPLETED','INSTALLED'].includes(order.status) && !order.closedAt;
   assert((['NEW','PENDING_ADMIN_REVIEW'].includes(order.status) || order.status === 'IN_PRODUCTION' && Boolean(order.products?.every(product => product.activities.every(activity => !activity.status || activity.status === 'PENDING'))) || finishedAdminEdit) && !order.closedAt, 'La orden ya está en producción y sus datos están protegidos.');
   validateInput(data,input,order.id,isAdmin(user.role));

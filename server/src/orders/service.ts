@@ -100,6 +100,7 @@ function editChanges(before: OrderRow, after: OrderRow): AuditChange[] {
     ['description','Descripción'], ['value','Valor base',true], ['document_type','Tipo de documento'],
     ['category','Categoría'], ['route','Recorrido'], ['requires_installation','Requiere instalación'],
     ['rete_fuente','RETE FUENTE',true], ['rete_iva','RETE IVA',true], ['ica','ICA',true],
+    ['invoice_reference','Referencia de facturación'],
   ];
   const changes: AuditChange[] = fields.flatMap(([key,label,sensitive]) => String(before[key] ?? '') === String(after[key] ?? '') ? [] : [{
     label, before: before[key] as string | number | boolean | null, after: after[key] as string | number | boolean | null, sensitive,
@@ -149,6 +150,9 @@ function normalizedInput(input: OrderInput, existing?: OrderRow): OrderInput {
   const retention = (provided: number | undefined, column: 'rete_fuente' | 'rete_iva' | 'ica', rate: number) =>
     existing ? provided ?? (keepLegacy ? Number(existing[column]) : auto(rate)) : auto(rate);
   return { ...input,
+    invoiceReference: input.documentType === 'FACT'
+      ? input.invoiceReference === undefined ? existing?.invoice_reference ?? null : input.invoiceReference?.trim() || null
+      : null,
     printing: input.products && ['PRINT_ONLY','PRINT_WORKSHOP'].includes(input.route) && firstMaterial
       ? { material: firstMaterial.material, length: firstMaterial.length, width: firstMaterial.width } : input.printing,
     reteFuente: retention(input.reteFuente, 'rete_fuente', 0.04),
@@ -240,10 +244,10 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
         certificate_rete_iva=CASE WHEN rete_iva=$12 THEN certificate_rete_iva ELSE false END,
         certificate_ica=CASE WHEN ica=$13 THEN certificate_ica ELSE false END,
         ready_for_installation_at=CASE WHEN $16 THEN NULL ELSE ready_for_installation_at END,
-        installed_at=CASE WHEN $16 THEN NULL ELSE installed_at END,
+        installed_at=CASE WHEN $16 THEN NULL ELSE installed_at END, invoice_reference=$17,
         installation_note=CASE WHEN $16 THEN NULL ELSE installation_note END,
         updated_at=clock_timestamp(),version=version+1
-      WHERE id=$14 RETURNING *`, [...inputParams(normalized), id, targetStatus, reopened])).rows[0];
+      WHERE id=$14 RETURNING *`, [...inputParams(normalized), id, targetStatus, reopened, normalized.invoiceReference ?? null])).rows[0];
     if (input.products && !finishedAdminEdit) await replaceOrderProducts(tx, id, input.products, isAdmin(actor.role));
     else {
       const legacy = (await tx.query<{ id: string }>('SELECT id FROM order_products WHERE order_id=$1 AND is_legacy=true', [id])).rows[0];

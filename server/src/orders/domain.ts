@@ -62,7 +62,14 @@ export const orderInputSchema = z.object(orderFields).strict().superRefine((valu
   if (value.documentType === 'REM' && (value.reteFuente || value.reteIva || value.ica)) ctx.addIssue({ code: 'custom', message: 'Las retenciones corresponden únicamente a FACT.' });
 });
 export const createSchema = orderInputSchema.safeExtend({ requestId: z.uuid() });
-export const editSchema = orderInputSchema.safeExtend({ expectedVersion: z.number().int().positive() });
+export const editSchema = orderInputSchema.safeExtend({
+  expectedVersion: z.number().int().positive(),
+  invoiceReference: z.string().trim().min(1).max(100).nullable().optional(),
+}).superRefine((value, ctx) => {
+  if (value.documentType === 'REM' && value.invoiceReference) {
+    ctx.addIssue({ code: 'custom', path: ['invoiceReference'], message: 'La referencia de facturación corresponde únicamente a FACT.' });
+  }
+});
 export const paymentSchema = z.object({ date: dateSchema, amount: positivePaymentSchema, method: paymentMethodSchema, requestId: z.uuid() }).strict();
 export const bulkPaymentSchema = z.object({
   clientId: z.uuid(), selectedOrderIds: z.array(z.uuid()).min(1).max(100), date: dateSchema,
@@ -89,7 +96,7 @@ export const draftPayloadSchema = z.record(z.string().min(1).max(100), draftJson
   .refine(value => Object.keys(value).length <= 100, 'El borrador contiene demasiados campos.');
 export const saveDraftSchema = z.object({ payload: draftPayloadSchema }).strict();
 export type DraftPayload = z.infer<typeof draftPayloadSchema>;
-export type OrderInput = z.infer<typeof orderInputSchema>;
+export type OrderInput = z.infer<typeof orderInputSchema> & { invoiceReference?: string | null };
 export type OrderRow = {
   id: string; number: number; client_id: string; description: string; value: string; document_type: 'REM'|'FACT';
   category: typeof categories[number]; route: typeof routes[number] | 'IMPRENTA'; requires_installation: boolean;
@@ -98,6 +105,7 @@ export type OrderRow = {
   material: typeof materials[number] | null; length: string|null; width: string|null;
   rete_fuente: string; rete_iva: string; ica: string;
   financial_rule: 'LEGACY'|'NEW'; special_payment?: boolean;
+  invoice_reference: string|null;
   has_visible_activity?: boolean;
   certificate_rete_fuente: boolean; certificate_rete_iva: boolean; certificate_ica: boolean;
   printing_completed_at: Date|string|null; workshop_started_at: Date|string|null; ready_for_installation_at: Date|string|null;
@@ -136,6 +144,7 @@ export function orderDto(row: OrderRow, payments: PaymentRow[], role: Role, desi
   };
   if (!isAdmin(role)) return role === 'DISENO' && designerCanSeeCommercial ? { ...operational, value: Number(row.value) } : operational;
   return { ...operational, value: Number(row.value), reteFuente: Number(row.rete_fuente), reteIva: Number(row.rete_iva), ica: Number(row.ica),
+    ...(row.invoice_reference ? { invoiceReference: row.invoice_reference } : {}),
     certificates: { reteFuente: row.certificate_rete_fuente, reteIva: row.certificate_rete_iva, ica: row.certificate_ica },
     payments: payments.map(p => ({ id: p.id, date: typeof p.date === 'string' ? p.date.slice(0,10) : p.date.toISOString().slice(0,10), amount: Number(p.amount), method: p.method, recordedBy: p.recorded_by })),
     financials: financials(row, payments),

@@ -36,6 +36,7 @@ export interface WorkOrder {
   requiresInstallation: boolean; status: WorkStatus; createdBy: string;
   creatorName?: string; creatorRole?: Role;
   createdAt: string; updatedAt: string; version?: number; printing?: Printing; financialRule?: FinancialRule;
+  invoiceReference?: string | null;
   specialPayment?: boolean; certificates?: { reteFuente: boolean; reteIva: boolean; ica: boolean };
   products?: OrderProduct[];
   /** Set only on an order returned by the server after its role checks. */
@@ -49,6 +50,7 @@ export interface WorkOrder {
 export type OrderInput = Pick<WorkOrder, 'number' | 'clientId' | 'description' | 'value' | 'documentType' | 'category' | 'route' | 'requiresInstallation' | 'printing'> &
   Partial<Pick<WorkOrder, 'reteFuente' | 'reteIva' | 'ica'>> & {
   initialPayment?: { date: string; amount: number; method: Exclude<PaymentMethod, 'LEGACY'> };
+  invoiceReference?: string | null;
   products?: OrderProductInput[];
 };
 export interface AppData { version: 1; users: User[]; clients: Client[]; orders: WorkOrder[] }

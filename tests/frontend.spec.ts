@@ -133,6 +133,52 @@ test('creación FACT multiproducto: retenciones automáticas, varios materiales 
   await expect(page.locator('.order-balance-highlight')).toContainText(formatCOP(881600));
 });
 
+test('FACT se marca facturada al editar y la lista revela su referencia al pulsar el chulo', async ({ page }) => {
+  await login(page, 'administracion@intermedios.local');
+  await page.goto('/orders/ot-3/edit');
+  await expect(page.getByText('FACTURADO', { exact:true })).toBeVisible();
+  await page.locator('.order-fact-invoice input[type="checkbox"]').check();
+  await page.getByLabel('Referencia de facturación *').fill('FE#2393');
+  await page.getByRole('button', { name:'Guardar cambios', exact:true }).click();
+  expect((await storedOrders(page)).find(order => order.id === 'ot-3')?.invoiceReference).toBe('FE#2393');
+
+  await fillOrder(page);
+  await page.getByRole('radio', { name: /FACT/ }).check();
+  await page.locator('.order-product-card').first().getByLabel('Valor unitario antes de IVA (COP) *').fill('600000');
+  await expect(page.getByRole('heading', { name:'FACTURADO' })).toHaveCount(0);
+  await saveOrder(page);
+  await page.getByRole('link', { name:'Editar OT' }).click();
+  await expect(page.getByRole('heading', { name:'FACTURADO' })).toBeVisible();
+  await page.getByLabel('Incluir Facturación').check();
+  await page.getByLabel('Referencia de facturación *').fill('FE#2394');
+  await page.getByRole('button', { name:'Guardar cambios', exact:true }).click();
+  await expect(page).toHaveURL(/\/orders\/[\w-]+$/);
+
+  const order = (await storedOrders(page)).at(-1)!;
+  expect(order.invoiceReference).toBe('FE#2394');
+  await page.goto('/orders');
+  await expect(page.getByRole('columnheader', { name:'FACTURADO' })).toBeVisible();
+  const row = page.getByRole('row').filter({ hasText:'Aviso de prueba funcional con producción.' });
+  const invoiceButton = row.getByRole('button', { name:`Ver facturación FE#2394 de OT ${order.number}` });
+  await expect(invoiceButton).toBeVisible();
+  await invoiceButton.click();
+  await expect(row.getByRole('status')).toHaveText('FE#2394');
+  await expect(page.getByRole('row').filter({ hasText:'Aviso luminoso para fachada principal' })
+    .getByLabel(/no facturada/)).toBeVisible();
+
+  await fillOrder(page);
+  await saveOrder(page);
+  const rem = (await storedOrders(page)).at(-1)!;
+  expect(rem.documentType).toBe('REM');
+  await page.goto('/orders');
+  await expect(page.getByRole('columnheader', { name:'FACTURADO' })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText:'Aviso de prueba funcional con producción.' })
+    .getByLabel(/no facturada/)).toHaveCount(0);
+  await page.getByRole('link', { name:`Ver orden ${rem.number}` }).click();
+  await page.getByRole('link', { name:'Editar OT' }).click();
+  await expect(page.getByRole('heading', { name:'FACTURADO' })).toHaveCount(0);
+});
+
 test('el borrador se recupera en REM y solo edición administrativa ofrece retenciones manuales', async ({ page }) => {
   await login(page);
   await fillOrder(page);

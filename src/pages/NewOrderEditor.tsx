@@ -73,6 +73,8 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   const [reteFuente, setReteFuente] = useState(existing ? String(existing.reteFuente) : '');
   const [reteIva, setReteIva] = useState(existing ? String(existing.reteIva) : '');
   const [ica, setIca] = useState(existing ? String(existing.ica) : '');
+  const [invoiceIncluded, setInvoiceIncluded] = useState(Boolean(existing?.invoiceReference));
+  const [invoiceReference, setInvoiceReference] = useState(existing?.invoiceReference || '');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<Exclude<PaymentMethod, 'LEGACY'>>('EFECTIVO');
   const [draftRestored, setDraftRestored] = useState(false);
@@ -249,6 +251,9 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
         const amount = Number(value);
         return !Number.isFinite(amount) || amount < 0 || amount > 999999999999.99 || Number(amount.toFixed(2)) !== amount;
       })) return 'Cada retención debe ser un importe no negativo con máximo dos decimales.';
+    if (existing && documentType === 'FACT' && invoiceIncluded && !invoiceReference.trim()) {
+      return 'Escribe la referencia de facturación o desmarca Incluir Facturación.';
+    }
     if (!products.length) return 'Agrega al menos un producto o trabajo.';
     if (!Number.isSafeInteger(base) || base < 0 || base === 0 && !laserOnlyDeferred) return 'El valor total debe ser un número entero de pesos mayor que cero, salvo cuando una FACT corresponda únicamente al corte láser.';
     for (const [index, product] of products.entries()) {
@@ -287,6 +292,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
       // The server derives the compatibility printing summary from product materials.
       printing: undefined,
       ...(existing ? retentions : {}),
+      ...(existing && documentType === 'FACT' ? { invoiceReference: invoiceIncluded ? invoiceReference.trim() : null } : {}),
       products: orderProducts,
       ...(!existing && paymentAmount ? { initialPayment: { date: today(), amount: moneyInput(paymentAmount), method: paymentMethod } } : {}),
     };
@@ -355,8 +361,19 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
           <Button type="button" variant="secondary" onClick={() => setProducts(current => [...current, draftProduct()])}><Plus size={17} /> Agregar otro producto</Button>
           <label className="order-install-toggle"><input type="checkbox" checked={requiresInstallation} onChange={event => setRequiresInstallation(event.target.checked)} /><span><strong>Esta OT requiere instalación</strong><small>Si no aplica, deja esta opción desmarcada.</small></span></label>
         </Card>
+        {existing && documentType === 'FACT' && <Card className="order-form-section">
+          <div className="order-section-heading"><span>03</span><h2>FACTURADO</h2></div>
+          <label className="order-install-toggle">
+            <input type="checkbox" checked={invoiceIncluded} onChange={event => setInvoiceIncluded(event.target.checked)} />
+            <span className="order-invoice-include-icon"><Plus size={17} aria-hidden="true" /></span>
+            <span><strong>Incluir Facturación</strong><small>Marca esta casilla e ingresa la referencia de facturación.</small></span>
+          </label>
+          {invoiceIncluded && <Field label="Referencia de facturación *" htmlFor="invoice-reference" hint="Ejemplo: FE#2394">
+            <input id="invoice-reference" className="input" value={invoiceReference} onChange={event => setInvoiceReference(event.target.value)} maxLength={100} placeholder="FE#2394" required />
+          </Field>}
+        </Card>}
         {documentType === 'FACT' && existing && <Card className="order-form-section">
-          <div className="order-section-heading"><span>03</span><h2>Retenciones de FACT</h2></div>
+          <div className="order-section-heading"><span>04</span><h2>Retenciones de FACT</h2></div>
           <p className="order-help-text">Al crear una FACT las retenciones se calculan automáticamente. Solo Administración puede cambiarlas desde Editar OT.</p>
           <div className="order-retention-grid">
             <Field label="RETE FUENTE (COP)" htmlFor="edit-rete-fuente"><input id="edit-rete-fuente" className="input" type="number" min="0" step="0.01" value={reteFuente} onChange={event => setReteFuente(event.target.value)} /></Field>
