@@ -148,6 +148,27 @@ test('el borrador se recupera en REM y solo edición administrativa ofrece reten
   await expect(page.getByLabel('RETE FUENTE (COP)')).toHaveCount(0);
 });
 
+test('ADMIN_GENERAL puede editar OT terminadas e instaladas, pero no cerradas administrativamente', async ({ page }) => {
+  await login(page, 'administracion@intermedios.local');
+  await page.goto('/orders/ot-5');
+  await expect(page.getByRole('link', { name: 'Editar OT' })).toBeVisible();
+  await page.getByRole('link', { name: 'Editar OT' }).click();
+  await expect(page.getByRole('heading', { name: 'Editar orden de trabajo' })).toBeVisible();
+
+  await page.goto('/orders/ot-8');
+  await expect(page.getByRole('link', { name: 'Editar OT' })).toHaveCount(0);
+  const closedAt = await page.evaluate(key => {
+    const data = JSON.parse(localStorage.getItem(key)!);
+    const closedAt = data.orders.find((order: { id: string }) => order.id === 'ot-8').closedAt;
+    delete data.orders.find((order: { id: string }) => order.id === 'ot-8').closedAt;
+    localStorage.setItem(key, JSON.stringify(data));
+    return closedAt;
+  }, DATA_KEY);
+  expect(closedAt).toBeTruthy();
+  await page.reload();
+  await expect(page.getByRole('link', { name: 'Editar OT' })).toBeVisible();
+});
+
 test('editor multiproducto y materiales se adapta a 320 px', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 760 });
   await login(page);

@@ -64,11 +64,11 @@ export function createWorkOrder(data: AppData, user: User, input: OrderInput): W
 }
 export function editWorkOrder(data: AppData, user: User, order: WorkOrder, input: OrderInput): WorkOrder {
   assert(user.active && isAdmin(user.role), 'Solo Administración puede editar esta orden.');
-  const masterReopen = user.role === 'ADMINMASTER' && ['COMPLETED','INSTALLED'].includes(order.status) && !order.closedAt;
-  assert((['NEW','PENDING_ADMIN_REVIEW'].includes(order.status) || order.status === 'IN_PRODUCTION' && Boolean(order.products?.every(product => product.activities.every(activity => !activity.status || activity.status === 'PENDING'))) || masterReopen) && !order.closedAt, 'La orden ya está en producción y sus datos están protegidos.');
+  const finishedAdminEdit = isAdmin(user.role) && ['COMPLETED','INSTALLED'].includes(order.status) && !order.closedAt;
+  assert((['NEW','PENDING_ADMIN_REVIEW'].includes(order.status) || order.status === 'IN_PRODUCTION' && Boolean(order.products?.every(product => product.activities.every(activity => !activity.status || activity.status === 'PENDING'))) || finishedAdminEdit) && !order.closedAt, 'La orden ya está en producción y sus datos están protegidos.');
   validateInput(data,input,order.id,isAdmin(user.role));
   let prepared = cleanInput(input);
-  if (masterReopen) {
+  if (finishedAdminEdit) {
     assert(order.products && input.products && order.products.length === input.products.length, 'Al reabrir una OT terminada no se pueden agregar ni eliminar productos; solo agregar áreas faltantes.');
     let added = false;
     const products = input.products.map((product, index) => {

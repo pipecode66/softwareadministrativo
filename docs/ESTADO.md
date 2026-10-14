@@ -22,10 +22,14 @@ El 11/10/2026 quedó implementada la edición manual de retenciones en la interf
 
 El 14/10/2026 se retiró la captura manual de retenciones al crear y se impuso el cálculo automático en servidor y adaptador local, incluso si una solicitud de creación incluye importes. Los borradores ya no restauran el tipo de documento; se reabren como REM con aviso para confirmar o seleccionar FACT. La edición de OT permanece reservada a ADMINMASTER y ADMIN_GENERAL, con controles de ruta, interfaz y servidor. Sin migración SQL. Verificación: `npm run typecheck`, `npm --prefix server run typecheck`, `npm test` (154 pruebas), `npm --prefix server test` (274 pruebas), `npm run build`, `npm --prefix server run build`, dos pruebas e2e dirigidas y `git diff --check`, todo aprobado. Las pruebas Playwright usaron el Chromium 1217 ya disponible localmente.
 
+El 14/10/2026 se amplió a ADMINMASTER y ADMIN_GENERAL la edición de OT `COMPLETED` e `INSTALLED` sin cierre administrativo. Se preserva el trabajo terminado; las áreas omitidas agregadas reabren la OT en producción, y continúan bloqueadas la retirada de áreas, la alteración de responsables/tipos ya ejecutados, los materiales consumidos y las OT con cierre administrativo. Sin migración SQL. Verificado localmente.
+
 ## Funcionalidades terminadas en este tramo
 
 - Al crear una FACT, el formulario no permite ingresar retenciones; siempre se calculan automáticamente, también ante una solicitud directa al servidor.
 - Solo ADMINMASTER y ADMIN_GENERAL pueden acceder a Editar OT; el servidor también rechaza modificaciones realizadas desde Diseño.
+- Ambos perfiles administrativos pueden corregir OT instaladas o terminadas que no tengan cierre administrativo; se conserva el trabajo realizado y cualquier área faltante se agrega como pendiente.
+- Una OT cerrada administrativamente sigue protegida contra edición.
 - Para FACT especiales, Administración ajusta las retenciones después de crear la OT desde Editar OT, si la orden aún admite edición.
 - Al recuperar un borrador de Nueva OT, el tipo vuelve a REM para evitar que un FACT antiguo se seleccione silenciosamente; la pantalla solicita confirmar o escoger el documento correcto.
 - Impresión debe escribir quién recibe el trabajo en Taller antes de finalizar su actividad.
@@ -54,6 +58,7 @@ El 14/10/2026 se retiró la captura manual de retenciones al crear y se impuso e
 
 - `src/pages/Orders.tsx`
 - `src/pages/OrderDetail.tsx`
+- `src/pages/OrderForm.tsx`
 - `src/pages/Queues.tsx`
 - `src/data/AppContext.tsx`
 - `src/data/api.ts`
@@ -68,7 +73,7 @@ El 14/10/2026 se retiró la captura manual de retenciones al crear y se impuso e
 - `src/styles.css`
 - `tests/order-notifications.test.ts`
 - `tests/domain.test.ts`
-- `tests/frontend.spec.ts` (regresiones de creación FACT, restauración de borrador REM y edición de retenciones solo administrativa)
+- `tests/frontend.spec.ts` (creación FACT, borrador REM, edición administrativa de retenciones y acceso de ADMIN_GENERAL a OT terminadas/instaladas)
 - `tests/api-e2e.spec.ts`
 - `server/src/orders/domain.ts`
 - `server/src/orders/service.ts`
@@ -91,11 +96,15 @@ El 14/10/2026 se retiró la captura manual de retenciones al crear y se impuso e
 ## Verificación local
 
 - `npm run typecheck`: aprobado.
-- `npm test`: 154/154 en 3 archivos.
+- `npm test`: 157/157 en 3 archivos.
 - `npm run build`: aprobado.
 - `npm --prefix server run typecheck`: aprobado.
 - `npm --prefix server test`: 274/274 en 9 archivos.
-- La corrección del 14/10 pasó pruebas dirigidas de creación FACT y restauración de borrador REM (2/2) con Chromium 1217 local.
+- La regresión del dominio permite editar como ambos administradores una OT COMPLETED o INSTALLED no cerrada (137/137 pruebas de dominio).
+- La regresión de `server/tests/work.test.ts` confirma edición ADMIN_GENERAL de una OT terminada e instalada, conserva la instalación y rechaza una OT cerrada (11/11).
+- La prueba Playwright de ADMIN_GENERAL en OT terminadas/instaladas y cierre bloqueado aprobó (1/1) con Chromium 1217 local.
+- `npm --prefix server run build`: aprobado.
+- La corrección de retenciones del 14/10 pasó pruebas dirigidas de creación FACT y restauración de borrador REM (2/2) con Chromium 1217 local.
 - La prueba de limpieza total confirma las nueve tablas comerciales vacías, usuarios/sesiones/configuración conservados y la siguiente OT en 1.
 - La regresión FACT → REM confirma documento REM, IVA y retenciones en cero, certificados desmarcados y saldo recalculado.
 - Las pruebas confirman que Impresión normal sin materiales se rechaza tanto con Diseño como sin Diseño, mientras Corte Láser sigue admitiendo cero materiales.
@@ -107,7 +116,7 @@ El 14/10/2026 se retiró la captura manual de retenciones al crear y se impuso e
 - Se añadió el módulo administrativo `Historial`, con todos los eventos, expansión del cambio y enlace directo a la OT. La migración `010_audit_history.sql` agrega el detalle JSON estructurado a `order_events` sin alterar registros previos.
 - Se retiró por decisión del cliente la eliminación de OT: no existe botón, contrato frontend ni endpoint de servidor para borrar órdenes. La migración compensatoria `012_disable_order_deletion.sql` devuelve el consecutivo a `GENERATED ALWAYS`.
 - Taller puede guardar observaciones opcionales al finalizar, tanto en actividades por producto como en el flujo heredado; el dato permanece visible en la OT terminada.
-- ADMINMASTER puede corregir una OT terminada o instalada que todavía no esté cerrada. Al agregar áreas omitidas conserva las actividades finalizadas, crea solo las faltantes como pendientes y devuelve la OT a producción; ADMIN_GENERAL y los demás perfiles permanecen bloqueados.
+- ADMINMASTER y ADMIN_GENERAL pueden corregir una OT terminada o instalada que todavía no esté cerrada administrativamente. Al agregar áreas omitidas conservan las actividades finalizadas, crean solo las faltantes como pendientes y devuelven la OT a producción; los perfiles no administrativos y las OT cerradas permanecen bloqueados.
 - Administración puede enviar Diseño → Impresión normal sin definir todavía materiales. El diseñador asignado los completa desde su edición técnica y el servidor bloquea la finalización de Diseño mientras no exista al menos uno; Impresión sin Diseño y las OT creadas por Diseño mantienen la obligación desde el registro inicial.
 - Pruebas dirigidas de órdenes, actividades y Corte Láser: 120/120.
 - Pruebas E2E locales de Impresión, Taller y materiales: 3/3.
@@ -115,6 +124,8 @@ El 14/10/2026 se retiró la captura manual de retenciones al crear y se impuso e
 - `npm run test:e2e`: los 32 casos funcionales aprobaron, incluidos el desplegable abierto en móvil y la restauración de la página 4. Dos recorridos completos cerraron 31/32 por incidencias transitorias del entorno de Playwright (un artefacto de traza y una espera de carga antes del login); ambos casos restantes aprobaron 1/1 al repetirlos aisladamente.
 - `npm run test:e2e:api`: 5/5 con API y PGlite reales.
 - Las dos pruebas E2E dirigidas confirman retenciones automáticas al crear FACT, ausencia de captura manual durante creación y borrador recuperado como REM; además comprueban que la edición manual se ofrece solo en edición administrativa.
+- Las pruebas para edición de OT terminadas/instaladas pasaron: dominio 137/137, servidor `work.test.ts` 11/11 y E2E de ADMIN_GENERAL 1/1; se verifican actividades conservadas y el bloqueo de cierre administrativo.
+- Tras el cambio de edición de OT terminadas/instaladas, `npm test` aprobó 157/157, `npm --prefix server test` 274/274, ambos typecheck y ambos builds finalizaron correctamente.
 - La prueba del servidor confirma varias coincidencias por descripción con `TALONARIOS`.
 - La prueba de sesión confirma que la carga inicial es silenciosa y que los avisos posteriores continúan activos.
 - La prueba de navegación confirma página 4 → detalle de OT → Atrás → página 4, y luego menú Órdenes → página 1 sin filtros heredados.
@@ -145,7 +156,8 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Materiales diferidos de Administración a Diseño del 07/10 | 1 | 1 |
 | Edición manual optativa de retenciones FACT del 11/10 | 1 | 1 |
 | Corrección de retenciones FACT automáticas y edición exclusiva posterior de Administración del 14/10 | 1 | 1 |
-| **Acumulado** | **46** | **28** |
+| Edición administrativa de OT instaladas y terminadas del 14/10 | 1 | 1 |
+| **Acumulado** | **47** | **29** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 

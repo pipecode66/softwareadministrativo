@@ -166,16 +166,19 @@ describe('Edición protegida de órdenes', () => {
   it.each(['DISENO', 'IMPRESION', 'TALLER'] as Role[])('%s no edita', role => {
     expect(() => editWorkOrder(data(), user(role), order(), input())).toThrow(/Administración/);
   });
-  it.each(['IN_PRINTING', 'IN_WORKSHOP', 'PENDING_INSTALLATION', 'COMPLETED', 'INSTALLED'] as WorkStatus[])('protege los datos en %s', status => {
+  it.each(['IN_PRINTING', 'IN_WORKSHOP', 'PENDING_INSTALLATION'] as WorkStatus[])('protege los datos en %s', status => {
     expect(() => editWorkOrder(data(), user(), order({ status }), input())).toThrow(/protegidos/);
   });
-  it('ADMINMASTER conserva Diseño terminado y agrega áreas faltantes al reabrir', () => {
-    const original = order({ status:'COMPLETED', route:'MULTI_AREA', printing:undefined, products:[{
+  it.each([
+    ['ADMINMASTER', 'COMPLETED'], ['ADMIN_GENERAL', 'COMPLETED'],
+    ['ADMINMASTER', 'INSTALLED'], ['ADMIN_GENERAL', 'INSTALLED'],
+  ] as [Role, WorkStatus][])('%s conserva Diseño terminado y agrega áreas faltantes al reabrir una OT %s', (role, status) => {
+    const original = order({ status, route:'MULTI_AREA', printing:undefined, products:[{
       id:'product-1', description:'Arte', quantity:1, unitValue:100000, materials:[], activities:[{
         id:'design-1', area:'DESIGN', assignedUserId:'user-DISENO', status:'COMPLETED', completedAt:NOW,
       }],
     }] });
-    const result = editWorkOrder(data([original]), user('ADMINMASTER'), original, input({ route:'PRINT_WORKSHOP', printing:undefined, products:[{
+    const result = editWorkOrder(data([original]), user(role), original, input({ route:'PRINT_WORKSHOP', printing:undefined, products:[{
       description:'Arte', quantity:1, unitValue:100000, materials:[{ material:'Banner', length:2, width:1 }], activities:[
         { area:'DESIGN', assignedUserId:'user-DISENO' }, { area:'PRINTING', printingType:'PRINT' }, { area:'WORKSHOP' },
       ],
@@ -185,6 +188,10 @@ describe('Edición protegida de órdenes', () => {
       expect.objectContaining({ id:'design-1', area:'DESIGN', status:'COMPLETED' }),
       expect.objectContaining({ area:'PRINTING' }), expect.objectContaining({ area:'WORKSHOP' }),
     ]));
+  });
+  it.each(['ADMINMASTER', 'ADMIN_GENERAL'] as Role[])('%s no edita una OT terminada con cierre administrativo', role => {
+    const closed = order({ status:'COMPLETED', closedAt:NOW });
+    expect(() => editWorkOrder(data([closed]), user(role), closed, input())).toThrow(/protegidos/);
   });
   it('impide bajar el total por debajo de abonos existentes', () => {
     const original = order({ payments: [{ id: 'p1', date: '2026-09-01', amount: 50000, recordedBy: 'admin' }] });

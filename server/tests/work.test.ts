@@ -331,7 +331,7 @@ describe('Productos y trabajo interno', () => {
       ]));
   });
 
-  it('solo ADMINMASTER reabre una OT terminada agregando áreas sin borrar Diseño finalizado', async () => {
+  it('Administración reabre una OT terminada agregando áreas sin borrar Diseño finalizado', async () => {
     const order = await create({ value:40000, route:'MULTI_AREA', products:[{
       description:'Arte aprobado', quantity:1, unitValue:40000, materials:[],
       activities:[{ area:'DESIGN', assignedUserId:defaultDesignerId }],
@@ -351,8 +351,7 @@ describe('Productos y trabajo interno', () => {
           { area:'DESIGN', assignedUserId:defaultDesignerId }, { area:'PRINTING', printingType:'PRINT' }, { area:'WORKSHOP' },
         ] }], expectedVersion:completed.version,
     };
-    expect((await patch(`/orders/${order.id}`, payload, general)).status).toBe(409);
-    const reopened = await patch(`/orders/${order.id}`, payload, admin);
+    const reopened = await patch(`/orders/${order.id}`, payload, general);
     expect(reopened.status).toBe(200);
     expect(reopened.body.order.status).toBe('IN_PRODUCTION');
     const activities = (await get(`/work/activities?orderId=${order.id}`)).body.items as Activity[];
@@ -362,6 +361,19 @@ describe('Productos y trabajo interno', () => {
       expect.objectContaining({ area:'WORKSHOP', status:'PENDING' }),
     ]));
     expect(activities).toHaveLength(3);
+    await db.query("UPDATE orders SET requires_installation=true,status='INSTALLED',installed_at=now() WHERE id=$1", [order.id]);
+    const installed = (await get(`/orders/${order.id}`)).body.order;
+    const installedEdit = await patch(`/orders/${order.id}`, {
+      ...payload, requiresInstallation:true, description:'Trabajo corregido después de instalar', expectedVersion:installed.version,
+    }, general);
+    expect(installedEdit.status).toBe(200);
+    expect(installedEdit.body.order).toMatchObject({
+      status:'INSTALLED', description:'Trabajo corregido después de instalar',
+    });
+    await db.query('UPDATE orders SET closed_at=now() WHERE id=$1', [order.id]);
+    expect((await patch(`/orders/${order.id}`, {
+      ...payload, expectedVersion:installedEdit.body.order.version,
+    }, general)).status).toBe(409);
   });
 });
 

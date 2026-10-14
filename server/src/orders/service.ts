@@ -209,12 +209,12 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
     const actor = await requireCurrentActor(tx, auth, admins);
     const row = await lockedOrder(tx, id);
     checkVersion(row, input.expectedVersion);
-    const masterReopen = actor.role === 'ADMINMASTER' && !row.closed_at && ['COMPLETED','INSTALLED'].includes(row.status);
-    if (row.closed_at || (!['NEW','PENDING_ADMIN_REVIEW','IN_PRODUCTION'].includes(row.status) && !masterReopen)) throw conflict('La orden ya está en producción y sus datos están protegidos.');
+    const finishedAdminEdit = isAdmin(actor.role) && !row.closed_at && ['COMPLETED','INSTALLED'].includes(row.status);
+    if (row.closed_at || (!['NEW','PENDING_ADMIN_REVIEW','IN_PRODUCTION'].includes(row.status) && !finishedAdminEdit)) throw conflict('La orden ya está en producción y sus datos están protegidos.');
     const existingComposite = (await tx.query<{ composite: boolean }>(
       'SELECT coalesce(bool_or(NOT is_legacy),false) AS composite FROM order_products WHERE order_id=$1', [id])).rows[0]?.composite;
     if (existingComposite && !input.products) throw new ApiError(400, 'PRODUCTS_REQUIRED', 'Incluye los productos de esta orden en la edición.', 'products');
-    if (masterReopen && (!existingComposite || !input.products)) throw conflict('Solo se pueden reabrir OT terminadas que tengan productos y actividades internas.');
+    if (finishedAdminEdit && (!existingComposite || !input.products)) throw conflict('Solo se pueden reabrir OT terminadas que tengan productos y actividades internas.');
     if (row.status === 'IN_PRODUCTION' && !input.products) throw conflict('La orden compuesta requiere productos para editarse.');
     if (input.initialPayment) throw new ApiError(400, 'INITIAL_PAYMENT_EDIT', 'Los abonos se registran en pagos, no en edición de OT.', 'initialPayment');
     const workChanges = input.products ? await productChanges(tx,id,input.products) : [];
@@ -228,11 +228,11 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
       rete_fuente: String(normalized.reteFuente), rete_iva: String(normalized.reteIva), ica: String(normalized.ica), financial_rule: row.financial_rule }, payments);
     if (money.collectible < 0) throw new ApiError(400, 'INVALID_COLLECTIBLE', 'El total a cobrar no puede ser negativo.', 'value');
     if (money.balance < 0) throw conflict('El total cobrable no puede ser inferior a los abonos registrados.');
-    const addedActivities = masterReopen && input.products
+    const addedActivities = finishedAdminEdit && input.products
       ? await reopenCompletedOrderProducts(tx, id, input.products, normalized.value)
       : 0;
-    const reopened = masterReopen && addedActivities > 0;
-    const targetStatus = reopened ? 'IN_PRODUCTION' : input.products && !masterReopen ? 'IN_PRODUCTION' : row.status;
+    const reopened = finishedAdminEdit && addedActivities > 0;
+    const targetStatus = reopened ? 'IN_PRODUCTION' : input.products && !finishedAdminEdit ? 'IN_PRODUCTION' : row.status;
     const updated = (await tx.query<OrderRow>(`
       UPDATE orders SET client_id=$1,description=$2,value=$3,document_type=$4,category=$5,route=$6,requires_installation=$7,
         material=$8,length=$9,width=$10,rete_fuente=$11,rete_iva=$12,ica=$13,
@@ -244,7 +244,7 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
         installation_note=CASE WHEN $16 THEN NULL ELSE installation_note END,
         updated_at=clock_timestamp(),version=version+1
       WHERE id=$14 RETURNING *`, [...inputParams(normalized), id, targetStatus, reopened])).rows[0];
-    if (input.products && !masterReopen) await replaceOrderProducts(tx, id, input.products, isAdmin(actor.role));
+    if (input.products && !finishedAdminEdit) await replaceOrderProducts(tx, id, input.products, isAdmin(actor.role));
     else {
       const legacy = (await tx.query<{ id: string }>('SELECT id FROM order_products WHERE order_id=$1 AND is_legacy=true', [id])).rows[0];
       if (legacy) {
