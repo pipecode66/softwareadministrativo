@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Check, FileText, Hammer, Info, Plus, Printer, Ruler, Save } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { Category, DocumentType, Material, OrderInput, ProductionRoute, WorkOrder } from '../domain/types';
-import { areaOf, canCreate, CATEGORIES, financials, formatCOP, formatMeasure, formatNumber, formatPesosInput, isAdmin, MATERIALS, ROUTE_LABELS } from '../domain/utils';
+import { areaOf, canCreate, canEditOrder, CATEGORIES, financials, formatCOP, formatMeasure, formatNumber, formatPesosInput, isAdmin, MATERIALS, ROUTE_LABELS } from '../domain/utils';
 import { Button, Card, EmptyState, Field, PageHeader } from '../components/ui';
 import { NewOrderEditor } from './NewOrderEditor';
 import './orders.css';
@@ -33,8 +33,9 @@ export function OrderFormPage() {
   const order = id ? data.orders.find(item => item.id === id) : undefined;
   if (!canCreate(user?.role)) return <EmptyState title="No tienes acceso a crear órdenes" description="La creación corresponde a Administración y Diseño." action={<Link className="btn btn-secondary" to="/orders">Ver órdenes</Link>} />;
   if (id && !order) return <EmptyState title="No encontramos esta orden" action={<Link className="btn btn-secondary" to="/orders">Volver a órdenes</Link>} />;
-  const finishedAdminEdit = order && isAdmin(user?.role) && !order.closedAt && ['COMPLETED', 'INSTALLED'].includes(order.status);
-  if (order && (!isAdmin(user?.role) || !['NEW', 'PENDING_ADMIN_REVIEW', 'IN_PRODUCTION'].includes(order.status) && !finishedAdminEdit)) return <EmptyState title="Esta orden no está disponible para edición" description="Administración puede editar la OT antes de que inicie una actividad o corregir una OT terminada o instalada que aún no esté cerrada administrativamente." action={<Link className="btn btn-secondary" to={`/orders/${order.id}`}>Volver a la orden</Link>} />;
+  const canEdit = order && canEditOrder(user, order);
+  const finishedAdminEdit = order && canEdit && ['COMPLETED', 'INSTALLED'].includes(order.status);
+  if (order && !canEdit) return <EmptyState title="Esta orden no está disponible para edición" description="Administración puede editar la OT antes de que inicie una actividad o corregir una OT terminada o instalada que aún no esté cerrada administrativamente." action={<Link className="btn btn-secondary" to={`/orders/${order.id}`}>Volver a la orden</Link>} />;
   const initialClientId = params.get('client') || params.get('clientId') || '';
   if (!order) return <NewOrderEditor initialClientId={initialClientId} />;
   if (order.status === 'IN_PRODUCTION' || finishedAdminEdit) return <NewOrderEditor key={order.id} existing={order} initialClientId={initialClientId} />;

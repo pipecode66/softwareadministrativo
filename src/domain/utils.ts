@@ -8,6 +8,9 @@ export const ROUTE_LABELS: Record<ProductionRoute, string> = { PRINT_ONLY: 'Solo
 export const isAdmin = (role?: Role) => role === 'ADMINMASTER' || role === 'ADMIN_GENERAL';
 export const canCreate = (role?: Role) => isAdmin(role) || role === 'DISENO';
 export const isFinished = (order: WorkOrder) => order.status === 'COMPLETED' || order.status === 'INSTALLED';
+export const canEditOrder = (user: User | null, order: WorkOrder) =>
+  Boolean(user?.active && isAdmin(user.role) && !order.closedAt &&
+    ['NEW', 'PENDING_ADMIN_REVIEW', 'IN_PRODUCTION', 'COMPLETED', 'INSTALLED'].includes(order.status));
 export const hasWorkshop = (route: ProductionRoute) => ['WORKSHOP_ONLY', 'PRINT_WORKSHOP'].includes(route);
 export const canViewOrder = (user: User | null, order: WorkOrder) => {
   if (!user || !user.active) return false;

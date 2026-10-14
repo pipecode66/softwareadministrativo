@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Banknote, Check, CheckCircle2, ClipboardList, Cl
 import { useApp } from '../data/AppContext';
 import type { OrderAction, OrderActivity, OrderProduct, PaymentMethod, Role, WorkOrder } from '../domain/types';
 import { apiChangeActivity, apiDesignerLoad, apiSaveLaserMinutes, apiWorkOrder, usingApi } from '../data/api';
-import { areaOf, dateOnly, financials, formatCOP, formatDate, formatMeasure, formatNumber, isAdmin, ROLE_LABELS, roundMoney, ROUTE_LABELS, STATUS_LABELS, today, visibleOrders } from '../domain/utils';
+import { areaOf, canEditOrder, dateOnly, financials, formatCOP, formatDate, formatMeasure, formatNumber, isAdmin, ROLE_LABELS, roundMoney, ROUTE_LABELS, STATUS_LABELS, today, visibleOrders } from '../domain/utils';
 import { Button, Card, CardHeader, DataTable, DocumentBadge, EmptyState, Field, Modal, PageHeader, PaymentBadge, WorkBadge } from '../components/ui';
 import { AuditHistory } from '../components/AuditHistory';
 import './orders.css';
@@ -167,7 +167,7 @@ export function OrderDetailPage() {
   const creatorRole = order.creatorRole || creator?.role;
   const money = financials(order);
   const nextAction = availableAction(order, user?.role);
-  const canEdit = !order.closedAt && (admin && ['NEW', 'PENDING_ADMIN_REVIEW', 'IN_PRODUCTION', 'COMPLETED', 'INSTALLED'].includes(order.status));
+  const canEdit = canEditOrder(user, order);
   const paymentPercentage = money.collectible > 0 ? Math.min(100, Math.max(0, money.paid / money.collectible * 100)) : 100;
   const amount = Number(paymentAmount) || 0;
   const remainingAfterPayment = (Math.round(money.balance * 100) - Math.round(roundMoney(Number.isFinite(amount) ? amount : 0) * 100)) / 100;

@@ -196,6 +196,11 @@ test('el borrador se recupera en REM y solo edición administrativa ofrece reten
 
 test('ADMIN_GENERAL puede editar OT terminadas e instaladas, pero no cerradas administrativamente', async ({ page }) => {
   await login(page, 'administracion@intermedios.local');
+  await page.goto('/orders/ot-3');
+  await expect(page.getByRole('link', { name: 'Editar OT' })).toBeVisible();
+  await page.getByRole('link', { name: 'Editar OT' }).click();
+  await expect(page.getByRole('heading', { name: 'Editar orden de trabajo' })).toBeVisible();
+
   await page.goto('/orders/ot-5');
   await expect(page.getByRole('link', { name: 'Editar OT' })).toBeVisible();
   await page.getByRole('link', { name: 'Editar OT' }).click();

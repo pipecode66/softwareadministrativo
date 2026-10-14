@@ -26,6 +26,8 @@ El 14/10/2026 se amplió a ADMINMASTER y ADMIN_GENERAL la edición de OT `COMPLE
 
 El 14/10/2026 se implementó un indicador FACTURADO en la lista administrativa, con X para FACT sin facturar y chulo interactivo que revela la referencia, además del campo FACTURADO en Editar OT FACT tanto en el editor compuesto como en el editor legado. La migración es `013_facturation_reference.sql`. No se puede ingresar al crear ni aparece para REM. Verificado: 158 pruebas frontend, 275 pruebas servidor, ambos typecheck/builds, E2E del flujo compuesto y legado, y `git diff --check`. Sin evidencia de ejecución en Supabase: aplicar la migración manualmente antes de desplegar el backend.
 
+El 14/10/2026, ante el reporte de que Administración no veía Editar OT #003, se centralizó la autorización de edición para que ADMINMASTER y ADMIN_GENERAL utilicen la misma regla de rol, estado y cierre administrativo tanto en el detalle como al abrir el editor. Prueba E2E con ADMIN_GENERAL: OT #003 muestra el botón y abre la edición; también se conserva la cobertura de OT terminadas, instaladas y cerradas. `npm run typecheck`, `npm test` (158), E2E dirigido (1/1) y `git diff --check` aprobados. La validación usa el adaptador local; no confirma estado de la cuenta ni despliegue productivo.
+
 ## Funcionalidades terminadas en este tramo
 
 - Al crear una FACT, el formulario no permite ingresar retenciones; siempre se calculan automáticamente, también ante una solicitud directa al servidor.
@@ -62,6 +64,7 @@ El 14/10/2026 se implementó un indicador FACTURADO en la lista administrativa, 
 
 - `src/pages/Orders.tsx`
 - `src/pages/OrderDetail.tsx`
+- `src/domain/utils.ts` (autorización compartida para editar OT)
 - `src/pages/OrderForm.tsx`
 - `src/pages/Orders.tsx`
 - `src/pages/Queues.tsx`
@@ -80,7 +83,7 @@ El 14/10/2026 se implementó un indicador FACTURADO en la lista administrativa, 
 - `src/styles.css`
 - `tests/order-notifications.test.ts`
 - `tests/domain.test.ts`
-- `tests/frontend.spec.ts` (creación FACT, borrador REM, edición administrativa de retenciones y FACTURADO en editores compuesto y legado)
+- `tests/frontend.spec.ts` (incluye ADMIN_GENERAL editando la OT #003, cerradas/terminadas/instaladas, creación FACT y FACTURADO en ambos editores)
 - `tests/api-e2e.spec.ts`
 - `server/src/orders/domain.ts`
 - `server/src/orders/service.ts`
