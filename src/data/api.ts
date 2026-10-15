@@ -144,6 +144,9 @@ export async function apiSaveClient(input: Pick<Client, 'name' | 'identification
   });
   return body.client;
 }
+export function apiDeleteClient(id: string): Promise<void> {
+  return request<void>(`/clients/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
 
 type RestrictedOrder = Omit<WorkOrder, 'value' | 'reteFuente' | 'reteIva' | 'ica' | 'payments'> & Partial<Pick<WorkOrder, 'value' | 'reteFuente' | 'reteIva' | 'ica' | 'payments'>>;
 function asOrder(order: RestrictedOrder): WorkOrder {

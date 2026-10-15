@@ -60,6 +60,11 @@ function patch(id: string, payload: unknown, session = admin) {
     .set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send(payload as object);
 }
 
+function remove(id: string, session = admin) {
+  return request(app).delete(`${API}/clients/${id}`).set('Origin', ORIGIN)
+    .set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({});
+}
+
 async function actorWithRole(role: Role, mustChangePassword = false): Promise<Session> {
   // Trusted test seed only: production accounts are created through the protected users API.
   const email = `${role.toLowerCase()}-${randomUUID()}@example.test`;
@@ -210,12 +215,14 @@ describe('Clientes: permisos y sesiones', () => {
     expect(response.status).toBe(401);
   });
 
-  it('Administración General puede registrar y editar clientes', async () => {
+  it('Administración General puede registrar, editar y eliminar clientes sin órdenes', async () => {
     const actor = await actorWithRole('ADMIN_GENERAL');
     const created = await post({ name: 'Desde administración general' }, actor);
     expect(created.status).toBe(201);
     expect((await get('/clients', actor)).body.total).toBe(1);
     expect((await patch(created.body.client.id, { phone: '3001234567' }, actor)).status).toBe(200);
+    expect((await remove(created.body.client.id, actor)).status).toBe(204);
+    expect((await get(`/clients/${created.body.client.id}`, actor)).status).toBe(404);
   });
 
   it('Diseño puede crear clientes y consultar el directorio', async () => {
@@ -231,6 +238,7 @@ describe('Clientes: permisos y sesiones', () => {
       expect(item).not.toHaveProperty('paid');
     }
     expect((await get()).body.total).toBe(1);
+    expect((await remove(created.body.client.id, actor)).status).toBe(403);
   });
 
   it('Diseño consulta todo el historial operativo del cliente sin totales ni datos financieros', async () => {
@@ -365,12 +373,22 @@ describe('Clientes: validación y límites', () => {
     expect([400, 422]).toContain((await patch('not-a-uuid', { name: 'Inválido' })).status);
   });
 
-  it('no expone una operación de eliminación', async () => {
-    const created = await post({ name: 'Debe conservarse' });
-    const response = await request(app).delete(`${API}/clients/${created.body.client.id}`).set('Origin', ORIGIN)
-      .set('Cookie', admin.cookie).set('X-CSRF-Token', admin.csrf).send({});
-    expect([404, 405]).toContain(response.status);
-    expect((await get(`/clients/${created.body.client.id}`)).status).toBe(200);
+  it('Admin Master elimina clientes sin órdenes y protege los que tienen historial', async () => {
+    const disposable = await post({ name: 'Cliente sin órdenes' });
+    expect((await remove(disposable.body.client.id)).status).toBe(204);
+    expect((await get(`/clients/${disposable.body.client.id}`)).status).toBe(404);
+
+    const protectedClient = await post({ name: 'Cliente con orden' });
+    await db.query(`
+      INSERT INTO orders (id,client_id,description,value,document_type,category,route,requires_installation,
+        status,created_by,creation_key,creation_fingerprint,financial_rule,rete_fuente,rete_iva,ica)
+      VALUES ($1,$2,'Trabajo existente',10000,'REM','Otras','WORKSHOP_ONLY',false,
+        'NEW',$3,$4,$5,'NEW',0,0,0)
+    `, [randomUUID(), protectedClient.body.client.id, admin.user.id, randomUUID(), 'b'.repeat(64)]);
+    const refused = await remove(protectedClient.body.client.id);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe('CLIENT_HAS_ORDERS');
+    expect((await get(`/clients/${protectedClient.body.client.id}`)).status).toBe(200);
   });
 
   it('la base de datos también rechaza nombres vacíos y campos sobredimensionados', async () => {

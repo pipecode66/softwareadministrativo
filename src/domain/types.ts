@@ -20,6 +20,7 @@ export interface OrderActivity {
   productDescription?: string; position?: number; area: WorkArea;
   status?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'; assignedUserId?: string | null;
   ready?: boolean; startedAt?: string | null; completedAt?: string | null;
+  requiresPrintMaterials?: boolean;
   materials?: ProductMaterial[]; printingType?: PrintingType;
   laserMinutes?: number | null; laserRate?: number; laserCharge?: number;
   receivedByWorkshop?: string | null;

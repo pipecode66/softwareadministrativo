@@ -2,7 +2,7 @@ import { Router, type RequestHandler } from 'express';
 import type { Database } from '../db/types.js';
 import { ApiError } from '../errors.js';
 import { clientParamsSchema, createClientSchema, listClientOrdersSchema, listClientsSchema, updateClientSchema } from './schemas.js';
-import { CLIENT_READ_ROLES, CLIENT_WRITE_ROLES, createClient, getClient, listClientOrders, listClients, updateClient } from './service.js';
+import { CLIENT_READ_ROLES, CLIENT_WRITE_ROLES, createClient, deleteClient, getClient, listClientOrders, listClients, updateClient } from './service.js';
 
 /** Mount after requireAuth, requirePasswordReady and requireCsrf. */
 export function createClientsRouter(db: Database): Router {
@@ -45,6 +45,12 @@ export function createClientsRouter(db: Database): Router {
     const { id } = clientParamsSchema.parse(req.params);
     const input = updateClientSchema.parse(req.body);
     res.json({ client: await updateClient(db, req.auth!, id, input) });
+  });
+
+  router.delete('/:id', async (req, res) => {
+    const { id } = clientParamsSchema.parse(req.params);
+    await deleteClient(db, req.auth!, id);
+    res.status(204).end();
   });
 
   return router;

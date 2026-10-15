@@ -326,6 +326,11 @@ describe('Diseño autoasignado y edición técnica', () => {
     const created = await post('/orders', orderInput([deferredProduct], 10000));
     expect(created.status).toBe(201);
     const design = (await activities(created.body.order.id)).find(item => item.area === 'DESIGN')!;
+    expect(design.requiresPrintMaterials).toBe(true);
+    const designerView = await get(`/work/orders/${created.body.order.id}`, designer);
+    expect(designerView.status).toBe(200);
+    expect(designerView.body.products[0].activities.find((item: { area: string }) => item.area === 'DESIGN'))
+      .toMatchObject({ requiresPrintMaterials: true });
     await post(`/work/activities/${design.id}/start`, {}, designer);
     const blocked = await post(`/work/activities/${design.id}/complete`, {}, designer);
     expect(blocked.status).toBe(409);

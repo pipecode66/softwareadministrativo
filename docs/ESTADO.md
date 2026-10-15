@@ -1,6 +1,6 @@
 # Estado de continuidad
 
-Actualizado: 2026-10-14.
+Actualizado: 2026-10-15.
 
 ## Estado actual
 
@@ -32,8 +32,16 @@ El 14/10/2026, por instrucción expresa del usuario, se amplió Editar OT a todo
 
 El 14/10/2026 se corrigió la ruta de edición de OT compuestas en `IN_PRODUCTION`: se usa la actualización que conserva actividades y materiales en vez de intentar reemplazar productos, lo que causaba el error “No se pueden cambiar los productos cuando una etapa posterior a Diseño ya comenzó o se consumió material”. Administración puede corregir los datos de productos existentes; no puede agregar/eliminar productos o actividades nuevas tras iniciar producción ni alterar materiales una vez iniciada Impresión o consumidos. Verificación: `server/tests/work.test.ts` (13/13), `npm --prefix server test` (277), typecheck, build y `git diff --check` aprobados. Sin migración SQL.
 
+El 15/10/2026 se habilitó a ADMINMASTER y ADMIN_GENERAL para eliminar clientes sin órdenes, tanto desde el directorio como desde la ficha. El servidor impide eliminar fichas con historial para conservar cartera, reportes y trazabilidad; Diseño no recibe permiso de eliminación. La edición administrativa ya existía y se conserva. No requiere migración SQL.
+
+El reporte de la OT #0036 se reprodujo y corrigió: la preparación técnica de Diseño intentaba inferir la necesidad de materiales buscando la actividad posterior de Impresión en una respuesta operativa, por lo que podía ocultar el editor. El servidor ahora entrega un indicador explícito `requiresPrintMaterials` y el diseñador asignado puede abrir “Completar información técnica” desde su bandeja o desde el detalle de la OT antes de finalizar Diseño. Verificación completa: frontend 158/158, servidor 277/277, ambos typecheck y builds, además de `git diff --check`. No requiere migración SQL.
+
 ## Funcionalidades terminadas en este tramo
 
+- ADMINMASTER y ADMIN_GENERAL pueden editar clientes y eliminar los que no tengan órdenes registradas.
+- Si el cliente tiene al menos una OT, su eliminación se rechaza para preservar toda la información relacionada.
+- Diseño puede completar descripción y materiales de Impresión normal desde su bandeja o al abrir el detalle de la OT asignada.
+- La obligación de materiales se detecta mediante un indicador explícito del servidor, corrigiendo el bloqueo reportado en la OT #0036.
 - Al crear una FACT, el formulario no permite ingresar retenciones; siempre se calculan automáticamente, también ante una solicitud directa al servidor.
 - Solo ADMINMASTER y ADMIN_GENERAL pueden acceder a Editar OT; el servidor también rechaza modificaciones realizadas desde Diseño.
 - Ambos perfiles administrativos pueden abrir y corregir OT en cualquier estado, incluso durante producción, instaladas y cerradas administrativamente.
@@ -72,6 +80,7 @@ El 14/10/2026 se corrigió la ruta de edición de OT compuestas en `IN_PRODUCTIO
 - `src/pages/OrderForm.tsx`
 - `src/pages/Orders.tsx`
 - `src/pages/Queues.tsx`
+- `src/pages/Clients.tsx`
 - `src/data/AppContext.tsx`
 - `src/data/api.ts`
 - `src/data/orderDraft.ts`
@@ -84,6 +93,8 @@ El 14/10/2026 se corrigió la ruta de edición de OT compuestas en `IN_PRODUCTIO
 - `src/pages/NewOrderEditor.tsx`
 - `src/pages/orders.css`
 - `server/migrations/013_facturation_reference.sql`
+- `server/src/clients/service.ts`
+- `server/src/work/service.ts`
 - `src/styles.css`
 - `tests/order-notifications.test.ts`
 - `tests/domain.test.ts`
@@ -176,7 +187,9 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Edición manual optativa de retenciones FACT del 11/10 | 1 | 1 |
 | Corrección de retenciones FACT automáticas y edición exclusiva posterior de Administración del 14/10 | 1 | 1 |
 | Edición administrativa de OT instaladas y terminadas del 14/10 | 1 | 1 |
-| **Acumulado** | **47** | **29** |
+| Gestión administrativa de clientes del 15/10 | 1 | 1 |
+| Corrección de preparación técnica para Diseño del 15/10 | 1 | 0 |
+| **Acumulado** | **49** | **30** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
@@ -199,6 +212,8 @@ La reapertura correctiva se considera significativa porque modifica las reglas d
 Los materiales diferidos se consideran significativos porque trasladan la responsabilidad técnica de Administración al diseñador asignado y cambian las validaciones de creación y finalización del flujo Diseño → Impresión.
 
 Las observaciones de Taller se consideran significativas porque añaden persistencia nueva al cierre productivo, modifican el contrato del servidor y requieren migración de base de datos.
+
+La gestión de clientes se considera significativa porque añade eliminación protegida por rol y reglas de integridad; la corrección de la OT #0036 no se considera significativa porque restablece el flujo de materiales diferidos ya entregado.
 
 ## Pendiente para producción
 

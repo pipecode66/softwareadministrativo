@@ -173,7 +173,7 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
       const printing = product.activities.find(item => item.area === 'PRINTING');
       setEditActivity(activity);
       setEditDescription(product.description);
-      setEditHasPrinting(Boolean(printing && printing.printingType !== 'LASER'));
+      setEditHasPrinting(Boolean(activity.requiresPrintMaterials || printing && printing.printingType !== 'LASER'));
       setEditMaterials(product.materials.map(material => ({ key: material.id || crypto.randomUUID(), material: material.material, length: String(material.length), width: String(material.width) })));
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'No fue posible abrir la edición del trabajo.'); }
     finally { setBusyId(''); }
@@ -217,7 +217,7 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
           {materials.length > 0 && <div className="ops-activity-materials">{materials.map((material, index) => <span key={material.id || index}>{material.material} · {formatMeasure(material.length)} × {formatMeasure(material.width)} m · {formatMeasure(material.areaM2 ?? areaOf(material))} m²</span>)}</div>}
           {activity.ready === false && activity.status === 'PENDING' && <p className="ops-activity-wait">Espera la actividad anterior de este producto.</p>}
           <div className="ops-activity-actions"><Link className="link ops-detail-link" to={`/orders/${activity.orderId}`}>Ver OT <ArrowRight size={14} /></Link>
-            {canEditDesign && <Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void openDesignEdit(activity)}><Pencil size={14} /> Editar trabajo</Button>}
+            {canEditDesign && <Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void openDesignEdit(activity)}><Pencil size={14} /> Completar información técnica</Button>}
             {canOperate && isLaser && activity.status !== 'COMPLETED' && !!activity.id && <div className="ops-laser-entry"><input className="input" type="number" min="1" step="1" aria-label={`Minutos de corte láser para OT ${activity.orderNumber}`} value={laserMinutes[activity.id] ?? String(activity.laserMinutes ?? '')} onChange={event => setLaserMinutes(current => ({ ...current, [activity.id!]: event.target.value }))} /><span>min</span><Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void saveLaser(activity)}>Guardar</Button></div>}
             {canOperate && activity.status === 'PENDING' && activity.ready !== false && <Button type="button" disabled={!!busyId} onClick={() => void change(activity, 'start')}>Iniciar</Button>}
             {user?.role === 'IMPRESION' && activity.area === 'PRINTING' && activity.status === 'IN_PROGRESS' && !!activity.id && <div className="ops-printing-handoff"><label htmlFor={`queue-handoff-${activity.id}`}>Quién recibe en Taller *</label><input id={`queue-handoff-${activity.id}`} className="input" type="text" maxLength={200} value={handoffRecipients[activity.id] ?? ''} onChange={event => { setHandoffRecipients(current => ({ ...current, [activity.id!]: event.target.value })); setError(''); }} /></div>}

@@ -21,7 +21,7 @@ interface ActivityRow {
 }
 interface ListedActivityRow extends ActivityRow {
   order_number: number; product_position: number; product_description: string;
-  ready: boolean;
+  ready: boolean; requires_print_materials: boolean;
 }
 interface MaterialRow {
   id: string; product_id: string; position: number; material: string;
@@ -304,6 +304,7 @@ function activityDto(row: ListedActivityRow, materials: MaterialRow[]) {
     productDescription: row.product_description,
     position: Number(row.position), area: row.area, status: row.status,
     assignedUserId: row.assigned_user_id, ready: row.ready,
+    requiresPrintMaterials: row.requires_print_materials,
     startedAt: date(row.started_at), completedAt: date(row.completed_at),
     createdAt: date(row.created_at), updatedAt: date(row.updated_at),
     ...(row.area === 'PRINTING' ? { printingType: row.printing_type } : {}),
@@ -325,6 +326,8 @@ async function listedById(tx: SqlConnection, id: string): Promise<ListedActivity
   const row = (await tx.query<ListedActivityRow>(`
     SELECT a.*,o.number AS order_number,p.position AS product_position,
       p.description AS product_description,
+      EXISTS (SELECT 1 FROM order_activities printing WHERE printing.product_id=a.product_id
+        AND printing.area='PRINTING' AND printing.printing_type='PRINT') AS requires_print_materials,
       NOT EXISTS (SELECT 1 FROM order_activities prior WHERE prior.product_id=a.product_id
         AND prior.position<a.position AND prior.status<>'COMPLETED') AS ready
     FROM order_activities a JOIN order_products p ON p.id=a.product_id
@@ -352,6 +355,8 @@ export async function listActivities(db: Database, auth: AuthSession, query: z.i
     const rows = (await tx.query<ListedActivityRow>(`
       SELECT a.*,o.number AS order_number,p.position AS product_position,
         p.description AS product_description,
+        EXISTS (SELECT 1 FROM order_activities printing WHERE printing.product_id=a.product_id
+          AND printing.area='PRINTING' AND printing.printing_type='PRINT') AS requires_print_materials,
         NOT EXISTS (SELECT 1 FROM order_activities prior WHERE prior.product_id=a.product_id
           AND prior.position<a.position AND prior.status<>'COMPLETED') AS ready
       FROM order_activities a JOIN order_products p ON p.id=a.product_id
@@ -381,6 +386,8 @@ export async function workOrder(db: Database, auth: AuthSession, orderId: string
     const activities = (await tx.query<ListedActivityRow>(`
       SELECT a.*,o.number AS order_number,p.position AS product_position,
         p.description AS product_description,
+        EXISTS (SELECT 1 FROM order_activities printing WHERE printing.product_id=a.product_id
+          AND printing.area='PRINTING' AND printing.printing_type='PRINT') AS requires_print_materials,
         NOT EXISTS (SELECT 1 FROM order_activities prior WHERE prior.product_id=a.product_id
           AND prior.position<a.position AND prior.status<>'COMPLETED') AS ready
       FROM order_activities a JOIN order_products p ON p.id=a.product_id
@@ -407,7 +414,8 @@ export async function workOrder(db: Database, auth: AuthSession, orderId: string
         activities: activities.filter(activity => activity.product_id === product.id).map(activity => ({
           id: activity.id, position: Number(activity.position), area: activity.area,
           status: activity.status, assignedUserId: activity.assigned_user_id,
-          ready: activity.ready, startedAt: date(activity.started_at), completedAt: date(activity.completed_at),
+          ready: activity.ready, requiresPrintMaterials: activity.requires_print_materials,
+          startedAt: date(activity.started_at), completedAt: date(activity.completed_at),
           ...(activity.area === 'PRINTING' ? { printingType: activity.printing_type } : {}),
           ...(activity.received_by_workshop ? { receivedByWorkshop: activity.received_by_workshop } : {}),
           ...(activity.workshop_notes ? { workshopNotes: activity.workshop_notes } : {}),

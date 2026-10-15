@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, ArrowUpRight, Building2, CheckCircle2, ClipboardList, Pencil, Phone, Plus, Users, Wallet } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ArrowUpRight, Building2, CheckCircle2, ClipboardList, Pencil, Phone, Plus, Trash2, Users, Wallet } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import { apiClientOrderHistory } from '../data/api';
 import type { Client, WorkOrder } from '../domain/types';
@@ -52,12 +52,15 @@ function ClientEditor({ open, client, onClose, onSaved }: { open: boolean; clien
 }
 
 export function ClientsPage() {
-  const { data, user, toast } = useApp();
+  const { data, user, deleteClient, toast } = useApp();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [editor, setEditor] = useState<Client | 'new' | null>(null);
+  const [deleting, setDeleting] = useState<Client | null>(null);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteSaving, setDeleteSaving] = useState(false);
   if (!user?.active || !['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO'].includes(user.role)) return <EmptyState title="Directorio administrativo" description="Este directorio está disponible para Administración y Diseño." />;
   const admin = isAdmin(user.role);
 
@@ -68,6 +71,13 @@ export function ClientsPage() {
   const filtered = rows.filter(client => normalize(`${client.name} ${client.identification} ${client.phone}`).includes(normalize(search.trim())) && (filter === 'all' || (filter === 'balance' ? client.balance > 0 : client.activeCount > 0))).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   const safePage = Math.min(page, Math.max(1, Math.ceil(filtered.length / 8)));
   const pageRows = filtered.slice((safePage - 1) * 8, safePage * 8);
+  async function confirmDelete() {
+    if (!deleting || deleteSaving) return;
+    setDeleteSaving(true); setDeleteError('');
+    try { await deleteClient(deleting.id); toast('Cliente eliminado.'); setDeleting(null); }
+    catch (cause) { setDeleteError(cause instanceof Error ? cause.message : 'No fue posible eliminar el cliente.'); }
+    finally { setDeleteSaving(false); }
+  }
 
   return <div className="page-stack">
     <PageHeader eyebrow="Administración / Clientes" title="Directorio de clientes" description="La información de tus clientes, conectada con cada trabajo." actions={<Button onClick={() => setEditor('new')}><Plus size={17} /> Nuevo cliente</Button>} />
@@ -87,19 +97,24 @@ export function ClientsPage() {
           { key: 'phone', label: 'Contacto', render: row => row.phone ? <a className="ops-phone" href={`tel:${row.phone.replace(/[^\d+]/g, '')}`}><Phone size={14} />{row.phone}</a> : <span className="muted">Sin teléfono</span> },
           ...(admin ? [{ key: 'orders', label: 'Órdenes', render: (row: (typeof rows)[number]) => <span className="ops-tabular">{row.orderCount}</span> }] : []),
           ...(admin ? [{ key: 'balance', label: 'Saldo pendiente', render: (row: (typeof rows)[number]) => <span className={`money ${row.balance > 0 ? 'ops-amount-pending' : ''}`}>{formatCOP(row.balance)}</span> }] : []),
-          { key: 'actions', label: 'Acciones', render: row => <div className="actions"><Button variant="ghost" onClick={() => navigate(`/clients/${row.id}`)} aria-label={`Ver detalle de ${row.name}`}><ArrowUpRight size={17} /></Button><Button variant="ghost" onClick={() => setEditor(row)} aria-label={`Editar ${row.name}`}><Pencil size={16} /></Button></div> },
+          { key: 'actions', label: 'Acciones', render: row => <div className="actions"><Button variant="ghost" onClick={() => navigate(`/clients/${row.id}`)} aria-label={`Ver detalle de ${row.name}`}><ArrowUpRight size={17} /></Button><Button variant="ghost" onClick={() => setEditor(row)} aria-label={`Editar ${row.name}`}><Pencil size={16} /></Button>{admin && <Button variant="ghost" onClick={() => { setDeleteError(''); setDeleting(row); }} aria-label={`Eliminar ${row.name}`}><Trash2 size={16} /></Button>}</div> },
         ]} rows={pageRows} rowKey={row => row.id} renderCard={row => <div className="ops-mobile-record"><div className="ops-client-cell"><span className="ops-avatar" aria-hidden="true">{initials(row.name)}</span><div><Link className="cell-title link" to={`/clients/${row.id}`}>{row.name}</Link><span className="cell-subtitle">{row.identification || 'Sin identificación'}{row.specialPayment ? ' · Especial' : ''}</span></div></div>{admin && <div className="ops-mobile-record-stats"><span>{row.orderCount} órdenes</span><span className="money">{formatCOP(row.balance)} por cobrar</span></div>}<div className="ops-record-footer"><span className="muted">{row.phone || 'Sin teléfono'}</span><Button variant="secondary" onClick={() => setEditor(row)}><Pencil size={14} /> Editar</Button></div></div>} />
         <Pagination page={safePage} pageSize={8} total={filtered.length} onChange={setPage} />
       </>}
     </Card>
     {editor && <ClientEditor key={editor === 'new' ? 'new' : editor.id} open client={editor === 'new' ? undefined : editor} onClose={() => setEditor(null)} onSaved={() => { toast(editor === 'new' ? 'Cliente creado.' : 'Cliente actualizado.'); setEditor(null); }} />}
+    <Modal open={Boolean(deleting)} onClose={() => { if (!deleteSaving) setDeleting(null); }} title="Eliminar cliente"><div className="stack"><p>¿Eliminar a <strong>{deleting?.name}</strong>? Esta acción solo se permite si el cliente no tiene órdenes registradas.</p>{deleteError && <p className="notice notice-warning" role="alert">{deleteError}</p>}<div className="actions ops-form-actions"><Button variant="secondary" onClick={() => setDeleting(null)} disabled={deleteSaving}>Cancelar</Button><Button variant="danger" onClick={() => void confirmDelete()} disabled={deleteSaving}><Trash2 size={16} /> {deleteSaving ? 'Eliminando…' : 'Eliminar cliente'}</Button></div></div></Modal>
   </div>;
 }
 
 export function ClientDetailPage() {
   const { id } = useParams();
-  const { data, user, toast, usingApi } = useApp();
+  const { data, user, deleteClient, toast, usingApi } = useApp();
   const [editing, setEditing] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteSaving, setDeleteSaving] = useState(false);
+  const navigate = useNavigate();
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -143,10 +158,17 @@ export function ClientDetailPage() {
   const orderNumber = (order: WorkOrder) => canOpenOrder(order)
     ? <Link className="cell-title link" to={`/orders/${order.id}`}>OT #{String(order.number).padStart(4, '0')}</Link>
     : <span className="cell-title">OT #{String(order.number).padStart(4, '0')}</span>;
+  async function confirmDelete() {
+    if (!client || deleteSaving) return;
+    setDeleteSaving(true); setDeleteError('');
+    try { await deleteClient(client.id); toast('Cliente eliminado.'); navigate('/clients', { replace:true }); }
+    catch (cause) { setDeleteError(cause instanceof Error ? cause.message : 'No fue posible eliminar el cliente.'); }
+    finally { setDeleteSaving(false); }
+  }
 
   return <div className="page-stack">
     <Link className="ops-back-link" to="/clients"><ArrowLeft size={16} /> Directorio de clientes</Link>
-    <PageHeader eyebrow="Ficha de cliente" title={client.name} description={`NIT / Identificación: ${client.identification || 'Sin registrar'}${client.specialPayment ? ' · Cliente Especial' : ''}`} actions={<Button variant="secondary" onClick={() => setEditing(true)}><Pencil size={16} /> Editar cliente</Button>} />
+    <PageHeader eyebrow="Ficha de cliente" title={client.name} description={`NIT / Identificación: ${client.identification || 'Sin registrar'}${client.specialPayment ? ' · Cliente Especial' : ''}`} actions={<div className="actions"><Button variant="secondary" onClick={() => setEditing(true)}><Pencil size={16} /> Editar cliente</Button>{admin && <Button variant="danger" onClick={() => { setDeleteError(''); setDeleteOpen(true); }}><Trash2 size={16} /> Eliminar cliente</Button>}</div>} />
     {admin && <div className="grid-3">
       <KpiCard label="Órdenes registradas" value={orders.length} icon={ClipboardList} meta={`${orders.filter(order => !['COMPLETED', 'INSTALLED'].includes(order.status)).length} trabajos en curso`} tone="blue" />
       <KpiCard label="Pagos recibidos" value={formatCOP(paid)} icon={CheckCircle2} meta="Suma de sus abonos registrados" tone="green" />
@@ -168,5 +190,6 @@ export function ClientDetailPage() {
       ]} rows={filtered.slice((safePage - 1) * 6, safePage * 6)} rowKey={order => order.id} renderCard={order => <div className="ops-mobile-record"><div className="ops-record-footer">{orderNumber(order)}<DocumentBadge type={order.documentType} /></div><p>{order.description}</p>{statusCell(order)}<div className="ops-mobile-record-stats"><span>{formatDate(order.createdAt)}</span>{admin && <span className="money">{formatCOP(financials(order).balance)} por cobrar</span>}</div></div>} />{admin ? <Pagination page={safePage} pageSize={6} total={filtered.length} onChange={setPage} /> : <div className="pagination"><p>Página <strong>{safePage}</strong></p><nav aria-label="Paginación del historial"><button className="icon-button" type="button" aria-label="Página anterior" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}><ArrowLeft size={16} /></button><button className="icon-button" type="button" aria-label="Página siguiente" disabled={safePage * 6 >= filtered.length} onClick={() => setPage(safePage + 1)}><ArrowRight size={16} /></button></nav></div>}</>}
     </Card>
     {editing && <ClientEditor open client={client} onClose={() => setEditing(false)} onSaved={() => { toast('Cliente actualizado.'); setEditing(false); }} />}
+    <Modal open={deleteOpen} onClose={() => { if (!deleteSaving) setDeleteOpen(false); }} title="Eliminar cliente"><div className="stack"><p>¿Eliminar a <strong>{client.name}</strong>? Esta acción solo se permite si el cliente no tiene órdenes registradas.</p>{deleteError && <p className="notice notice-warning" role="alert">{deleteError}</p>}<div className="actions ops-form-actions"><Button variant="secondary" onClick={() => setDeleteOpen(false)} disabled={deleteSaving}>Cancelar</Button><Button variant="danger" onClick={() => void confirmDelete()} disabled={deleteSaving}><Trash2 size={16} /> {deleteSaving ? 'Eliminando…' : 'Eliminar cliente'}</Button></div></div></Modal>
   </div>;
 }

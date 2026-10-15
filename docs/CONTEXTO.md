@@ -23,11 +23,13 @@ Antes de finalizar una actividad de Taller, el perfil de Taller puede escribir o
 ## Datos comerciales
 
 - Cliente: nombre y celular obligatorios; identificación opcional para REM y requerida para FACT; indicador Especial para permitir OT sin abono inicial.
+- ADMINMASTER y ADMIN_GENERAL pueden editar clientes y eliminar únicamente fichas que todavía no tengan órdenes. Los clientes con historial se conservan para no romper cartera, reportes ni trazabilidad.
 - OT: valor base mayor que cero, REM/FACT, categoría SuperGiros, Carro Vallas, Proyecto u Otras, instalación opcional. Solo una FACT compuesta exclusivamente por Corte Láser puede iniciar con base cero y sin abono.
 - Pago: fecha, valor y método Efectivo, Bancolombia o Davivienda.
 - Multiabono: la administradora selecciona las OT; el servidor aplica el valor a sus saldos de menor a mayor.
 - Productos: descripción, cantidad entera y valor unitario. No existen especificaciones ni dimensiones generales del producto.
 - Materiales: Panaflex, V. Corte, V. Impresión y Banner, con largo, ancho y m². Impresión normal exige por lo menos uno, salvo que Administración envíe primero el producto a un diseñador asignado; en ese caso el diseñador debe registrarlo antes de finalizar Diseño. Corte Láser no utiliza materiales.
+- El diseñador asignado puede abrir la preparación técnica desde su bandeja o desde el detalle de la OT. La actividad de Diseño recibe el indicador de que existe Impresión normal posterior aunque su consulta operativa no dependa de inspeccionar esa actividad.
 
 Para una FACT nueva se calcula IVA 19 % sobre el valor base. Si la base es estrictamente mayor a $524.000, se aplican automáticamente RETE FUENTE 4 %, RETE IVA 2,85 % e ICA 7/1000; bajo el umbral son cero. Los importes no se capturan ni se editan antes de crear la OT ni durante producción. Si una FACT especial requiere retenciones distintas, solo Administración puede corregirlas mediante Editar OT en cualquier estado. El cobrable nuevo es base + IVA − retenciones. Las OT anteriores a esta regla quedan marcadas LEGACY para no reescribir saldos históricos durante la migración.
 

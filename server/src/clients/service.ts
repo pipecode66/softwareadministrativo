@@ -148,3 +148,14 @@ export async function updateClient(
     return publicClient(result.rows[0]);
   });
 }
+
+export async function deleteClient(db: Database, auth: AuthSession, id: string): Promise<void> {
+  await db.transaction(async tx => {
+    await requireCurrentActor(tx, auth, ['ADMINMASTER', 'ADMIN_GENERAL']);
+    const current = (await tx.query<{ id: string }>('SELECT id FROM clients WHERE id=$1 FOR UPDATE', [id])).rows[0];
+    if (!current) throw new ApiError(404, 'CLIENT_NOT_FOUND', 'El cliente no existe.');
+    const orders = Number((await tx.query<{ count: string }>('SELECT count(*) AS count FROM orders WHERE client_id=$1', [id])).rows[0].count);
+    if (orders > 0) throw new ApiError(409, 'CLIENT_HAS_ORDERS', 'No se puede eliminar un cliente que tiene órdenes registradas.');
+    await tx.query('DELETE FROM clients WHERE id=$1', [id]);
+  });
+}

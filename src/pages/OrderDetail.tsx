@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Banknote, Check, CheckCircle2, ClipboardList, Clock3, FileText, Hammer, MapPin, Pencil, Plus, Printer, Ruler, Wallet } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Banknote, Check, CheckCircle2, ClipboardList, Clock3, FileText, Hammer, MapPin, Pencil, Plus, Printer, Ruler, Trash2, Wallet } from 'lucide-react';
 import { useApp } from '../data/AppContext';
-import type { OrderAction, OrderActivity, OrderProduct, PaymentMethod, Role, WorkOrder } from '../domain/types';
-import { apiChangeActivity, apiDesignerLoad, apiSaveLaserMinutes, apiWorkOrder, usingApi } from '../data/api';
-import { areaOf, canEditOrder, dateOnly, financials, formatCOP, formatDate, formatMeasure, formatNumber, isAdmin, ROLE_LABELS, roundMoney, ROUTE_LABELS, STATUS_LABELS, today, visibleOrders } from '../domain/utils';
+import type { Material, OrderAction, OrderActivity, OrderProduct, PaymentMethod, Role, WorkOrder } from '../domain/types';
+import { apiChangeActivity, apiDesignerLoad, apiSaveLaserMinutes, apiUpdateDesignDetails, apiWorkOrder, usingApi } from '../data/api';
+import { areaOf, canEditOrder, dateOnly, financials, formatCOP, formatDate, formatMeasure, formatNumber, isAdmin, MATERIALS, ROLE_LABELS, roundMoney, ROUTE_LABELS, STATUS_LABELS, today, visibleOrders } from '../domain/utils';
 import { Button, Card, CardHeader, DataTable, DocumentBadge, EmptyState, Field, Modal, PageHeader, PaymentBadge, WorkBadge } from '../components/ui';
 import { AuditHistory } from '../components/AuditHistory';
 import './orders.css';
@@ -48,6 +48,8 @@ function FinancialSummary({ order }: { order: WorkOrder }) {
 const activityLabels = { DESIGN: 'Diseño', PRINTING: 'Impresión', WORKSHOP: 'Taller', EXTERNAL: 'Externo' } as const;
 const activityStatuses = { PENDING: 'Pendiente', IN_PROGRESS: 'En proceso', COMPLETED: 'Terminada' } as const;
 
+type DesignMaterialDraft = { key: string; material: Material; length: string; width: string };
+
 function OrderProducts({ order, role, userId, users, refreshData, toast }: {
   order: WorkOrder; role?: Role; userId?: string; users: { id: string; name: string; role: Role; active: boolean }[];
   refreshData: () => Promise<void>; toast: (message: string, type?: 'success' | 'error') => void;
@@ -60,6 +62,11 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
   const [handoffRecipients, setHandoffRecipients] = useState<Record<string, string>>({});
   const [workshopNotes, setWorkshopNotes] = useState<Record<string, string>>({});
   const [remoteDesigners, setRemoteDesigners] = useState<Array<{ id: string; name: string }>>([]);
+  const [editActivity, setEditActivity] = useState<OrderActivity | null>(null);
+  const [editDescription, setEditDescription] = useState('');
+  const [editMaterials, setEditMaterials] = useState<DesignMaterialDraft[]>([]);
+  const [editHasPrinting, setEditHasPrinting] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
   const designers = [...new Map([
     ...users.filter(person => person.role === 'DISENO' && person.active).map(person => ({ id: person.id, name: person.name })),
     ...remoteDesigners,
@@ -117,10 +124,35 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
     if (needsHandoff && !receivedByWorkshop) { setError('Por favor, digitar quien recibe en taller.'); return; }
     await changeActivity(activity.id, 'complete', needsHandoff ? { receivedByWorkshop } : hasWorkshopNotes ? { workshopNotes: workshopNotes[activity.id]?.trim() ?? '' } : undefined);
   }
+  function openDesignEdit(activity: OrderActivity, product: OrderProduct) {
+    setError('');
+    setEditActivity(activity);
+    setEditDescription(product.description);
+    setEditHasPrinting(Boolean(activity.requiresPrintMaterials || product.activities.some(item => item.area === 'PRINTING' && item.printingType !== 'LASER')));
+    setEditMaterials(product.materials.map(material => ({ key: material.id || crypto.randomUUID(), material: material.material, length: String(material.length), width: String(material.width) })));
+  }
+  async function saveDesignEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editActivity?.id || editSaving) return;
+    if (!editDescription.trim()) { setError('La descripción del trabajo es obligatoria.'); return; }
+    if (editHasPrinting && !editMaterials.length) { setError('Agrega al menos un material para Impresión.'); return; }
+    const materials = editMaterials.map(item => ({ material: item.material, length: Number(item.length), width: Number(item.width) }));
+    if (editHasPrinting && materials.some(item => !Number.isFinite(item.length) || item.length <= 0 || item.length > 100000 || !Number.isFinite(item.width) || item.width <= 0 || item.width > 100000 || Math.abs(item.length * 1000 - Math.round(item.length * 1000)) > .0001 || Math.abs(item.width * 1000 - Math.round(item.width * 1000)) > .0001)) { setError('Cada material necesita largo y ancho válidos, mayores que cero y con máximo tres decimales.'); return; }
+    setEditSaving(true); setError('');
+    try {
+      await apiUpdateDesignDetails(editActivity.id, { description: editDescription.trim(), ...(editHasPrinting ? { materials } : {}) });
+      setEditActivity(null);
+      const result = await apiWorkOrder(order.id);
+      setProducts(result.products);
+      await refreshData();
+      toast('Información técnica del trabajo guardada.');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'No fue posible guardar la información del trabajo.'); }
+    finally { setEditSaving(false); }
+  }
   if (loading) return <Card className="order-information-card"><CardHeader title="Productos y actividades" /><p className="muted">Cargando trabajos de la OT…</p></Card>;
   if (error && !products.length) return <Card className="order-information-card"><CardHeader title="Productos y actividades" /><p className="order-field-error" role="alert">{error}</p></Card>;
   if (!products.length) return null;
-  return <Card className="order-information-card"><CardHeader title="Productos y actividades" description={`${products.length} ${products.length === 1 ? 'producto' : 'productos'} vinculados a esta venta; cada actividad muestra su responsable y avance.`} />
+  return <><Card className="order-information-card"><CardHeader title="Productos y actividades" description={`${products.length} ${products.length === 1 ? 'producto' : 'productos'} vinculados a esta venta; cada actividad muestra su responsable y avance.`} />
     {error && <p className="order-field-error" role="alert">{error}</p>}
     <div className="order-product-detail-list">{products.map((product, index) => <section key={product.id || index} className="order-product-detail">
       <div className="order-product-heading"><h3>{index + 1}. {product.description}</h3>{isAdmin(role) && <strong>{formatCOP(product.lineTotal ?? product.quantity * (product.unitValue ?? 0))}</strong>}</div>
@@ -129,9 +161,11 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
       {!!product.activities.length && <ol className="order-activity-list">{product.activities.map((activity, activityIndex) => {
         const owner = designers.find(person => person.id === activity.assignedUserId);
         const canOperate = isAdmin(role) || activity.area === 'DESIGN' && role === 'DISENO' && activity.assignedUserId === userId || activity.area === 'PRINTING' && role === 'IMPRESION' || activity.area === 'WORKSHOP' && role === 'TALLER';
+        const canEditDesign = usingApi && role === 'DISENO' && activity.area === 'DESIGN' && activity.assignedUserId === userId && activity.status !== 'COMPLETED';
         const isLaser = activity.area === 'PRINTING' && activity.printingType === 'LASER';
         return <li key={activity.id || activityIndex} className={`order-activity-row is-${activity.status?.toLowerCase() || 'pending'}`}><div><strong>{isLaser ? 'Corte láser' : activityLabels[activity.area]}</strong><span>{activityStatuses[activity.status || 'PENDING']}{owner ? ` · ${owner.name}` : activity.area === 'DESIGN' ? activity.assignedUserId ? ' · diseñador asignado' : ' · sin asignar' : ''}{activity.ready === false ? ' · espera actividad anterior' : ''}{isLaser ? ` · $1.000/min${activity.laserMinutes ? ` · ${activity.laserMinutes} min` : ''}` : ''}{activity.receivedByWorkshop ? ` · recibe en Taller: ${activity.receivedByWorkshop}` : ''}</span>{activity.workshopNotes && <small><strong>Observaciones de Taller:</strong> {activity.workshopNotes}</small>}</div><div className="order-activity-actions">
           {usingApi && isAdmin(role) && activity.area === 'DESIGN' && activity.status === 'PENDING' && !!activity.id && <select className="select" aria-label={`Asignar diseñador a ${product.description}`} value={activity.assignedUserId || ''} disabled={busyId === activity.id} onChange={event => { if (event.target.value) void changeActivity(activity.id!, 'assign', { assignedUserId: event.target.value }); }}><option value="">Asignar diseñador</option>{designers.map(designer => <option key={designer.id} value={designer.id}>{designer.name}</option>)}</select>}
+          {canEditDesign && <Button type="button" variant="secondary" disabled={busyId === activity.id} onClick={() => openDesignEdit(activity, product)}><Pencil size={14} /> Completar información técnica</Button>}
           {usingApi && canOperate && isLaser && activity.status !== 'COMPLETED' && !!activity.id && <><input className="input order-laser-minutes" type="number" min="1" step="1" aria-label="Minutos de corte láser" value={laserMinutes[activity.id] ?? String(activity.laserMinutes ?? '')} onChange={event => setLaserMinutes(current => ({ ...current, [activity.id!]: event.target.value }))} /><Button type="button" variant="secondary" disabled={busyId === activity.id} onClick={() => void saveLaser(activity.id!)}>Guardar minutos</Button></>}
           {usingApi && canOperate && activity.status === 'PENDING' && activity.ready !== false && !!activity.id && <Button type="button" variant="secondary" disabled={busyId === activity.id} onClick={() => void changeActivity(activity.id!, 'start')}>Iniciar</Button>}
           {usingApi && role === 'IMPRESION' && activity.area === 'PRINTING' && activity.status === 'IN_PROGRESS' && !!activity.id && <div className="order-printing-handoff"><label htmlFor={`detail-handoff-${activity.id}`}>Quién recibe en Taller *</label><input id={`detail-handoff-${activity.id}`} className="input" type="text" maxLength={200} value={handoffRecipients[activity.id] ?? ''} onChange={event => { setHandoffRecipients(current => ({ ...current, [activity.id!]: event.target.value })); setError(''); }} /></div>}
@@ -140,7 +174,16 @@ function OrderProducts({ order, role, userId, users, refreshData, toast }: {
         </div></li>;
       })}</ol>}
     </section>)}</div>
-  </Card>;
+  </Card>
+    <Modal open={Boolean(editActivity)} onClose={() => { if (!editSaving) setEditActivity(null); }} title="Completar información técnica">
+      <form className="stack" onSubmit={saveDesignEdit} noValidate>
+        <Field label="Descripción del trabajo *" htmlFor="detail-design-description"><textarea id="detail-design-description" className="textarea" rows={4} value={editDescription} onChange={event => setEditDescription(event.target.value)} /></Field>
+        {editHasPrinting && <div className="order-design-material-editor"><div className="order-design-material-heading"><strong>Materiales para Impresión</strong><Button type="button" variant="secondary" onClick={() => setEditMaterials(current => [...current, { key: crypto.randomUUID(), material: 'Panaflex', length: '', width: '' }])}><Plus size={14} /> Agregar material</Button></div>{editMaterials.map((material, index) => <div className="order-design-material-row" key={material.key}><Field label={`Material ${index + 1}`} htmlFor={`detail-design-material-${material.key}`}><select id={`detail-design-material-${material.key}`} className="select" value={material.material} onChange={event => setEditMaterials(current => current.map(item => item.key === material.key ? { ...item, material: event.target.value as Material } : item))}>{MATERIALS.map(item => <option key={item} value={item}>{item}</option>)}</select></Field><Field label="Largo (m)" htmlFor={`detail-design-length-${material.key}`}><input id={`detail-design-length-${material.key}`} className="input" type="number" min="0.001" step="0.001" value={material.length} onChange={event => setEditMaterials(current => current.map(item => item.key === material.key ? { ...item, length: event.target.value } : item))} /></Field><Field label="Ancho (m)" htmlFor={`detail-design-width-${material.key}`}><input id={`detail-design-width-${material.key}`} className="input" type="number" min="0.001" step="0.001" value={material.width} onChange={event => setEditMaterials(current => current.map(item => item.key === material.key ? { ...item, width: event.target.value } : item))} /></Field><button type="button" className="order-design-material-remove" aria-label={`Quitar material ${index + 1}`} onClick={() => setEditMaterials(current => current.filter(item => item.key !== material.key))}><Trash2 size={16} /></button></div>)}</div>}
+        {error && <p className="notice notice-warning" role="alert">{error}</p>}
+        <div className="actions"><Button type="button" variant="secondary" onClick={() => setEditActivity(null)} disabled={editSaving}>Cancelar</Button><Button type="submit" disabled={editSaving}><Check size={15} /> {editSaving ? 'Guardando…' : 'Guardar cambios'}</Button></div>
+      </form>
+    </Modal>
+  </>;
 }
 
 export function OrderDetailPage() {

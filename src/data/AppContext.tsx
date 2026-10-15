@@ -4,7 +4,7 @@ import type { AppData, Client, OrderAction, OrderInput, User, WorkOrder } from '
 import { createWorkOrder, editWorkOrder, recordPayment, transitionWorkOrder, validateClient } from '../domain/service';
 import { financials, isAdmin, ROLE_LABELS } from '../domain/utils';
 import {
-  apiAddPayment, apiBulkPayment, apiCertificateReport, apiSetCertificates, apiChangePassword, apiCreateOrder, apiCreateUser, apiListClients, apiListOrders, apiListUsers, apiLogin, apiLogout, apiResetPassword,
+  apiAddPayment, apiBulkPayment, apiCertificateReport, apiSetCertificates, apiChangePassword, apiCreateOrder, apiCreateUser, apiDeleteClient, apiListClients, apiListOrders, apiListUsers, apiLogin, apiLogout, apiResetPassword,
   apiMaterialReport, apiPortfolioReport, apiSalesReport, apiSaveClient, apiSession, apiTransitionOrder, apiUpdateOrder, apiUpdateUser,
   ApiRequestError, forgetApiSession, usingApi,
 } from './api';
@@ -35,6 +35,7 @@ interface AppContextValue {
   bulkPayment: (input: { clientId: string; selectedOrderIds: string[] } & NewPayment, requestId: string) => Promise<BulkPaymentResult>;
   transitionOrder: (id: string, action: OrderAction, details?: { date?: string; note?: string; receivedByWorkshop?: string; workshopNotes?: string }) => Promise<void>;
   saveClient: (input: ClientInput, id?: string) => Promise<Client>;
+  deleteClient: (id: string) => Promise<void>;
   saveUser: (input: UserInput, id?: string) => Promise<User>;
   resetPassword: (id: string, password: string) => Promise<void>;
   refreshAccounts: () => Promise<void>;
@@ -319,6 +320,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const client: Client = { id: id || crypto.randomUUID(), name: input.name.trim(), identification: input.identification.trim(), phone: input.phone.trim(), specialPayment: Boolean(input.specialPayment), createdAt: existing?.createdAt || new Date().toISOString() };
       commit({ ...current, clients: id ? current.clients.map(c => c.id === id ? client : c) : [...current.clients, client] });
       return client;
+    },
+    async deleteClient(id) {
+      const current = latest();
+      if (!isAdmin(actor(current).role)) throw new Error('Solo Administración puede eliminar clientes.');
+      if (current.orders.some(order => order.clientId === id)) throw new Error('No se puede eliminar un cliente que tiene órdenes registradas.');
+      if (usingApi) await remote(() => apiDeleteClient(id));
+      commit({ ...current, clients:current.clients.filter(client => client.id !== id) });
     },
     async saveUser(input, id) {
       if (usingApi) {
