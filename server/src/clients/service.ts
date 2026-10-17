@@ -8,6 +8,7 @@ import type { CreateClientInput, ListClientOrdersInput, ListClientsInput, Update
 
 export const CLIENT_READ_ROLES: readonly Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO'];
 export const CLIENT_WRITE_ROLES: readonly Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO'];
+export const CLIENT_CREATE_ROLES: readonly Role[] = [...CLIENT_WRITE_ROLES, 'APOYO_COMERCIAL'];
 
 export interface PublicClient {
   id: string;
@@ -122,7 +123,7 @@ export async function listClientOrders(
 
 export async function createClient(db: Database, auth: AuthSession, input: CreateClientInput): Promise<PublicClient> {
   return db.transaction(async tx => {
-    await requireCurrentActor(tx, auth, CLIENT_WRITE_ROLES);
+    await requireCurrentActor(tx, auth, CLIENT_CREATE_ROLES);
     const result = await tx.query<ClientRow>(`
       INSERT INTO clients (id, name, identification, phone, special_payment)
       VALUES ($1, $2, $3, $4, $5) RETURNING id, name, identification, phone, special_payment, created_at

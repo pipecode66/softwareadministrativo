@@ -4,7 +4,7 @@ import { createWorkOrder, editWorkOrder, recordPayment, transitionWorkOrder, val
 import { areaOf, canCreate, canViewOrder, CATEGORIES, currentMonthRange, dateOnly, financials, formatDate, formatMeasure, formatPesosInput, inRange, isAdmin, isCalendarDate, isFinished, MATERIALS, normalize, roundMoney, today, visibleOrders } from '../src/domain/utils';
 
 const NOW = '2026-09-14T15:00:00.000Z';
-const roles: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO', 'IMPRESION', 'TALLER'];
+const roles: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'APOYO_COMERCIAL', 'DISENO', 'IMPRESION', 'TALLER'];
 const user = (role: Role = 'ADMIN_GENERAL', overrides: Partial<User> = {}): User => ({ id: `user-${role}`, name: role, email: `${role}@example.test`, role, active: true, ...overrides });
 const input = (overrides: Partial<OrderInput> = {}): OrderInput => ({ number: 1, clientId: 'client-1', description: '  Trabajo publicitario  ', value: 100000, documentType: 'REM', category: 'Otras', route: 'PRINT_WORKSHOP', requiresInstallation: false, printing: { material: 'Panaflex', length: 2.5, width: 1.2 }, ...overrides });
 const order = (overrides: Partial<WorkOrder> = {}): WorkOrder => ({ ...input(), reteFuente: 0, reteIva: 0, ica: 0, id: 'order-1', createdAt: '2026-01-15T18:00:00.000Z', updatedAt: '2026-01-15T18:00:00.000Z', createdBy: user('DISENO').id, payments: [], status: 'NEW', ...overrides });
@@ -49,7 +49,7 @@ describe('Cálculos de dinero y cartera', () => {
 });
 
 describe('Validación y creación de órdenes', () => {
-  it.each(['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO'] as Role[])('%s puede crear sin revisión obligatoria', role => {
+  it.each(['ADMINMASTER', 'ADMIN_GENERAL', 'APOYO_COMERCIAL', 'DISENO'] as Role[])('%s puede crear sin revisión obligatoria', role => {
     const result = createWorkOrder(data(), user(role), input());
     expect(result).toMatchObject({ number: 1, description: 'Trabajo publicitario', createdBy: user(role).id, createdAt: NOW, updatedAt: NOW, payments: [], status: 'NEW' });
     expect(result.id).toBeTruthy();
@@ -177,7 +177,7 @@ describe('Edición protegida de órdenes', () => {
     expect(switchedToRem.invoiceReference).toBeUndefined();
     expect(createWorkOrder(data(), user(), input({ documentType:'FACT', invoiceReference:'FE#2394' })).invoiceReference).toBeUndefined();
   });
-  it.each(['DISENO', 'IMPRESION', 'TALLER'] as Role[])('%s no edita', role => {
+  it.each(['APOYO_COMERCIAL', 'DISENO', 'IMPRESION', 'TALLER'] as Role[])('%s no edita', role => {
     expect(() => editWorkOrder(data(), user(role), order(), input())).toThrow(/Administración/);
   });
   it.each(['IN_PRINTING', 'IN_WORKSHOP', 'PENDING_INSTALLATION'] as WorkStatus[])('permite corregir OT en %s conservando su estado', status => {
@@ -235,7 +235,7 @@ describe('Registro de abonos', () => {
     expect(second.status).toBe(original.status);
     expect(financials(second)).toMatchObject({ paid: 100000, balance: 0, paymentStatus: 'PAID' });
   });
-  it.each(['DISENO', 'IMPRESION', 'TALLER'] as Role[])('%s no registra pagos', role => {
+  it.each(['APOYO_COMERCIAL', 'DISENO', 'IMPRESION', 'TALLER'] as Role[])('%s no registra pagos', role => {
     expect(() => recordPayment(user(role), order(), { date: '2026-09-14', amount: 1 })).toThrow(/Administración/);
   });
   it('cuenta administrativa inactiva no registra pagos', () => {
@@ -268,7 +268,7 @@ describe('Registro de abonos', () => {
 describe('Permisos de visualización', () => {
   it.each(roles)('define capacidad administrativa y de creación para %s', role => {
     expect(isAdmin(role)).toBe(role.startsWith('ADMIN'));
-    expect(canCreate(role)).toBe(role.startsWith('ADMIN') || role === 'DISENO');
+    expect(canCreate(role)).toBe(role.startsWith('ADMIN') || role === 'APOYO_COMERCIAL' || role === 'DISENO');
   });
   it('anónimos e inactivos no ven órdenes', () => {
     expect(canViewOrder(null, order())).toBe(false);

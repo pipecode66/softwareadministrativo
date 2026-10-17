@@ -1,5 +1,5 @@
 import type { AppData, Client, OrderAction, OrderInput, PaymentMethod, User, WorkOrder } from './types';
-import { CATEGORIES, MATERIALS, canCreate, canViewOrder, dateOnly, financials, isAdmin, isCalendarDate, isFinished, roundMoney, today } from './utils';
+import { CATEGORIES, MATERIALS, canCreate, canDeferPrintMaterials, canViewOrder, dateOnly, financials, isAdmin, isCalendarDate, isFinished, roundMoney, today } from './utils';
 
 function assert(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(message); }
 export function validateInput(data: AppData, input: OrderInput, exceptId?: string, allowDeferredMaterials = false) {
@@ -54,7 +54,7 @@ function cleanInput(input: OrderInput, onCreate = false): OrderInput {
 }
 export function createWorkOrder(data: AppData, user: User, input: OrderInput): WorkOrder {
   assert(user.active && canCreate(user.role), 'No tienes permiso para crear órdenes.');
-  validateInput(data, input, undefined, isAdmin(user.role));
+  validateInput(data, input, undefined, canDeferPrintMaterials(user.role));
   const now = new Date().toISOString();
   const number = input.number || Math.max(0, ...data.orders.map(order => order.number)) + 1;
   const payments = input.initialPayment ? [{ id: crypto.randomUUID(), date: input.initialPayment.date,

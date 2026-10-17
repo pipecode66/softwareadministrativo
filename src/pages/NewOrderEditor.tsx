@@ -3,9 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, FileText, Info, Plus, Save, Trash2 } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { Category, DocumentType, Material, OrderInput, OrderProduct, PaymentMethod, PrintingType, ProductionRoute, WorkOrder } from '../domain/types';
-import { apiDesignerLoad, apiWorkOrder, usingApi } from '../data/api';
+import { apiDesignerLoad, apiDesignerOptions, apiWorkOrder, usingApi } from '../data/api';
 import { deleteOrderDraft, loadOrderDraft, saveOrderDraft, type OrderFormDraft } from '../data/orderDraft';
-import { CATEGORIES, financials, formatCOP, formatMeasure, formatPesosInput, isAdmin, MATERIALS, normalize, roundMoney, today } from '../domain/utils';
+import { canDeferPrintMaterials, CATEGORIES, financials, formatCOP, formatMeasure, formatPesosInput, MATERIALS, normalize, roundMoney, today } from '../domain/utils';
 import { Button, Card, Field, PageHeader } from '../components/ui';
 import './orders.css';
 
@@ -112,9 +112,9 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   ].map(person => [person.id, person])).values()];
 
   useEffect(() => {
-    if (!usingApi || !user || !['ADMINMASTER', 'ADMIN_GENERAL'].includes(user.role)) return;
+    if (!usingApi || !user || !['ADMINMASTER', 'ADMIN_GENERAL', 'APOYO_COMERCIAL'].includes(user.role)) return;
     let active = true;
-    void apiDesignerLoad().then(result => {
+    void (user.role === 'APOYO_COMERCIAL' ? apiDesignerOptions() : apiDesignerLoad()).then(result => {
       if (active) setRemoteDesigners(result.items.map(person => ({ id: person.id, name: person.name })));
     }).catch(() => {
       // The order can still be saved unassigned if the workload query is temporarily unavailable.
@@ -264,7 +264,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
       if (!orderedActivities(product, designerCreatorId).length) return `${label}: selecciona al menos un área de trabajo.`;
       if (!designerCreatorId && product.design && !product.designerId) return `${label}: selecciona el diseñador responsable.`;
       if (product.printing && product.printingType === 'PRINT' && !product.materials.length
-        && !(isAdmin(user?.role) && product.design)) return `${label}: agrega al menos un material para Impresión.`;
+        && !(canDeferPrintMaterials(user?.role) && product.design)) return `${label}: agrega al menos un material para Impresión.`;
       for (const material of product.printing && product.printingType === 'PRINT' ? product.materials : []) {
         if (!Number.isFinite(Number(material.length)) || Number(material.length) <= 0 || !Number.isFinite(Number(material.width)) || Number(material.width) <= 0 ||
           Math.abs(Number(material.length) * 1000 - Math.round(Number(material.length) * 1000)) > .0001 ||
@@ -310,7 +310,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
           catch { toast('La OT fue creada, pero no fue posible retirar su borrador.', 'error'); }
         }
         toast('Orden creada y distribuida entre las áreas seleccionadas.');
-        navigate(`/orders/${created.id}`);
+        navigate(user?.role === 'APOYO_COMERCIAL' ? '/orders/new' : `/orders/${created.id}`, { replace: user?.role === 'APOYO_COMERCIAL' });
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'No fue posible guardar la OT.');
@@ -319,7 +319,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   }
 
   return <div className="page-stack order-form-page">
-    <Link className="order-back-link" to={existing ? `/orders/${existing.id}` : '/orders'}><ArrowLeft size={17} /> {existing ? 'Volver a la OT' : 'Órdenes de trabajo'}</Link>
+    {user?.role !== 'APOYO_COMERCIAL' && <Link className="order-back-link" to={existing ? `/orders/${existing.id}` : '/orders'}><ArrowLeft size={17} /> {existing ? 'Volver a la OT' : 'Órdenes de trabajo'}</Link>}
     <PageHeader eyebrow={existing ? `OT #${String(existing.number).padStart(4, '0')}` : 'ÓRDENES DE TRABAJO / NUEVA ORDEN'} title={existing ? 'Editar orden de trabajo' : 'Nueva orden de trabajo'} description="Registra una sola venta con los productos y tareas que realizará cada área." />
     <form onSubmit={submit} noValidate className="order-editor-layout">
       <div className="stack order-editor-main">
@@ -332,7 +332,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
             <Field label="Buscar y seleccionar cliente *" htmlFor="ot-client-search"><div className="order-client-picker" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { setClientPickerOpen(false); setActiveClientIndex(-1); } }}><input id="ot-client-search" className="input" type="search" role="combobox" aria-autocomplete="list" aria-expanded={clientPickerOpen} aria-controls="ot-client-options" aria-activedescendant={clientPickerOpen && activeClientIndex >= 0 && activeClientIndex < filteredClients.length ? `ot-client-option-${filteredClients[activeClientIndex].id}` : undefined} aria-required="true" autoComplete="off" value={clientQuery} onFocus={() => { const selectedIndex = filteredClients.findIndex(item => item.id === clientId); setClientPickerOpen(true); setActiveClientIndex(filteredClients.length ? Math.max(0, selectedIndex) : -1); }} onKeyDown={handleClientKeyDown} onChange={event => { setClientQuery(event.target.value); setClientId(''); setClientPickerOpen(true); setActiveClientIndex(0); setError(''); }} placeholder="Nombre, identificación o celular" />{clientPickerOpen && <div id="ot-client-options" className="order-client-options" role="listbox" aria-label="Resultados de clientes">{filteredClients.length ? filteredClients.map((item, index) => <button id={`ot-client-option-${item.id}`} key={item.id} type="button" role="option" aria-selected={item.id === clientId} className={`order-client-option ${index === activeClientIndex ? 'is-active' : ''}`} onMouseEnter={() => setActiveClientIndex(index)} onClick={() => selectClient(item)}><strong>{item.name}</strong><span>{[item.identification, item.phone].filter(Boolean).join(' · ') || 'Sin identificación ni celular'}</span></button>) : <p className="order-client-empty" role="status">No se encontraron clientes.</p>}</div>}</div></Field>
           </div>
           {client && <div className="order-client-selected"><div><strong>{client.name}</strong><span>{client.phone} · {client.specialPayment ? 'Pago especial: no requiere abono inicial' : 'Requiere abono inicial'}</span></div><Check size={18} /></div>}
-          <div className="order-client-actions"><Link className="btn btn-secondary" to="/clients">Consultar clientes</Link><Button type="button" variant="secondary" onClick={() => setNewClientOpen(value => !value)}>{newClientOpen ? 'Cancelar' : 'Nuevo cliente'}</Button></div>
+          <div className="order-client-actions">{user?.role !== 'APOYO_COMERCIAL' && <Link className="btn btn-secondary" to="/clients">Consultar clientes</Link>}<Button type="button" variant="secondary" onClick={() => setNewClientOpen(value => !value)}>{newClientOpen ? 'Cancelar' : 'Nuevo cliente'}</Button></div>
           {newClientOpen && <div className="order-inline-client"><div className="form-grid"><Field label="Nombre / razón social *" htmlFor="new-client-name"><input id="new-client-name" className="input" value={clientName} onChange={event => setClientName(event.target.value)} /></Field><Field label="Celular *" htmlFor="new-client-phone"><input id="new-client-phone" className="input" type="tel" value={clientPhone} onChange={event => setClientPhone(event.target.value)} /></Field><Field label="NIT o identificación" htmlFor="new-client-identification" hint="Obligatorio si requiere FACT."><input id="new-client-identification" className="input" value={clientIdentification} onChange={event => setClientIdentification(event.target.value)} /></Field></div><label className="order-install-toggle"><input type="checkbox" checked={clientSpecial} onChange={event => setClientSpecial(event.target.checked)} /><span><strong>Cliente de pago especial</strong><small>Puede registrar OTs sin abono inicial; su saldo se verá como Especial.</small></span></label>{clientError && <p className="order-field-error" role="alert">{clientError}</p>}<Button type="button" variant="secondary" onClick={() => void addClient()}>Agregar cliente</Button></div>}
           <fieldset className="order-choice-fieldset order-composite-choice"><legend>Tipo de documento</legend><div className="order-document-options"><label className={`order-choice-card ${documentType === 'REM' ? 'is-selected' : ''}`}><input type="radio" name="documentType" checked={documentType === 'REM'} onChange={() => setDocumentType('REM')} /><FileText size={18} /> REM</label><label className={`order-choice-card ${documentType === 'FACT' ? 'is-selected' : ''}`}><input type="radio" name="documentType" checked={documentType === 'FACT'} onChange={() => setDocumentType('FACT')} /><FileText size={18} /> FACT · IVA 19 %</label></div></fieldset>
           <fieldset className="order-choice-fieldset order-composite-choice"><legend>Categoría comercial</legend><div className="order-category-options">{CATEGORIES.map(item => <label key={item} className={`order-choice-card ${category === item ? 'is-selected' : ''}`}><input type="radio" name="category" checked={category === item} onChange={() => setCategory(item)} />{item}</label>)}</div></fieldset>

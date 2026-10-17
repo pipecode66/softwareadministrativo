@@ -241,6 +241,19 @@ describe('Clientes: permisos y sesiones', () => {
     expect((await remove(created.body.client.id, actor)).status).toBe(403);
   });
 
+  it('Apoyo Comercial lista y crea clientes desde Nueva OT, sin abrir ni modificar fichas', async () => {
+    const actor = await actorWithRole('APOYO_COMERCIAL');
+    const created = await post({ name: 'Cliente de apoyo comercial', specialPayment: true }, actor);
+    expect(created.status).toBe(201);
+    expect((await get('/clients', actor)).body.items).toEqual([
+      expect.objectContaining({ id: created.body.client.id, name: 'Cliente de apoyo comercial' }),
+    ]);
+    expect((await get(`/clients/${created.body.client.id}`, actor)).status).toBe(403);
+    expect((await get(`/clients/${created.body.client.id}/orders`, actor)).status).toBe(403);
+    expect((await patch(created.body.client.id, { name: 'No permitido' }, actor)).status).toBe(403);
+    expect((await remove(created.body.client.id, actor)).status).toBe(403);
+  });
+
   it('Diseño consulta todo el historial operativo del cliente sin totales ni datos financieros', async () => {
     const designer = await actorWithRole('DISENO');
     const created = await post({ name: 'Cliente con historial', specialPayment: true });

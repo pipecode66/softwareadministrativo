@@ -1,4 +1,4 @@
-export const ROLES = ['ADMINMASTER', 'ADMIN_GENERAL', 'DISENO', 'IMPRESION', 'TALLER'] as const;
+export const ROLES = ['ADMINMASTER', 'ADMIN_GENERAL', 'APOYO_COMERCIAL', 'DISENO', 'IMPRESION', 'TALLER'] as const;
 export type Role = typeof ROLES[number];
 
 export interface PublicUser {

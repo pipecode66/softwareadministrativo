@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check, FileText, Hammer, Info, Plus, Printer, Ruler, Save } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { Category, DocumentType, Material, OrderInput, ProductionRoute, WorkOrder } from '../domain/types';
@@ -29,14 +29,15 @@ function initialValues(order?: WorkOrder, clientId = ''): FormValues {
 export function OrderFormPage() {
   const { id } = useParams();
   const [params] = useSearchParams();
+  const location = useLocation();
   const { data, user } = useApp();
   const order = id ? data.orders.find(item => item.id === id) : undefined;
-  if (!canCreate(user?.role)) return <EmptyState title="No tienes acceso a crear órdenes" description="La creación corresponde a Administración y Diseño." action={<Link className="btn btn-secondary" to="/orders">Ver órdenes</Link>} />;
+  if (!canCreate(user?.role)) return <EmptyState title="No tienes acceso a crear órdenes" description="Tu perfil no tiene habilitada la creación de órdenes." action={<Link className="btn btn-secondary" to="/">Volver al inicio</Link>} />;
   if (id && !order) return <EmptyState title="No encontramos esta orden" action={<Link className="btn btn-secondary" to="/orders">Volver a órdenes</Link>} />;
   const canEdit = order && canEditOrder(user, order);
   if (order && !canEdit) return <EmptyState title="Esta orden no está disponible para edición" description="La edición de órdenes corresponde exclusivamente a Administración." action={<Link className="btn btn-secondary" to={`/orders/${order.id}`}>Volver a la orden</Link>} />;
   const initialClientId = params.get('client') || params.get('clientId') || '';
-  if (!order) return <NewOrderEditor initialClientId={initialClientId} />;
+  if (!order) return <NewOrderEditor key={location.key} initialClientId={initialClientId} />;
   if (order.isComposite || order.products?.some(product => product.activities.length > 0) || order.status === 'IN_PRODUCTION') {
     return <NewOrderEditor key={order.id} existing={order} initialClientId={initialClientId} />;
   }

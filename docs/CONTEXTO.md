@@ -6,6 +6,8 @@ Intermedios Gestión centraliza clientes, ventas, cartera y producción publicit
 
 ## Flujo vigente
 
+Apoyo Comercial es un rol independiente cuya única pantalla funcional es Nueva OT. Puede buscar clientes, crear uno nuevo dentro del formulario, asignar diseñadores y guardar borradores/OT. No consulta órdenes creadas, fichas o historial de clientes, bandejas, cartera, reportes, materiales, usuarios ni producción.
+
 Administración y Diseño crean OT. El servidor asigna el consecutivo automáticamente. La creación actual usa una OT comercial principal y uno o más productos; cada producto genera actividades internas en Diseño, Impresión, Taller o Externo, sin crear ventas adicionales.
 
 Una actividad de Diseño debe completarse antes de la actividad de Impresión del mismo producto. Si Administración incluye Diseño, debe seleccionar obligatoriamente un diseñador específico; no existen tareas libres para tomar. Si Diseño crea la OT, el servidor inserta Diseño como primera actividad de cada producto y la asigna al creador. En una OT creada por Administración con Diseño antes de Impresión normal, los materiales pueden quedar pendientes para que los complete el diseñador asignado; Diseño no puede finalizar hasta registrar por lo menos uno. Impresión normal sin Diseño continúa exigiendo material desde la creación, y una OT creada directamente por Diseño también debe incluirlo. Si Diseño ya está en proceso, Administración todavía puede corregir únicamente los materiales sin reiniciar la actividad; los demás cambios estructurales permanecen bloqueados. Administración puede operar cualquier área. La instalación es opcional.
@@ -29,6 +31,7 @@ Antes de finalizar una actividad de Taller, el perfil de Taller puede escribir o
 - Multiabono: la administradora selecciona las OT; el servidor aplica el valor a sus saldos de menor a mayor.
 - Productos: descripción, cantidad entera y valor unitario. No existen especificaciones ni dimensiones generales del producto.
 - Materiales: Panaflex, V. Corte, V. Impresión y Banner, con largo, ancho y m². Impresión normal exige por lo menos uno, salvo que Administración envíe primero el producto a un diseñador asignado; en ese caso el diseñador debe registrarlo antes de finalizar Diseño. Corte Láser no utiliza materiales.
+- Apoyo Comercial comparte la excepción de materiales diferidos únicamente cuando asigna Diseño antes de Impresión normal; el diseñador seleccionado debe completarlos antes de finalizar Diseño.
 - El diseñador asignado puede abrir la preparación técnica desde su bandeja o desde el detalle de la OT. La actividad de Diseño recibe el indicador de que existe Impresión normal posterior aunque su consulta operativa no dependa de inspeccionar esa actividad.
 
 Para una FACT nueva se calcula IVA 19 % sobre el valor base. Si la base es estrictamente mayor a $524.000, se aplican automáticamente RETE FUENTE 4 %, RETE IVA 2,85 % e ICA 7/1000; bajo el umbral son cero. Los importes no se capturan ni se editan antes de crear la OT ni durante producción. Si una FACT especial requiere retenciones distintas, solo Administración puede corregirlas mediante Editar OT en cualquier estado. El cobrable nuevo es base + IVA − retenciones. Las OT anteriores a esta regla quedan marcadas LEGACY para no reescribir saldos históricos durante la migración.

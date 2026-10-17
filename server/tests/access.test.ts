@@ -506,7 +506,7 @@ describe('Administration accounts and server-side authorization', () => {
     expect(response.text).not.toMatch(/password_hash|csrfToken|token_hash/);
   });
 
-  it.each(['ADMIN_GENERAL', 'DISENO', 'IMPRESION', 'TALLER'] as Role[])('denies account management to %s even via direct requests', async role => {
+  it.each(['ADMIN_GENERAL', 'APOYO_COMERCIAL', 'DISENO', 'IMPRESION', 'TALLER'] as Role[])('denies account management to %s even via direct requests', async role => {
     const user = await createUser({ role });
     const actor = await activeSession(user.email);
     expect((await get('/users', actor)).status).toBe(403);

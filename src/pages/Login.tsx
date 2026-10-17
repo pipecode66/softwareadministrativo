@@ -13,7 +13,7 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const location = useLocation();
-  const home = user ? isAdmin(user.role) ? '/' : user.role === 'DISENO' ? '/design' : user.role === 'IMPRESION' ? '/printing' : '/workshop' : '/';
+  const home = user ? isAdmin(user.role) ? '/' : user.role === 'APOYO_COMERCIAL' ? '/orders/new' : user.role === 'DISENO' ? '/design' : user.role === 'IMPRESION' ? '/printing' : '/workshop' : '/';
   const requested = (location.state as { from?: string } | null)?.from;
   const destination = requested?.startsWith('/') && !requested.startsWith('//') && requested.split(/[?#]/)[0] !== '/login' ? requested : home;
   if (!sessionReady) return <div className="loading-screen" role="status">Comprobando tu sesión…</div>;

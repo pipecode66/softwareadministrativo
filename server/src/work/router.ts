@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { Database } from '../db/types.js';
 import { activityListSchema, activityParamsSchema, assignSchema, completeActivitySchema, designDetailsSchema, laserMinutesSchema, workOrderParamsSchema } from './schemas.js';
-import { changeActivity, designerLoad, editDesignDetails, listActivities, saveLaserMinutes, workOrder } from './service.js';
+import { changeActivity, designerLoad, designerOptions, editDesignDetails, listActivities, saveLaserMinutes, workOrder } from './service.js';
 
 const emptyBody = z.object({}).strict();
 
@@ -14,6 +14,9 @@ export function createWorkRouter(db: Database): Router {
   });
   router.get('/designers/load', async (req, res) => {
     res.json(await designerLoad(db, req.auth!));
+  });
+  router.get('/designers/options', async (req, res) => {
+    res.json(await designerOptions(db, req.auth!));
   });
   router.get('/orders/:orderId', async (req, res) => {
     const { orderId } = workOrderParamsSchema.parse(req.params);

@@ -8,7 +8,7 @@ import { createOrderProducts, reopenCompletedOrderProducts, replaceOrderProducts
 import { cents, dateOnly, financials, isAdmin, orderDto, type DraftPayload, type OrderInput, type OrderRow, type PaymentRow, type bulkPaymentSchema, type createSchema, type editSchema, type paymentSchema, type transitionSchema } from './domain.js';
 
 const admins: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL'];
-const creators: Role[] = [...admins, 'DISENO'];
+const creators: Role[] = [...admins, 'APOYO_COMERCIAL', 'DISENO'];
 const missing = () => new ApiError(404, 'ORDER_NOT_FOUND', 'No encontramos esta orden o no está disponible para tu perfil.');
 const conflict = (message: string) => new ApiError(409, 'ORDER_CONFLICT', message);
 interface DraftRow {
@@ -55,6 +55,7 @@ export async function deleteOrderDraft(db: Database, auth: AuthSession): Promise
 }
 export function canRead(user: { role: Role; id: string }, row: OrderRow): boolean {
   if (isAdmin(user.role)) return true;
+  if (user.role === 'APOYO_COMERCIAL') return false;
   if (user.role === 'DISENO') return row.created_by === user.id || Boolean(row.has_visible_activity);
   if (row.closed_at) return false;
   if (row.has_visible_activity) return true;
@@ -63,6 +64,7 @@ export function canRead(user: { role: Role; id: string }, row: OrderRow): boolea
 }
 export function visibility(user: { role: Role; id: string }, params: unknown[]): string {
   if (isAdmin(user.role)) return 'true';
+  if (user.role === 'APOYO_COMERCIAL') return 'false';
   if (user.role === 'DISENO') {
     params.push(user.id);
     return `(o.created_by = $${params.length} OR EXISTS (
@@ -425,6 +427,7 @@ export async function transitionOrder(db: Database, auth: AuthSession, id: strin
 
 export interface ListQuery { page: number; pageSize: number; q?: string; status?: string; documentType?: string; category?: string; paymentStatus?: string; from?: string; to?: string }
 export async function listOrders(db: Database, auth: AuthSession, input: ListQuery) {
+  if (auth.user.role === 'APOYO_COMERCIAL') throw new ApiError(403, 'FORBIDDEN', 'Apoyo Comercial solo puede crear órdenes.');
   if (input.paymentStatus && !isAdmin(auth.user.role)) throw new ApiError(403, 'FORBIDDEN', 'El filtro de cobros corresponde a Administración.');
   return db.transaction(async tx => {
     await tx.exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');

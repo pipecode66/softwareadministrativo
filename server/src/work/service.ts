@@ -91,7 +91,8 @@ export async function createOrderProducts(
   `, [orderId])).rows[0];
   if (!parent) throw new ApiError(404, 'ORDER_NOT_FOUND', 'La orden no existe.');
   const effectiveCreator = creator ?? { id: parent.created_by, role: parent.creator_role };
-  const parsed = normalizeProducts(products, effectiveCreator, admin(effectiveCreator.role));
+  const parsed = normalizeProducts(products, effectiveCreator,
+    admin(effectiveCreator.role) || effectiveCreator.role === 'APOYO_COMERCIAL');
   const existing = await tx.query('SELECT id FROM order_products WHERE order_id = $1 LIMIT 1', [orderId]);
   if (existing.rows.length) throw conflict('La orden ya tiene productos registrados.');
   const expected = Math.round(Number(parent.value) * 100);
@@ -542,6 +543,19 @@ export async function designerLoad(db: Database, auth: AuthSession) {
     return { items: rows.rows.map(row => ({ id: row.id, name: row.name,
       pending: Number(row.pending), inProgress: Number(row.in_progress),
       total: Number(row.pending) + Number(row.in_progress) })), unassigned };
+  });
+}
+
+export async function designerOptions(db: Database, auth: AuthSession) {
+  if (!['ADMINMASTER', 'ADMIN_GENERAL', 'APOYO_COMERCIAL'].includes(auth.user.role)) {
+    throw new ApiError(403, 'FORBIDDEN', 'Tu perfil no puede consultar diseñadores para asignación.');
+  }
+  return db.transaction(async tx => {
+    await requireCurrentActor(tx, auth, ['ADMINMASTER', 'ADMIN_GENERAL', 'APOYO_COMERCIAL']);
+    const rows = await tx.query<{ id: string; name: string }>(`
+      SELECT id,name FROM users WHERE role='DISENO' AND is_active=true ORDER BY lower(name),id
+    `);
+    return { items: rows.rows };
   });
 }
 

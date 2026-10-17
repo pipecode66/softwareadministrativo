@@ -197,6 +197,30 @@ describe('OT: creación automática e idempotencia', () => {
     expect((await get(`/orders/${created.id}`)).status).toBe(200);
   });
 
+  it('Apoyo Comercial crea una OT y asigna Diseño, pero no puede consultar órdenes', async () => {
+    const commercial = await actor('APOYO_COMERCIAL');
+    const designer = await actor('DISENO');
+    const response = await createRequest({
+      ...input({ route: 'PRINT_ONLY', printing: undefined }),
+      products: [{
+        description: 'Trabajo asignado por apoyo', quantity: 1, unitValue: 100000, materials: [],
+        activities: [
+          { area: 'DESIGN', assignedUserId: designer.user.id },
+          { area: 'PRINTING', printingType: 'PRINT' },
+        ],
+      }],
+      requestId: randomUUID(),
+    }, commercial);
+    expect(response.status).toBe(201);
+    expect(response.body.order).toMatchObject({ number: 1, status: 'IN_PRODUCTION' });
+    expect((await db.query<{ assigned_user_id: string }>(`
+      SELECT assigned_user_id FROM order_activities WHERE order_id=$1 AND area='DESIGN'
+    `, [response.body.order.id])).rows).toEqual([{ assigned_user_id: designer.user.id }]);
+    expect((await get('/orders', commercial)).status).toBe(403);
+    expect((await get(`/orders/${response.body.order.id}`, commercial)).status).toBe(404);
+    expect((await edit(response.body.order, { description: 'Intento de edición' }, commercial)).status).toBe(403);
+  });
+
   it('acepta la ruta EXTERNO sin impresión y excluye Vinilo de los materiales', async () => {
     const created = await create({ route: 'EXTERNO', printing: undefined });
     expect(created.status).toBe('NEW');
@@ -277,7 +301,7 @@ describe('OT: finanzas y abonos', () => {
     expect(saved.payments).toHaveLength(1);
   });
 
-  it.each(['DISENO', 'IMPRESION', 'TALLER'] as Role[])('%s no registra pagos', async role => {
+  it.each(['APOYO_COMERCIAL', 'DISENO', 'IMPRESION', 'TALLER'] as Role[])('%s no registra pagos', async role => {
     const order = await create();
     expect((await payment(order, 1000, await actor(role))).status).toBe(403);
   });

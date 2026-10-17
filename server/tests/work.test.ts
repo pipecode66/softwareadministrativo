@@ -249,6 +249,14 @@ describe('Productos y trabajo interno', () => {
     const load = await get('/work/designers/load');
     expect(load.body.unassigned).toBe(0);
     expect((await get('/work/designers/load', designer)).status).toBe(403);
+    const commercial = await actor('APOYO_COMERCIAL');
+    const options = await get('/work/designers/options', commercial);
+    expect(options.status).toBe(200);
+    expect(options.body.items).toEqual(expect.arrayContaining([
+      { id: designer.user.id, name: designer.user.name },
+    ]));
+    expect(options.body.items[0]).not.toHaveProperty('pending');
+    expect((await get('/work/designers/load', commercial)).status).toBe(403);
     const assigned = await patch(`/work/activities/${design.id}/assign`, { assignedUserId: designer.user.id });
     expect(assigned.status).toBe(200);
     expect(assigned.body.activity.assignedUserId).toBe(designer.user.id);

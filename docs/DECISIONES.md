@@ -45,6 +45,7 @@
 43. La facturación es una referencia textual opcional de hasta 100 caracteres, editable solo por Administración en OT FACT existentes. Ninguna creación permite incluirla, REM no la conserva; la lista administrativa presenta una X para FACT sin referencia y un chulo que revela la referencia al pulsarlo.
 44. ADMINMASTER y ADMIN_GENERAL pueden eliminar un cliente únicamente cuando no tiene órdenes registradas. Si existe historial, el servidor rechaza la eliminación para conservar cartera, reportes y trazabilidad. Diseño conserva creación, consulta y edición, pero no puede eliminar clientes.
 45. La preparación técnica del diseñador asignado está disponible tanto desde su bandeja como desde el detalle de la OT mientras Diseño no esté completado. La actividad de Diseño informa explícitamente si el producto requiere materiales por una Impresión normal posterior; no depende de que el frontend encuentre la actividad de Impresión en la respuesta.
+46. `APOYO_COMERCIAL` se muestra como “Apoyo Comercial” y solo puede abrir Nueva OT, guardar su borrador, buscar clientes, crear clientes desde ese formulario, consultar la lista mínima de diseñadores activos, asignarlos y crear la orden. No puede consultar la OT después de crearla ni acceder a directorio/fichas de clientes, edición, pagos, historial, bandejas, producción, cartera, reportes, materiales o usuarios. Cuando asigna Diseño antes de Impresión normal puede diferir los materiales al diseñador, igual que Administración.
 
 ## Decisiones sustituidas
 

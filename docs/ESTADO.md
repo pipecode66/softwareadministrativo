@@ -1,6 +1,6 @@
 # Estado de continuidad
 
-Actualizado: 2026-10-15.
+Actualizado: 2026-10-17.
 
 ## Estado actual
 
@@ -36,8 +36,15 @@ El 15/10/2026 se habilitó a ADMINMASTER y ADMIN_GENERAL para eliminar clientes 
 
 El reporte de la OT #0036 se reprodujo y corrigió: la preparación técnica de Diseño intentaba inferir la necesidad de materiales buscando la actividad posterior de Impresión en una respuesta operativa, por lo que podía ocultar el editor. El servidor ahora entrega un indicador explícito `requiresPrintMaterials` y el diseñador asignado puede abrir “Completar información técnica” desde su bandeja o desde el detalle de la OT antes de finalizar Diseño. Verificación completa: frontend 158/158, servidor 277/277, ambos typecheck y builds, además de `git diff --check`. No requiere migración SQL.
 
+El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). Su única pantalla funcional es Nueva OT: puede consultar el selector de clientes, registrar clientes dentro del formulario, obtener nombres de diseñadores activos, asignarlos, guardar un borrador y crear la orden. El servidor rechaza consulta/edición de OT, fichas e historial de clientes, pagos, acciones productivas y módulos administrativos. La migración pendiente `014_commercial_support_role.sql` amplía el control de roles de `users`; debe ejecutarse en Supabase antes de publicar el código. Verificación local: frontend 162/162, servidor 281/281, ambos typecheck y builds aprobados.
+
 ## Funcionalidades terminadas en este tramo
 
+- Adminmaster puede crear cuentas con el nuevo perfil Apoyo Comercial.
+- Apoyo Comercial entra directamente a Nueva OT y no recibe otros módulos ni buscador global de órdenes.
+- Puede buscar clientes existentes y crear clientes nuevos dentro del formulario, sin abrir el directorio o sus fichas.
+- Puede seleccionar y asignar un diseñador activo, sin consultar métricas de carga del área.
+- Puede crear OT y mantener su único borrador, pero no consultar, editar ni operar la orden una vez guardada.
 - ADMINMASTER y ADMIN_GENERAL pueden editar clientes y eliminar los que no tengan órdenes registradas.
 - Si el cliente tiene al menos una OT, su eliminación se rechaza para preservar toda la información relacionada.
 - Diseño puede completar descripción y materiales de Impresión normal desde su bandeja o al abrir el detalle de la OT asignada.
@@ -93,6 +100,7 @@ El reporte de la OT #0036 se reprodujo y corrigió: la preparación técnica de 
 - `src/pages/NewOrderEditor.tsx`
 - `src/pages/orders.css`
 - `server/migrations/013_facturation_reference.sql`
+- `server/migrations/014_commercial_support_role.sql`
 - `server/src/clients/service.ts`
 - `server/src/work/service.ts`
 - `src/styles.css`
@@ -189,7 +197,8 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Edición administrativa de OT instaladas y terminadas del 14/10 | 1 | 1 |
 | Gestión administrativa de clientes del 15/10 | 1 | 1 |
 | Corrección de preparación técnica para Diseño del 15/10 | 1 | 0 |
-| **Acumulado** | **49** | **30** |
+| Rol Apoyo Comercial del 17/10 | 1 | 1 |
+| **Acumulado** | **50** | **31** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
@@ -215,6 +224,8 @@ Las observaciones de Taller se consideran significativas porque añaden persiste
 
 La gestión de clientes se considera significativa porque añade eliminación protegida por rol y reglas de integridad; la corrección de la OT #0036 no se considera significativa porque restablece el flujo de materiales diferidos ya entregado.
 
+El rol Apoyo Comercial se considera significativo porque incorpora un perfil persistente nuevo, permisos propios en servidor, navegación exclusiva, creación de clientes/OT y una migración de base de datos.
+
 ## Pendiente para producción
 
 1. Ejecutar manualmente `server/migrations/012_disable_order_deletion.sql` en Supabase antes de publicar este código.
@@ -222,6 +233,7 @@ La gestión de clientes se considera significativa porque añade eliminación pr
 3. Confirmar en producción que ninguna OT presenta una acción de eliminación.
 4. Comprobar en producción una finalización de Taller con observaciones y otra sin observaciones.
 5. Verificar en la instalación productiva la edición manual de retenciones y la referencia FACTURADO; el despliegue no se comprobó desde aquí.
+6. Ejecutar manualmente `server/migrations/014_commercial_support_role.sql` en Supabase antes de publicar el código del rol Apoyo Comercial.
 
 ## Comando para retomar
 
