@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { LOCAL_REVIEW_PASSWORD, makeSeed } from '../src/data/seed';
-import { today } from '../src/domain/utils';
+import { formatCOP, today } from '../src/domain/utils';
 import type { AppData, WorkOrder } from '../src/domain/types';
 
 const DATA_KEY = 'intermedios.frontend.v1';
@@ -29,6 +29,33 @@ async function login(page: import('@playwright/test').Page) {
   await page.getByLabel('Contraseña', { exact: true }).fill(LOCAL_REVIEW_PASSWORD);
   await page.getByRole('button', { name: 'Ingresar al sistema' }).click();
   await expect(page).not.toHaveURL(/\/login$/);
+}
+
+for (const account of ['adminmaster@intermedios.local', 'administracion@intermedios.local']) {
+  test(`${account} consulta cartera REM y FACT con abonos en Reportes y Cartera`, async ({ page, context }) => {
+    const data = makeSeed();
+    const rem = makeOrder('debt-rem', 9101, 100_000);
+    rem.payments = [{ id: 'rem-abono', date: today(), amount: 25_000, recordedBy: 'u-master', method: 'EFECTIVO' }];
+    const fact = makeOrder('debt-fact', 9102, 1_000_000, 'FACT');
+    fact.payments = [{ id: 'fact-abono', date: today(), amount: 100_000, recordedBy: 'u-master', method: 'BANCOLOMBIA' }];
+    data.orders = [rem, fact];
+    await context.addInitScript(({ key, data }) => localStorage.setItem(key, JSON.stringify(data)), { key: DATA_KEY, data });
+    await page.goto('/login');
+    await page.getByLabel('Usuario o correo').fill(account);
+    await page.getByLabel('Contraseña', { exact: true }).fill(LOCAL_REVIEW_PASSWORD);
+    await page.getByRole('button', { name: 'Ingresar al sistema' }).click();
+    await expect(page).not.toHaveURL(/\/login$/);
+    for (const path of ['/reports', '/portfolio']) {
+      await page.goto(path);
+      const remCard = page.locator('.kpi-card').filter({ has: page.getByText('Total cartera REM', { exact: true }) });
+      const factCard = page.locator('.kpi-card').filter({ has: page.getByText('Total cartera FACT', { exact: true }) });
+      await expect(remCard.locator('.kpi-value')).toHaveText(formatCOP(75_000));
+      await expect(factCard.locator('.kpi-value')).toHaveText(formatCOP(1_014_500));
+      await page.getByLabel('Documento', { exact: true }).selectOption('FACT');
+      await expect(remCard.locator('.kpi-value')).toHaveText(formatCOP(0));
+      await expect(factCard.locator('.kpi-value')).toHaveText(formatCOP(1_014_500));
+    }
+  });
 }
 
 test('reporte separa FACT e IVA y registra certificado sin modificar cartera', async ({ page }) => {

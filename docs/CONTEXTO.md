@@ -56,6 +56,8 @@ Cada OT muestra su trazabilidad a todos los perfiles autorizados para consultarl
 
 Administración consulta ventas por fecha, mes o rango, filtradas por categoría y REM/FACT. FACT e IVA aparecen separados. Cartera muestra saldos al corte con IVA, sin IVA e IVA pendiente. Los certificados recibidos restan de la métrica pendiente de cada retención, no del efectivo ya cobrado. El consumo de materiales cuenta m² únicamente cuando finaliza Impresión.
 
+Reportes y Cartera incluyen dos cuadros: Total cartera REM y Total cartera FACT. Suman únicamente saldos pendientes al corte tras los abonos; FACT incluye IVA y conserva las retenciones de cada OT. Respetan los filtros de cada pantalla y solo están disponibles para ADMINMASTER y ADMIN_GENERAL.
+
 ## Fuera de alcance
 
 No incluye urgencias, inventario, exportación Excel/CSV, contabilidad integral, emisión DIAN, pasarela de pagos, archivos adjuntos, GPS, firma digital, modo sin conexión, varias sedes ni cuentas independientes de instaladores.

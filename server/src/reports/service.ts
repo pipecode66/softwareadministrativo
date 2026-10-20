@@ -81,6 +81,8 @@ export async function salesReport(db: Database, auth: AuthSession, input: SalesQ
     const params = [input.from, input.to, input.category ?? null, input.documentType ?? null];
     const totals = (await tx.query<NumericRow>(`WITH ${scopedOrders}
       SELECT ${periodSums},
+        coalesce(sum(balance) FILTER (WHERE document_type = 'REM'), 0) AS "balanceRem",
+        coalesce(sum(balance) FILTER (WHERE document_type = 'FACT'), 0) AS "balanceFact",
         (SELECT coalesce(sum(p.amount), 0) FROM payments p JOIN money m ON m.id = p.order_id
           WHERE p.date BETWEEN $1::date AND $2::date) AS received
       FROM facts`, params)).rows[0];
@@ -125,7 +127,7 @@ export async function salesReport(db: Database, auth: AuthSession, input: SalesQ
       FROM periods d LEFT JOIN sales s ON s.period = d.period LEFT JOIN receipts r ON r.period = d.period ORDER BY d.period`, params)).rows;
     return {
       from: input.from, to: input.to, groupBy: input.groupBy,
-      totals: numbers(totals, moneyKeys),
+      totals: numbers(totals, [...moneyKeys, 'balanceRem', 'balanceFact']),
       categories: categories.map(category => ({ category, ...numbers(categoryRows.find(row => row.category === category), moneyKeys) })),
       documents: (['REM', 'FACT'] as const).map(documentType => ({ documentType,
         ...numbers(documentRows.find(row => row.documentType === documentType),
@@ -148,6 +150,8 @@ export async function portfolioReport(db: Database, auth: AuthSession, input: Po
     const source = `WITH ${scopedOrders}, outstanding AS (SELECT * FROM facts WHERE balance > 0)`;
     const summary = (await tx.query<NumericRow>(`${source}
       SELECT count(*) AS total, coalesce(sum(balance), 0) AS "totalBalance", coalesce(sum(paid), 0) AS "totalPaid",
+        coalesce(sum(balance) FILTER (WHERE document_type = 'REM'), 0) AS "totalBalanceRem",
+        coalesce(sum(balance) FILTER (WHERE document_type = 'FACT'), 0) AS "totalBalanceFact",
         coalesce(sum("balanceWithoutIva"), 0) AS "totalBalanceWithoutIva",
         coalesce(sum(balance - "balanceWithoutIva"), 0) AS "ivaDue",
         coalesce(sum(collectible), 0) AS "totalCollectible",
@@ -179,7 +183,7 @@ export async function portfolioReport(db: Database, auth: AuthSession, input: Po
     [...params, input.pageSize, (input.page - 1) * input.pageSize])).rows;
     return {
       cutoff: input.cutoff, page: input.page, pageSize: input.pageSize,
-      ...numbers(summary, ['total', 'totalBalance', 'totalPaid', 'totalCollectible', 'totalBalanceWithoutIva', 'totalCollectibleWithoutIva', 'ivaDue']),
+      ...numbers(summary, ['total', 'totalBalance', 'totalBalanceRem', 'totalBalanceFact', 'totalPaid', 'totalCollectible', 'totalBalanceWithoutIva', 'totalCollectibleWithoutIva', 'ivaDue']),
       totalBalanceWithIva: Number(summary?.totalBalance ?? 0),
       certificates: { statusAsOf: 'current' as const, ...numbers(certificates, ['reteFuente', 'reteIva', 'ica']) },
       clients: clientRows.map(row => ({ clientId: String(row.clientId), clientName: String(row.clientName),

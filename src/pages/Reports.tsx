@@ -23,6 +23,8 @@ export function reportSummary(orders: WorkOrder[], range: DateRange, category: C
     return Math.max(0, money.balance - money.iva);
   }));
   const balance = debtAtCutoff(relevant);
+  const balanceRem = debtAtCutoff(relevant.filter(order => order.documentType === 'REM'));
+  const balanceFact = debtAtCutoff(relevant.filter(order => order.documentType === 'FACT'));
   const balanceWithoutIva = debtWithoutIvaAtCutoff(relevant);
   const categories = CATEGORIES.filter(name => category === 'ALL' || name === category).map(name => {
     const categorySales = sales.filter(order => order.category === name);
@@ -37,7 +39,7 @@ export function reportSummary(orders: WorkOrder[], range: DateRange, category: C
     factBase: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => order.value)),
     iva: sumMoney(sales.map(order => financials(order).iva)),
     factGross: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => financials(order).gross)),
-    balance, balanceWithoutIva, ivaDue: sumMoney([balance, -balanceWithoutIva]), categories, documents };
+    balance, balanceRem, balanceFact, balanceWithoutIva, ivaDue: sumMoney([balance, -balanceWithoutIva]), categories, documents };
 }
 
 export function periodBuckets(range: DateRange) {
@@ -183,10 +185,11 @@ export function ReportsPage() {
     received: remoteReport.totals.received, base: remoteReport.totals.base, factBase: remoteReport.totals.factBase,
     iva: remoteReport.totals.iva, factGross: remoteReport.totals.factGross,
     balance: remoteReport.totals.balanceWithIva, balanceWithoutIva: remoteReport.totals.balanceWithoutIva, ivaDue: remoteReport.totals.ivaDue,
+    balanceRem: remoteReport.totals.balanceRem, balanceFact: remoteReport.totals.balanceFact,
     categories: remoteReport.categories.map(row => ({ name: row.category, count: row.count, base: row.base, iva: row.iva, received: row.received, balance: row.balance })),
     documents: remoteReport.documents.map(row => ({ type: row.documentType, count: row.count, base: row.base, iva: row.iva, gross: row.gross, retentions: row.retentions, collectible: row.collectible })),
   } : local;
-  const { sales, received, base, factBase, iva, balance, balanceWithoutIva, ivaDue, categories, documents } = report;
+  const { sales, received, base, factBase, iva, balance, balanceRem, balanceFact, balanceWithoutIva, ivaDue, categories, documents } = report;
   return <div className="page-stack analytics-page">
     <PageHeader eyebrow="ANÁLISIS COMERCIAL" title="Reportes de ventas" description="Ventas, recaudo y cartera: cada indicador con su fecha y criterio de cálculo." />
     <Card><div className="analytics-filters"><PeriodFilter value={range} onChange={setRange} /><div className="analytics-filter-pair"><Field label="Categoría" htmlFor="reports-category"><select id="reports-category" className="select" value={category} onChange={event => setCategory(event.target.value as Category | 'ALL')}><option value="ALL">Todas las categorías</option>{CATEGORIES.map(name => <option key={name}>{name}</option>)}</select></Field><Field label="Documento" htmlFor="reports-document"><select id="reports-document" className="select" value={document} onChange={event => setDocument(event.target.value as DocumentType | 'ALL')}><option value="ALL">REM y FACT</option><option>REM</option><option>FACT</option></select></Field></div></div></Card>
@@ -196,6 +199,8 @@ export function ReportsPage() {
       <KpiCard label="IVA · ventas FACT" value={formatCOP(iva)} icon={ReceiptText} tone="slate" meta="IVA de FACT creadas en el período" />
       <KpiCard label="Pagos recibidos" value={formatCOP(received)} icon={Banknote} tone="green" meta="Por fecha del pago, incluso de órdenes anteriores" />
       <KpiCard label="Cartera al corte con IVA" value={formatCOP(balance)} icon={Wallet} tone="amber" meta={`Saldo acumulado hasta ${range.to}`} />
+      <KpiCard label="Total cartera REM" value={formatCOP(balanceRem)} icon={Wallet} tone="orange" meta={`Saldo pendiente de REM al ${range.to}`} />
+      <KpiCard label="Total cartera FACT" value={formatCOP(balanceFact)} icon={ReceiptText} tone="blue" meta={`Saldo pendiente de FACT con IVA al ${range.to}`} />
       <KpiCard label="Cartera al corte sin IVA" value={formatCOP(balanceWithoutIva)} icon={Wallet} tone="slate" meta="Cartera después de separar el IVA pendiente" />
       <KpiCard label="IVA pendiente de cobro" value={formatCOP(ivaDue)} icon={Wallet} tone="blue" meta="Diferencia entre cartera con y sin IVA" />
     </div>

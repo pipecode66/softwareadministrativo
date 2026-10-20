@@ -83,20 +83,27 @@ describe('reportes con reglas financieras por orden', () => {
       reteFuente: 10000, reteIva: 6000, ica: 4000, retentions: 20000,
       collectible: 288000, collectibleWithoutIva: 250000,
       received: 50000, balance: 238000, balanceWithoutIva: 200000, ivaDue: 38000,
+      balanceRem: 50000, balanceFact: 188000,
     });
     expect(january.body.timeline).toHaveLength(1);
     expect(january.body.timeline[0]).toMatchObject({ period: '2024-01', received: 50000 });
     const february = await get('/reports/sales?from=2024-02-01&to=2024-02-29&groupBy=month');
     expect(february.status).toBe(200);
     expect(february.body.totals).toMatchObject({ count: 0, base: 0, received: 109000,
-      balance: 129000, balanceWithoutIva: 110000, ivaDue: 19000 });
+      balance: 129000, balanceWithoutIva: 110000, ivaDue: 19000,
+      balanceRem: 50000, balanceFact: 79000 });
     expect(february.body.timeline[0]).toMatchObject({ period: '2024-02', count: 0, received: 109000 });
   });
 
   it('separa cartera con IVA, sin IVA y certificados aún pendientes aunque la OT esté pagada', async () => {
+    const january = await get('/reports/portfolio?cutoff=2024-01-31');
+    expect(january.status).toBe(200);
+    expect(january.body).toMatchObject({ totalBalance: 238000,
+      totalBalanceRem: 50000, totalBalanceFact: 188000 });
     const report = await get('/reports/portfolio?cutoff=2024-02-29');
     expect(report.status).toBe(200);
     expect(report.body).toMatchObject({ total: 2, totalBalance: 129000,
+      totalBalanceRem: 50000, totalBalanceFact: 79000,
       totalBalanceWithIva: 129000, totalBalanceWithoutIva: 110000, ivaDue: 19000,
       certificates: { statusAsOf: 'current', reteFuente: 10000, reteIva: 6000, ica: 4000 } });
     expect(report.body.items.find((item: { order: { id: string } }) => item.order.id === newId)).toBeUndefined();
@@ -106,6 +113,61 @@ describe('reportes con reglas financieras por orden', () => {
       pendingReteFuente: 10000, pendingReteIva: 6000, pendingIca: 4000 });
     expect(certificates.body.items.find((item: { orderId: string }) => item.orderId === newId))
       .toMatchObject({ balance: 0, financialRule: 'NEW', pendingReteFuente: 5000 });
+  });
+
+  it('filtra la cartera REM y FACT por categoría y documento y devuelve cero sin coincidencias', async () => {
+    const otherRemId = await addOrder({ documentType: 'REM', value: 80000, rule: 'NEW', category: 'Otras' });
+    await db.query(`INSERT INTO payments (id,order_id,date,amount,recorded_by,request_key,method)
+      VALUES ($1,$2,'2024-01-20',30000,$3,$4,'EFECTIVO')`,
+    [randomUUID(), otherRemId, userId, randomUUID()]);
+
+    for (const [filter, rem, fact] of [
+      ['', 100000, 188000],
+      ['&documentType=REM', 100000, 0],
+      ['&documentType=FACT', 0, 188000],
+      ['&category=Otras', 50000, 0],
+      ['&category=Otras&documentType=FACT', 0, 0],
+      ['&category=SuperGiros', 0, 0],
+    ] as const) {
+      const [sales, portfolio] = await Promise.all([
+        get(`/reports/sales?from=2024-01-01&to=2024-01-31${filter}`),
+        get(`/reports/portfolio?cutoff=2024-01-31${filter}`),
+      ]);
+      expect(sales.status).toBe(200);
+      expect(portfolio.status).toBe(200);
+      expect(sales.body.totals).toMatchObject({ balanceRem: rem, balanceFact: fact, balance: rem + fact });
+      expect(portfolio.body).toMatchObject({ totalBalanceRem: rem, totalBalanceFact: fact, totalBalance: rem + fact });
+    }
+
+    const [salesBeforeOrders, portfolioBeforeOrders] = await Promise.all([
+      get('/reports/sales?from=2023-12-01&to=2023-12-31'),
+      get('/reports/portfolio?cutoff=2023-12-31'),
+    ]);
+    expect(salesBeforeOrders.status).toBe(200);
+    expect(portfolioBeforeOrders.status).toBe(200);
+    expect(salesBeforeOrders.body.totals).toMatchObject({ balanceRem: 0, balanceFact: 0 });
+    expect(portfolioBeforeOrders.body).toMatchObject({ totalBalanceRem: 0, totalBalanceFact: 0 });
+  });
+
+  it('reserva los totales de cartera a ADMINMASTER y ADMIN_GENERAL', async () => {
+    for (const role of ['ADMINMASTER', 'ADMIN_GENERAL', 'APOYO_COMERCIAL', 'DISENO', 'IMPRESION', 'TALLER']) {
+      await db.query('UPDATE users SET role=$2 WHERE id=$1', [userId, role]);
+      const [sales, portfolio] = await Promise.all([
+        get('/reports/sales?from=2024-01-01&to=2024-01-31'),
+        get('/reports/portfolio?cutoff=2024-01-31'),
+      ]);
+      const allowed = ['ADMINMASTER', 'ADMIN_GENERAL'].includes(role);
+      expect(sales.status).toBe(allowed ? 200 : 403);
+      expect(portfolio.status).toBe(allowed ? 200 : 403);
+      if (allowed) {
+        expect(sales.body.totals).toMatchObject({ balanceRem: 50000, balanceFact: 188000 });
+        expect(portfolio.body).toMatchObject({ totalBalanceRem: 50000, totalBalanceFact: 188000 });
+      } else {
+        expect(sales.body).not.toHaveProperty('totals');
+        expect(portfolio.body).not.toHaveProperty('totalBalanceRem');
+        expect(portfolio.body).not.toHaveProperty('totalBalanceFact');
+      }
+    }
   });
 
   it('actualiza certificados con versión, sesión y CSRF; no cambia saldos monetarios', async () => {

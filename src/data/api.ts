@@ -271,13 +271,13 @@ export function apiHistory(query: { page?: number; pageSize?: number; orderId?: 
 
 export interface SalesReport {
   from: string; to: string; groupBy: 'day' | 'month';
-  totals: { count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; collectibleWithoutIva: number; received: number; balance: number; balanceWithIva: number; balanceWithoutIva: number; ivaDue: number };
+  totals: { count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; collectibleWithoutIva: number; received: number; balance: number; balanceWithIva: number; balanceRem: number; balanceFact: number; balanceWithoutIva: number; ivaDue: number };
   categories: Array<{ category: string; count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; received: number; balance: number; balanceWithoutIva: number; ivaDue: number }>;
   documents: Array<{ documentType: 'REM' | 'FACT'; count: number; base: number; factBase: number; iva: number; gross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number }>;
   timeline: Array<{ period: string; count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; received: number }>;
 }
 export interface PortfolioReport {
-  cutoff: string; page: number; pageSize: number; total: number; totalBalance: number; totalBalanceWithIva: number; totalBalanceWithoutIva: number; ivaDue: number; totalPaid: number; totalCollectible: number; totalCollectibleWithoutIva: number;
+  cutoff: string; page: number; pageSize: number; total: number; totalBalance: number; totalBalanceWithIva: number; totalBalanceRem: number; totalBalanceFact: number; totalBalanceWithoutIva: number; ivaDue: number; totalPaid: number; totalCollectible: number; totalCollectibleWithoutIva: number;
   certificates: { statusAsOf: 'current'; reteFuente: number; reteIva: number; ica: number };
   clients: Array<{ clientId: string; clientName: string; count: number; balance: number; balanceWithoutIva: number; ivaDue: number; paid: number; collectible: number; collectibleWithoutIva: number }>;
   items: Array<{ order: { id: string; number: number; clientId: string; status: string; createdAt: string; closedAt?: string; documentType: 'REM' | 'FACT'; financialRule: 'LEGACY' | 'NEW' }; clientName: string; balance: number; balanceWithoutIva: number; ivaDue: number; paid: number; collectible: number; collectibleWithoutIva: number; iva: number; reteFuente: number; reteIva: number; ica: number; pendingReteFuente: number; pendingReteIva: number; pendingIca: number; certificates: { reteFuente: boolean; reteIva: boolean; ica: boolean } }>;

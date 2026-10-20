@@ -1,8 +1,10 @@
 # Estado de continuidad
 
-Actualizado: 2026-10-17.
+Actualizado: 2026-10-20.
 
 ## Estado actual
+
+El 20/10/2026 se añadieron los cuadros **Total cartera REM** y **Total cartera FACT** en Reportes y Cartera para ADMINMASTER y ADMIN_GENERAL. Se usa el saldo pendiente al corte, descontando los abonos y conservando IVA/retenciones de FACT; se respetan filtros y órdenes de períodos anteriores. El servidor calcula los totales sin depender de la página consultada. No requiere SQL ni migraciones. Archivos de este tramo: `src/pages/Reports.tsx`, `src/pages/Portfolio.tsx`, `src/data/api.ts`, `server/src/reports/service.ts`, `tests/analytics.test.ts`, `tests/finance.spec.ts` y `server/tests/reports_finance.test.ts`.
 
 El tramo de Corte Láser y borradores quedó publicado anteriormente en `main` mediante el commit `97472bf`. El usuario confirmó que `server/migrations/008_laser_drafts.sql` fue ejecutada en Supabase. El commit `d31d776` contiene la búsqueda por descripción y los controles de sesión.
 
@@ -40,6 +42,7 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 
 ## Funcionalidades terminadas en este tramo
 
+- Total cartera REM y Total cartera FACT disponibles en Reportes y Cartera para ambos perfiles administrativos, respetando fecha de corte, abonos y filtros.
 - Adminmaster puede crear cuentas con el nuevo perfil Apoyo Comercial.
 - Apoyo Comercial entra directamente a Nueva OT y no recibe otros módulos ni buscador global de órdenes.
 - Puede buscar clientes existentes y crear clientes nuevos dentro del formulario, sin abrir el directorio o sus fichas.
@@ -128,6 +131,8 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 
 ## Verificación local
 
+- Tramo 20/10: `npm test -- --run tests/analytics.test.ts` 17/17 y `npm --prefix server test -- tests/reports_finance.test.ts` 6/6. Confirman REM/FACT, IVA, retenciones, pagos al corte, órdenes históricas, filtros, ceros y permisos de ambos administradores; los otros roles reciben 403.
+- Tramo 20/10: E2E de importes y filtro REM/FACT en Reportes/Cartera para ADMINMASTER y ADMIN_GENERAL, y regresión móvil 320 px: 3/3. `npm run typecheck`, `npm --prefix server run typecheck`, ambos builds y `git diff --check` aprobados. Sin consulta ni modificación de datos productivos; despliegue posterior al push no comprobado.
 - `npm run typecheck`: aprobado.
 - `npm test`: 157/157 en 3 archivos.
 - `npm test`: 158/158 en 3 archivos (incluye persistencia de referencia FACT en adaptador local).
@@ -198,7 +203,8 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Gestión administrativa de clientes del 15/10 | 1 | 1 |
 | Corrección de preparación técnica para Diseño del 15/10 | 1 | 0 |
 | Rol Apoyo Comercial del 17/10 | 1 | 1 |
-| **Acumulado** | **50** | **31** |
+| Desglose de cartera REM y FACT del 20/10 | 1 | 0 |
+| **Acumulado** | **51** | **31** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
@@ -225,6 +231,8 @@ Las observaciones de Taller se consideran significativas porque añaden persiste
 La gestión de clientes se considera significativa porque añade eliminación protegida por rol y reglas de integridad; la corrección de la OT #0036 no se considera significativa porque restablece el flujo de materiales diferidos ya entregado.
 
 El rol Apoyo Comercial se considera significativo porque incorpora un perfil persistente nuevo, permisos propios en servidor, navegación exclusiva, creación de clientes/OT y una migración de base de datos.
+
+Los cuadros de cartera REM y FACT se consideran un cambio menor: desglosan un saldo ya existente sin modificar reglas de cobro, permisos ni flujo productivo.
 
 ## Pendiente para producción
 

@@ -47,6 +47,8 @@
 45. La preparación técnica del diseñador asignado está disponible tanto desde su bandeja como desde el detalle de la OT mientras Diseño no esté completado. La actividad de Diseño informa explícitamente si el producto requiere materiales por una Impresión normal posterior; no depende de que el frontend encuentre la actividad de Impresión en la respuesta.
 46. `APOYO_COMERCIAL` se muestra como “Apoyo Comercial” y solo puede abrir Nueva OT, guardar su borrador, buscar clientes, crear clientes desde ese formulario, consultar la lista mínima de diseñadores activos, asignarlos y crear la orden. No puede consultar la OT después de crearla ni acceder a directorio/fichas de clientes, edición, pagos, historial, bandejas, producción, cartera, reportes, materiales o usuarios. Cuando asigna Diseño antes de Impresión normal puede diferir los materiales al diseñador, igual que Administración.
 
+47. Los cuadros Total cartera REM y Total cartera FACT desglosan el saldo pendiente al corte en Reportes y Cartera, con los filtros vigentes. FACT incluye IVA, retenciones según la regla de cada OT y pagos hasta el corte. La cartera incluye órdenes anteriores al período de ventas; los dos cuadros son exclusivos de ADMINMASTER y ADMIN_GENERAL.
+
 ## Decisiones sustituidas
 
 - La regla del 15/09 que sumaba retenciones al cobrable fue sustituida por la solicitud del 20/09 para nuevas FACT. Solo se conserva como LEGACY para datos previos.

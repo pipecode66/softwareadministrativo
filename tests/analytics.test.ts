@@ -26,6 +26,9 @@ describe('Criterios de reportes y cartera', () => {
     expect(report.base).toBe(200_000);
     expect(report.received).toBe(55_000);
     expect(report.balance).toBe(276_000);
+    expect(report.balanceRem).toBe(40_000);
+    expect(report.balanceFact).toBe(236_000);
+    expect(sumMoney([report.balanceRem, report.balanceFact])).toBe(report.balance);
   });
 
   it('conserva FACT bruto antes de retenciones y desglosa el total cobrable', () => {
@@ -45,6 +48,8 @@ describe('Criterios de reportes y cartera', () => {
     expect(report.factBase).toBe(1_000_000);
     expect(report.iva).toBe(190_000);
     expect(report.balance).toBe(1_014_500);
+    expect(report.balanceRem).toBe(0);
+    expect(report.balanceFact).toBe(1_014_500);
     expect(report.balanceWithoutIva).toBe(824_500);
     expect(report.ivaDue).toBe(190_000);
   });
@@ -55,6 +60,8 @@ describe('Criterios de reportes y cartera', () => {
     expect(report.factGross).toBe(0);
     expect(report.received).toBe(35_000);
     expect(report.balance).toBe(40_000);
+    expect(report.balanceRem).toBe(40_000);
+    expect(report.balanceFact).toBe(0);
     expect(report.categories).toEqual([{ name: 'SuperGiros', count: 0, base: 0, iva: 0, received: 35_000, balance: 40_000 }]);
     expect(report.documents.map(row => row.type)).toEqual(['REM']);
   });
