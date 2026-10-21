@@ -24,16 +24,17 @@ let legacyId: string;
 let newId: string;
 
 async function addOrder(input: { documentType: 'REM' | 'FACT'; value: number; rule: 'LEGACY' | 'NEW';
-  reteFuente?: number; reteIva?: number; ica?: number; category?: string }) {
+  reteFuente?: number; reteIva?: number; ica?: number; category?: string; createdAt?: string }) {
   const id = randomUUID();
   await db.query(`
     INSERT INTO orders (id,client_id,description,value,document_type,category,route,requires_installation,
       status,created_by,created_at,material,length,width,rete_fuente,rete_iva,ica,
       creation_key,creation_fingerprint,financial_rule)
     VALUES ($1,$2,'OT de prueba',$3,$4,$5,'WORKSHOP_ONLY',false,'NEW',$6,
-      '2024-01-15T12:00:00-05:00',null,null,null,$7,$8,$9,$10,$11,$12)
+      $13,null,null,null,$7,$8,$9,$10,$11,$12)
   `, [id, clientId, input.value, input.documentType, input.category ?? 'Proyecto', userId,
-    input.reteFuente ?? 0, input.reteIva ?? 0, input.ica ?? 0, randomUUID(), 'a'.repeat(64), input.rule]);
+    input.reteFuente ?? 0, input.reteIva ?? 0, input.ica ?? 0, randomUUID(), 'a'.repeat(64), input.rule,
+    input.createdAt ?? '2024-01-15T12:00:00-05:00']);
   return id;
 }
 
@@ -115,7 +116,7 @@ describe('reportes con reglas financieras por orden', () => {
       .toMatchObject({ balance: 0, financialRule: 'NEW', pendingReteFuente: 5000 });
   });
 
-  it('TOTAL FACT no cambia al retirar retenciones o abonos y conserva FACT pagadas de períodos anteriores', async () => {
+  it('mantiene el bruto histórico separado del bruto del período y del saldo real FACT', async () => {
     const before = await get('/reports/sales?from=2024-02-01&to=2024-02-29');
     expect(before.status).toBe(200);
     expect(before.body.totals).toMatchObject({ factGross: 0, factGrossAtCutoff: 238000, balanceFact: 79000 });
@@ -124,6 +125,57 @@ describe('reportes con reglas financieras por orden', () => {
     const withoutDeductions = await get('/reports/sales?from=2024-02-01&to=2024-02-29');
     expect(withoutDeductions.status).toBe(200);
     expect(withoutDeductions.body.totals).toMatchObject({ factGross: 0, factGrossAtCutoff: 238000, balanceFact: 238000 });
+  });
+
+  it('TOTAL FACT usa solo el período inclusivo de Bogotá, con filtros y sin efectos de abonos o retenciones', async () => {
+    await addOrder({ documentType: 'FACT', value: 100000, rule: 'NEW', category: 'Otras',
+      createdAt: '2023-12-15T12:00:00-05:00' });
+    await addOrder({ documentType: 'FACT', value: 40000, rule: 'NEW', category: 'Otras',
+      createdAt: '2024-01-01T04:59:59.999Z' }); // December 31 in Bogotá.
+    const first = await addOrder({ documentType: 'FACT', value: 200000, rule: 'NEW', category: 'Otras',
+      reteFuente: 20000, createdAt: '2024-01-01T05:00:00.000Z' });
+    const last = await addOrder({ documentType: 'FACT', value: 300000, rule: 'NEW', category: 'Otras',
+      reteFuente: 30000, createdAt: '2024-02-01T04:59:59.999Z' }); // January 31 in Bogotá.
+    await addOrder({ documentType: 'FACT', value: 400000, rule: 'NEW', category: 'Otras',
+      createdAt: '2024-02-01T05:00:00.000Z' });
+    await addOrder({ documentType: 'FACT', value: 70000, rule: 'NEW', category: 'SuperGiros' });
+    await addOrder({ documentType: 'REM', value: 90000, rule: 'NEW', category: 'Otras' });
+    await db.query(`INSERT INTO payments (id,order_id,date,amount,recorded_by,request_key,method)
+      VALUES ($1,$2,'2024-01-01',218000,$3,$4,'EFECTIVO'),
+        ($5,$6,'2024-01-31',50000,$3,$7,'BANCOLOMBIA')`,
+    [randomUUID(), first, userId, randomUUID(), randomUUID(), last, randomUUID()]);
+
+    for (const [dates, filter, gross] of [
+      ['from=2024-01-01&to=2024-01-31', '', 916300],
+      ['from=2024-01-01&to=2024-01-31', '&category=Otras', 595000],
+      ['from=2024-01-01&to=2024-01-31', '&category=Otras&documentType=FACT', 595000],
+      ['from=2024-01-01&to=2024-01-31', '&category=Otras&documentType=REM', 0],
+      ['from=2024-01-01&to=2024-01-31', '&category=SuperGiros', 83300],
+      ['from=2024-01-01&to=2024-01-31', '&category=Carro%20Vallas', 0],
+      ['from=2024-01-01&to=2024-01-01', '&category=Otras', 238000],
+      ['from=2024-01-31&to=2024-01-31', '&category=Otras', 357000],
+      ['from=2023-12-01&to=2023-12-31', '&category=Otras', 166600],
+      ['from=2024-02-01&to=2024-02-29', '&category=Otras', 476000],
+      ['from=2024-01-01&to=2024-02-01', '&category=Otras', 1071000],
+    ] as const) {
+      const report = await get(`/reports/sales?${dates}${filter}`);
+      expect(report.status).toBe(200);
+      expect(report.body.totals.factGross).toBe(gross);
+      expect(report.body.documents.find((item: { documentType: string }) => item.documentType === 'FACT').gross).toBe(gross);
+      expect(report.body.timeline.reduce((sum: number, row: { factGross: number }) => sum + row.factGross, 0)).toBe(gross);
+    }
+
+    const path = '/reports/sales?from=2024-01-01&to=2024-01-31&category=Otras&documentType=FACT';
+    const before = await get(path);
+    expect(before.body.totals).toMatchObject({ factBase: 500000, iva: 95000, factGross: 595000,
+      retentions: 50000, received: 268000 });
+    await db.query('UPDATE orders SET rete_fuente=0, rete_iva=0, ica=0 WHERE id IN ($1,$2)', [first, last]);
+    await db.query('DELETE FROM payments WHERE order_id IN ($1,$2)', [first, last]);
+    const after = await get(path);
+    expect(after.status).toBe(200);
+    expect(after.body.totals).toMatchObject({ factBase: 500000, iva: 95000, factGross: 595000,
+      retentions: 0, received: 0 });
+    expect(after.body.totals.balanceFact).not.toBe(before.body.totals.balanceFact);
   });
 
   it('filtra la cartera REM y FACT por categoría y documento y devuelve cero sin coincidencias', async () => {

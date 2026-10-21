@@ -61,7 +61,6 @@ describe('Criterios de reportes y cartera', () => {
     const report = reportSummary(orders, september, 'SuperGiros', 'REM');
     expect(report.base).toBe(0);
     expect(report.factGross).toBe(0);
-    expect(report.factGrossAtCutoff).toBe(0);
     expect(report.received).toBe(35_000);
     expect(report.balance).toBe(40_000);
     expect(report.balanceRem).toBe(40_000);
@@ -77,21 +76,24 @@ describe('Criterios de reportes y cartera', () => {
     expect(report.balance).toBe(40_000);
   });
 
-  it('TOTAL FACT suma todas las FACT al corte con IVA, incluidas pagadas, sin restar abonos ni retenciones', () => {
-    const paid = order({ id: 'paid', documentType: 'FACT', financialRule: 'NEW', value: 150_000,
+  it('TOTAL FACT suma solo las FACT del período con IVA, incluidas pagadas, sin restar abonos ni retenciones', () => {
+    const previousPaid = order({ id: 'previous-paid', documentType: 'FACT', financialRule: 'NEW', value: 150_000,
       reteFuente: 6_000, reteIva: 4_275, ica: 1_050, payments: [payment('2026-08-15', 167_175)] });
-    const afterCutoff = order({ ...future, documentType: 'FACT' });
-    const source = [paid, current, old, afterCutoff];
+    const currentPaid = { ...previousPaid, id: 'current-paid', createdAt: '2026-09-10T12:00:00-05:00', payments: [payment('2026-09-11', 167_175)] };
+    const followingFact = order({ ...future, documentType: 'FACT' });
+    const source = [previousPaid, currentPaid, current, old, followingFact];
     const report = reportSummary(source, september);
-    expect(report.factGrossAtCutoff).toBe(416_500);
-    expect(report.factGross).toBe(238_000);
+    expect(report.factGross).toBe(416_500);
     expect(report.balanceFact).toBe(236_000);
-    expect(reportSummary(source, september, 'SuperGiros').factGrossAtCutoff).toBe(178_500);
-    expect(reportSummary(source, september, 'ALL', 'REM').factGrossAtCutoff).toBe(0);
-    expect(reportSummary(source, september, 'ALL', 'FACT').factGrossAtCutoff).toBe(416_500);
-    expect(reportSummary(source, { from: '2026-07-01', to: '2026-07-31' }).factGrossAtCutoff).toBe(0);
+    expect(reportSummary(source, september, 'SuperGiros').factGross).toBe(178_500);
+    expect(reportSummary(source, september, 'ALL', 'REM').factGross).toBe(0);
+    expect(reportSummary(source, september, 'ALL', 'FACT').factGross).toBe(416_500);
+    expect(reportSummary(source, { from: '2026-07-01', to: '2026-07-31' }).factGross).toBe(0);
+    expect(reportSummary(source, { from: '2026-08-01', to: '2026-08-31' }).factGross).toBe(178_500);
+    expect(reportSummary(source, { from: '2026-10-01', to: '2026-10-31' }).factGross).toBe(357_000);
+    expect(reportSummary(source, { from: '2026-09-10', to: september.to }).factGross).toBe(178_500);
     const withoutPaymentsOrRetentions = source.map(item => ({ ...item, payments: [], reteFuente: 0, reteIva: 0, ica: 0 }));
-    expect(reportSummary(withoutPaymentsOrRetentions, september).factGrossAtCutoff).toBe(report.factGrossAtCutoff);
+    expect(reportSummary(withoutPaymentsOrRetentions, september).factGross).toBe(report.factGross);
   });
 
   it('cuadra el detalle por categorías con los totales generales', () => {
@@ -106,6 +108,8 @@ describe('Criterios de reportes y cartera', () => {
     const atEnd = order({ id: 'end', createdAt: '2026-10-01T04:59:59Z' });
     const afterEnd = order({ id: 'after', createdAt: '2026-10-01T05:00:00Z' });
     expect(reportSummary([atStart, beforeStart, atEnd, afterEnd], september).sales.map(row => row.id)).toEqual(['start', 'end']);
+    const facts = [atStart, beforeStart, atEnd, afterEnd].map(item => ({ ...item, documentType: 'FACT' as const }));
+    expect(reportSummary(facts, september)).toMatchObject({ factGross: 238_000, factBase: 200_000, iva: 38_000 });
   });
 
   it('conserva deuda histórica de trabajos terminados aun si se pagaron posteriormente', () => {
@@ -149,7 +153,7 @@ describe('Detalle de cuadros pendientes de cobro', () => {
 
     expect(report.factBase).toBe(300_000);
     expect(report.iva).toBe(57_000);
-    expect(report.factGrossAtCutoff).toBe(357_000);
+    expect(report.factGross).toBe(357_000);
     expect(report.balanceFact).toBe(128_500);
     expect(report.pendingRetentions).toBe(11_325);
     expect(reportSummary([paidFact, partialFact, old], september, 'ALL', 'REM').iva).toBe(0);

@@ -4,9 +4,11 @@ Actualizado: 2026-10-21.
 
 ## Estado actual
 
+Corrección más reciente del 21/10: **TOTAL FACT respeta inicio y fin del período seleccionado**, no acumula meses anteriores. Se usa el agregado existente `factGross` del servidor y el equivalente local filtrado por período. El texto del cuadro muestra ambas fechas; el mes inicial sigue siendo el mes actual. Conserva base + IVA, incluye pagadas e ignora abonos/retenciones. Se añadió regresión local/servidor/navegador con FACT antes, dentro y después del período y cambios de mes/rango. `factGrossAtCutoff` se mantiene en el contrato API solo por compatibilidad, pero ya no se calcula en el adaptador local ni se consume en la vista. No se modificaron cartera, REM, OT ni pagos. No requiere SQL; es corrección propia y no incrementa el contador comercial (55 cambios, 32 significativos).
+
 Último ajuste del 21/10: **Cartera al corte** es ahora un solo cuadro en Reportes y sustituye los cuadros con IVA y sin IVA. Su importe es `balanceWithoutIva + pendingRetentions`: saldo sin IVA después de abonos más RETEFUENTE/RETE IVA/ICA pendientes de certificado. Se usa una contribución canónica `portfolioAtCutoff` por OT en servidor y adaptador local, también para el desplegable paginado y la tabla por categoría. Incluye OT pagadas que todavía tengan certificados pendientes; recibir uno reduce este indicador sin modificar pagos. Se conservan componentes y reglas NEW/LEGACY, importes fiscales de OT, Total IVA, Total FACT y pantalla Cartera. El cambio es solo de Reportes, no elimina IVA de las facturas ni convierte certificados en efectivo. No requiere SQL. Archivos: `src/pages/{Reports.tsx,analytics.css}`, `src/domain/receivables.ts`, `src/data/api.ts`, `server/src/reports/{schemas,service}.ts`, pruebas financieras/E2E y documentos de continuidad.
 
-Tras la aclaración posterior del 21/10, **TOTAL FACT en Reportes** suma el valor completo con IVA de todas las OT FACT hasta el corte, incluidas las pagadas, sin afectar el importe con abonos ni retenciones. Se añadió `totals.factGrossAtCutoff` en el servidor y su equivalente local, manteniendo separados el bruto del período y la cartera real. Se retiró únicamente de este cuadro el desplegable de deuda, porque ya no representa un saldo pendiente. TOTAL IVA mantiene su criterio del período. No se modificaron la pantalla Cartera, las OT, pagos ni retenciones guardados; no requiere SQL. Archivos: `src/pages/Reports.tsx`, `src/data/api.ts`, `server/src/reports/service.ts`, pruebas financieras locales/API/E2E y documentos de continuidad.
+Histórico del 21/10, sustituido en su criterio de fechas por la corrección anterior: **TOTAL FACT en Reportes** sumaba el valor completo con IVA de todas las OT FACT hasta el corte, incluidas las pagadas, sin afectar el importe con abonos ni retenciones. Se añadió `totals.factGrossAtCutoff` en el servidor y su equivalente local, manteniendo separados el bruto del período y la cartera real. Se retiró únicamente de este cuadro el desplegable de deuda, porque ya no representa un saldo pendiente. TOTAL IVA mantiene su criterio del período. No se modificaron la pantalla Cartera, las OT, pagos ni retenciones guardados; no requiere SQL. Archivos: `src/pages/Reports.tsx`, `src/data/api.ts`, `server/src/reports/service.ts`, pruebas financieras locales/API/E2E y documentos de continuidad.
 
 El 21/10/2026 se reorganizó Reportes en ocho cuadros principales con los nombres solicitados. TOTAL IVA muestra el IVA original de las FACT del período, independiente de abonos/retenciones; el reemplazo de IVA pendiente muestra la suma actual de retenciones pendientes de certificado. Las dos carteras se presentan juntas. Cada cuadro de cobro (cinco principales y tres individuales de retenciones) despliega sus OT positivas por número descendente, con cliente, descripción, importe, paginación y enlace. Se añadió consulta de detalle protegida y se unificaron filtros de categoría/documento con certificados; marcar un certificado actualiza también el total superior. El gráfico remoto usa agregados del servidor y los cuadros evitan sustituir la carga/error remoto por totales parciales locales. No se modificaron reglas de cobro, datos productivos ni la pantalla Cartera; no requiere SQL.
 
@@ -51,7 +53,7 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 ## Funcionalidades terminadas en este tramo
 
 - Cartera al corte en Reportes unifica saldo pendiente sin IVA y retenciones pendientes de certificado; el detalle por OT y el total por categoría concuerdan con el cuadro. Se retiraron los dos cuadros anteriores, no los campos históricos de deuda ni la pantalla Cartera.
-- Total FACT en Reportes muestra base + IVA de todas las FACT hasta el corte sin descuentos; los saldos de cartera y las reglas de cobro permanecen intactos.
+- Total FACT en Reportes muestra base + IVA de todas las FACT del período seleccionado, respetando ambas fechas, sin descuentos; los saldos de cartera y las reglas de cobro permanecen intactos.
 - Reportes resume sus cuadros principales; Total IVA conserva únicamente el IVA original de las FACT seleccionadas y Retenciones totales pendientes por cobrar suma los certificados pendientes de RETEFUENTE, RETE IVA e ICA.
 - Los cuadros de cobro despliegan sus OT por número descendente con importe y enlace; se incluyen únicamente las que aportan saldo a ese concepto, incluso FACT pagadas con retenciones pendientes de certificado.
 - Categoría/documento/corte coinciden entre cuadros, listas y certificados. El registro de certificados refresca los totales sin alterar el IVA facturado ni el saldo en efectivo.
@@ -144,6 +146,8 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 
 ## Verificación local
 
+- Corrección del período de TOTAL FACT del 21/10: frontend 170/170, pruebas financieras del servidor 14/14, ambos builds TypeScript y `git diff --check` aprobados. El servidor ya ofrecía el bruto por período correcto; se corrigió qué agregado consume el cuadro, sin alterar consultas ni datos del servidor.
+- Corrección del período de TOTAL FACT: E2E local 7/7 y E2E API real/PGlite 1/1 aprobados. Se prueban mes actual predeterminado, FACT anteriores/dentro/posteriores, meses previo/siguiente, rango de fechas y meses, límites inclusivos de Bogotá, pagadas/retenciones, filtros y coincidencia con IVA/desglose/serie temporal. Sin acceso a producción ni confirmación del despliegue posterior al push.
 - Unificación de Cartera al corte del 21/10: frontend 170/170, backend 290/290 (13 pruebas financieras dirigidas), builds frontend/servidor con TypeScript y `git diff --check` aprobados. Se verifican fórmula uniforme NEW/LEGACY, redondeo, corte/filtros, IVA residual excluido, OT pagadas con certificados pendientes, categorías y suma exacta del desglose.
 - Unificación de Cartera al corte: E2E local 6/6 tras acotar un selector de prueba ambiguo y E2E API real/PGlite 1/1; ambos administradores, cuadro único, importe $178.000 y reducción a $172.000 al recibir certificado, filtro REM/FACT, enlaces por número descendente, datos remotos sin depender de caché local y móvil 320 px aprobados. Capturas desktop/móvil revisadas. No se accedió a PostgreSQL productivo ni se comprobó despliegue posterior.
 - Ajuste posterior de Total FACT del 21/10: frontend 169/169, backend completo 289/289 y pruebas financieras dirigidas del servidor 12/12; ambos builds (con TypeScript) y `git diff --check` aprobados. Los casos comprueban FACT históricas/pagadas, independencia de abonos y retenciones, separación del bruto del período, filtros y corte.
@@ -264,6 +268,8 @@ La aclaración posterior de Total FACT bruto se cuenta como un ajuste menor de l
 
 La unificación posterior de Cartera al corte es un ajuste menor del resumen administrativo: reutiliza saldos y certificados existentes y conserva las reglas de cobro y los valores de las OT.
 
+La corrección del filtro de Total FACT no se cuenta como cambio adicional: subsana el uso erróneo de fechas del indicador entregado. No es cobrable ni incrementa significativos.
+
 ## Pendiente para producción
 
 1. Ejecutar manualmente `server/migrations/012_disable_order_deletion.sql` en Supabase antes de publicar este código.
@@ -283,6 +289,6 @@ npm test
 npm --prefix server run typecheck
 npm --prefix server test
 $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright\chromium-1217\chrome-win64\chrome.exe'
-npx playwright test tests/finance.spec.ts --output=test-results/unified-local
-npx playwright test --config playwright.api.config.ts --grep 'reportes y desgloses' --output=test-results/unified-api
+npx playwright test tests/finance.spec.ts --output=test-results/factperiod-local
+npx playwright test --config playwright.api.config.ts --grep 'reportes y desgloses' --output=test-results/factperiod-api
 ```

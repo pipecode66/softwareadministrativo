@@ -66,6 +66,59 @@ for (const account of ['adminmaster@intermedios.local', 'administracion@intermed
   });
 }
 
+test('TOTAL FACT respeta el mes predeterminado y los períodos seleccionados sin descontar pagos ni retenciones', async ({ page, context }) => {
+  const month = (offset: number) => {
+    const date = new Date(`${today().slice(0, 7)}-01T12:00:00Z`);
+    date.setUTCMonth(date.getUTCMonth() + offset);
+    return date.toISOString().slice(0, 7);
+  };
+  const previousMonth = month(-1), currentMonth = month(0), nextMonth = month(1);
+  const datedFact = (id: string, number: number, value: number, monthValue: string): WorkOrder => ({
+    ...makeOrder(id, number, value, 'FACT'),
+    createdAt: `${monthValue}-01T00:00:00-05:00`, updatedAt: `${monthValue}-01T00:00:00-05:00`,
+    reteFuente: 0, reteIva: 0, ica: 0,
+  });
+  const previousFact = datedFact('previous-month-fact', 101, 100_000, previousMonth);
+  previousFact.reteFuente = 5_000;
+  const currentFact = datedFact('current-month-fact', 102, 200_000, currentMonth);
+  currentFact.reteFuente = 10_000;
+  currentFact.payments = [{ id: 'current-partial-payment', date: `${currentMonth}-01`, amount: 30_000, recordedBy: 'u-master' }];
+  const paidFact = datedFact('current-month-paid-fact', 103, 150_000, currentMonth);
+  paidFact.reteFuente = 1_000;
+  paidFact.payments = [{ id: 'current-full-payment', date: `${currentMonth}-01`, amount: 177_500, recordedBy: 'u-master' }];
+  const nextFact = datedFact('next-month-fact', 104, 400_000, nextMonth);
+  const data = makeSeed();
+  data.orders = [previousFact, currentFact, paidFact, nextFact];
+  await context.addInitScript(({ key, data }) => localStorage.setItem(key, JSON.stringify(data)), { key: DATA_KEY, data });
+  await login(page);
+  await page.goto('/reports');
+  const card = (label: string) => page.locator('.kpi-card').filter({ has: page.getByText(label, { exact: true }) });
+  const verifyPeriod = async (base: number, iva: number) => {
+    await expect(card('Ventas · valor base').locator('.kpi-value')).toHaveText(formatCOP(base));
+    await expect(card('Total IVA').locator('.kpi-value')).toHaveText(formatCOP(iva));
+    await expect(card('Total FACT').locator('.kpi-value')).toHaveText(formatCOP(base + iva));
+    await expect(card('Total FACT').locator('details')).toHaveCount(0);
+  };
+  await expect(page.getByLabel('Mes del reporte', { exact: true })).toHaveValue(currentMonth);
+  await verifyPeriod(350_000, 66_500);
+
+  await page.getByLabel('Mes del reporte', { exact: true }).fill(previousMonth);
+  await verifyPeriod(100_000, 19_000);
+  await page.getByLabel('Mes del reporte', { exact: true }).fill(nextMonth);
+  await verifyPeriod(400_000, 76_000);
+
+  await page.getByRole('button', { name: 'Rango de fechas', exact: true }).click();
+  await page.getByLabel('Desde', { exact: true }).fill(`${previousMonth}-01`);
+  await page.getByLabel('Hasta', { exact: true }).fill(`${currentMonth}-01`);
+  await verifyPeriod(450_000, 85_500);
+
+  await page.getByRole('button', { name: 'Rango de meses', exact: true }).click();
+  await page.getByLabel('Hasta', { exact: true }).fill(nextMonth);
+  await verifyPeriod(850_000, 161_500);
+  await page.getByRole('button', { name: 'Mes', exact: true }).click();
+  await verifyPeriod(350_000, 66_500);
+});
+
 test('reporte separa FACT e IVA y registra certificado sin modificar pagos', async ({ page }) => {
   await login(page);
   await page.goto('/reports');
