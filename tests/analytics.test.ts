@@ -29,6 +29,7 @@ describe('Criterios de reportes y cartera', () => {
     expect(report.balance).toBe(276_000);
     expect(report.balanceRem).toBe(40_000);
     expect(report.balanceFact).toBe(236_000);
+    expect(report.portfolioAtCutoff).toBe(256_000);
     expect(sumMoney([report.balanceRem, report.balanceFact])).toBe(report.balance);
   });
 
@@ -53,6 +54,7 @@ describe('Criterios de reportes y cartera', () => {
     expect(report.balanceFact).toBe(1_014_500);
     expect(report.balanceWithoutIva).toBe(824_500);
     expect(report.ivaDue).toBe(190_000);
+    expect(report.portfolioAtCutoff).toBe(900_000);
   });
 
   it('aplica la misma categoría y documento a todos los indicadores y tablas', () => {
@@ -64,7 +66,7 @@ describe('Criterios de reportes y cartera', () => {
     expect(report.balance).toBe(40_000);
     expect(report.balanceRem).toBe(40_000);
     expect(report.balanceFact).toBe(0);
-    expect(report.categories).toEqual([{ name: 'SuperGiros', count: 0, base: 0, iva: 0, received: 35_000, balance: 40_000 }]);
+    expect(report.categories).toEqual([{ name: 'SuperGiros', count: 0, base: 0, iva: 0, received: 35_000, balance: 40_000, portfolioAtCutoff: 40_000 }]);
     expect(report.documents.map(row => row.type)).toEqual(['REM']);
   });
 
@@ -94,7 +96,7 @@ describe('Criterios de reportes y cartera', () => {
 
   it('cuadra el detalle por categorías con los totales generales', () => {
     const report = reportSummary(orders, september);
-    for (const field of ['base', 'received', 'balance'] as const) expect(sumMoney(report.categories.map(row => row[field]))).toBe(report[field]);
+    for (const field of ['base', 'received', 'balance', 'portfolioAtCutoff'] as const) expect(sumMoney(report.categories.map(row => row[field]))).toBe(report[field]);
     expect(sumMoney([0.1, 0.2, 0.7])).toBe(1);
   });
 
@@ -117,6 +119,26 @@ describe('Criterios de reportes y cartera', () => {
 });
 
 describe('Detalle de cuadros pendientes de cobro', () => {
+  it('unifica cartera sin IVA más retenciones pendientes y reduce solo los certificados recibidos', () => {
+    const rem = order({ id: 'rem-50', number: 50, value: 100_000, payments: [payment('2026-09-10', 25_000)] });
+    const fact = order({ id: 'fact-49', number: 49, value: 150_000, documentType: 'FACT', financialRule: 'NEW',
+      reteFuente: 6_000, reteIva: 4_275, ica: 1_050, payments: [payment('2026-09-11', 50_000)] });
+    const paid = order({ id: 'paid-9', number: 9, value: 150_000, documentType: 'FACT', financialRule: 'NEW',
+      reteFuente: 3_000, payments: [payment('2026-09-12', 175_500)] });
+    const source = [fact, paid, rem];
+    const report = reportSummary(source, september);
+    const items = receivableItems(source, [], { cutoff: september.to, metric: 'portfolioAtCutoff' });
+    expect(report).toMatchObject({ portfolioAtCutoff: 178_000, balanceWithoutIva: 163_675, pendingRetentions: 14_325 });
+    expect(items.map(item => [item.number, item.amount])).toEqual([[50, 75_000], [49, 100_000], [9, 3_000]]);
+    expect(sumMoney(items.map(item => item.amount))).toBe(report.portfolioAtCutoff);
+    const afterCertificate = reportSummary([rem, paid, { ...fact, certificates: { reteFuente: true, reteIva: false, ica: false } }], september);
+    expect(afterCertificate.portfolioAtCutoff).toBe(172_000);
+    expect(afterCertificate.balance).toBe(report.balance);
+    expect(afterCertificate.balanceWithoutIva).toBe(report.balanceWithoutIva);
+    expect(reportSummary(source, september, 'ALL', 'REM').portfolioAtCutoff).toBe(75_000);
+    expect(reportSummary(source, september, 'ALL', 'FACT').portfolioAtCutoff).toBe(103_000);
+  });
+
   it('TOTAL IVA conserva el 19 % de dos FACT de $150.000 aunque tengan retenciones y abonos', () => {
     const paidFact = order({ id: 'paid-fact', number: 50, value: 150_000, documentType: 'FACT', financialRule: 'NEW',
       createdAt: '2026-09-10T12:00:00-05:00', reteFuente: 6_000, reteIva: 4_275, ica: 1_050,
@@ -155,6 +177,7 @@ describe('Detalle de cuadros pendientes de cobro', () => {
     const report = reportSummary(source, september);
     const fields: Array<[ReceivableMetric, keyof typeof report]> = [
       ['balanceWithIva', 'balance'], ['balanceWithoutIva', 'balanceWithoutIva'],
+      ['portfolioAtCutoff', 'portfolioAtCutoff'],
       ['rem', 'balanceRem'], ['fact', 'balanceFact'], ['retentions', 'pendingRetentions'],
     ];
     for (const [metric, field] of fields) {
@@ -195,6 +218,7 @@ describe('Detalle de cuadros pendientes de cobro', () => {
         };
         for (const [metric, amount] of [
           ['balanceWithIva', report.balance], ['balanceWithoutIva', report.balanceWithoutIva],
+          ['portfolioAtCutoff', report.portfolioAtCutoff],
           ['rem', report.balanceRem], ['fact', report.balanceFact], ['retentions', report.pendingRetentions],
         ] as const) {
           expect(sumMoney(receivableItems(source, [], { ...query, metric }).map(item => item.amount))).toBe(amount);
@@ -210,7 +234,7 @@ describe('Detalle de cuadros pendientes de cobro', () => {
   it('no descuenta pagos posteriores al corte ni muestra deuda sin IVA negativa', () => {
     const fact = order({ id: 'last-iva', number: 36, documentType: 'FACT', financialRule: 'NEW', value: 100,
       payments: [payment('2026-09-15', 105), payment('2026-10-01', 14)] });
-    expect(receivableAmounts(fact, september.to)).toMatchObject({ balanceWithIva: 14, balanceWithoutIva: 0, fact: 14 });
+    expect(receivableAmounts(fact, september.to)).toMatchObject({ balanceWithIva: 14, balanceWithoutIva: 0, fact: 14, portfolioAtCutoff: 0 });
     expect(receivableItems([fact], [], { cutoff: september.to, metric: 'balanceWithoutIva' })).toEqual([]);
     expect(receivableItems([fact], [], { cutoff: september.to, metric: 'fact' }).map(item => item.amount)).toEqual([14]);
     expect(reportSummary([fact], september)).toMatchObject({ balance: 14, balanceWithoutIva: 0, received: 105 });

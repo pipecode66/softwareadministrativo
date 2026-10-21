@@ -34,7 +34,7 @@ export const portfolioSchema = z.object({
 }).strict();
 
 export const receivablesSchema = portfolioSchema.extend({
-  metric: z.enum(['balanceWithIva', 'balanceWithoutIva', 'rem', 'fact', 'retentions', 'reteFuente', 'reteIva', 'ica']),
+  metric: z.enum(['portfolioAtCutoff', 'balanceWithIva', 'balanceWithoutIva', 'rem', 'fact', 'retentions', 'reteFuente', 'reteIva', 'ica']),
 });
 
 export const certificateQuerySchema = z.object({

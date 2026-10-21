@@ -1,7 +1,7 @@
 import type { Category, Client, DocumentType, WorkOrder } from './types';
 import { dateOnly, financials, roundMoney } from './utils';
 
-export type ReceivableMetric = 'balanceWithIva' | 'balanceWithoutIva' | 'rem' | 'fact' | 'retentions' | 'reteFuente' | 'reteIva' | 'ica';
+export type ReceivableMetric = 'portfolioAtCutoff' | 'balanceWithIva' | 'balanceWithoutIva' | 'rem' | 'fact' | 'retentions' | 'reteFuente' | 'reteIva' | 'ica';
 export interface ReceivableQuery {
   cutoff: string; metric: ReceivableMetric; category?: Category; documentType?: DocumentType;
 }
@@ -17,13 +17,16 @@ export function receivableAmounts(order: WorkOrder, cutoff: string): Record<Rece
   const pending = (key: 'reteFuente' | 'reteIva' | 'ica') =>
     order.documentType === 'FACT' && !order.certificates?.[key] ? roundMoney(order[key]) : 0;
   const reteFuente = pending('reteFuente'), reteIva = pending('reteIva'), ica = pending('ica');
+  const balanceWithoutIva = Math.max(0, roundMoney(balance - money.iva));
+  const retentions = (Math.round(reteFuente * 100) + Math.round(reteIva * 100) + Math.round(ica * 100)) / 100;
   return {
+    portfolioAtCutoff: (Math.round(balanceWithoutIva * 100) + Math.round(retentions * 100)) / 100,
     balanceWithIva: balance,
-    balanceWithoutIva: Math.max(0, roundMoney(balance - money.iva)),
+    balanceWithoutIva,
     rem: order.documentType === 'REM' ? balance : 0,
     fact: order.documentType === 'FACT' ? balance : 0,
     reteFuente, reteIva, ica,
-    retentions: (Math.round(reteFuente * 100) + Math.round(reteIva * 100) + Math.round(ica * 100)) / 100,
+    retentions,
   };
 }
 

@@ -272,8 +272,8 @@ export function apiHistory(query: { page?: number; pageSize?: number; orderId?: 
 
 export interface SalesReport {
   from: string; to: string; groupBy: 'day' | 'month';
-  totals: { count: number; base: number; factBase: number; iva: number; factGross: number; factGrossAtCutoff: number; reteFuente: number; reteIva: number; ica: number; retentions: number; pendingRetentions: number; collectible: number; collectibleWithoutIva: number; received: number; balance: number; balanceWithIva: number; balanceRem: number; balanceFact: number; balanceWithoutIva: number; ivaDue: number };
-  categories: Array<{ category: string; count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; received: number; balance: number; balanceWithoutIva: number; ivaDue: number }>;
+  totals: { count: number; base: number; factBase: number; iva: number; factGross: number; factGrossAtCutoff: number; reteFuente: number; reteIva: number; ica: number; retentions: number; pendingRetentions: number; portfolioAtCutoff: number; collectible: number; collectibleWithoutIva: number; received: number; balance: number; balanceWithIva: number; balanceRem: number; balanceFact: number; balanceWithoutIva: number; ivaDue: number };
+  categories: Array<{ category: string; count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; received: number; balance: number; balanceWithoutIva: number; portfolioAtCutoff: number; ivaDue: number }>;
   documents: Array<{ documentType: 'REM' | 'FACT'; count: number; base: number; factBase: number; iva: number; gross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number }>;
   timeline: Array<{ period: string; count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; received: number }>;
 }

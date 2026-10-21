@@ -1,6 +1,6 @@
 .analytics-page { min-width: 0; }
 .analytics-page .metrics-grid.analytics-summary-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
-.analytics-page .metrics-grid.analytics-balance-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.analytics-page .metrics-grid.analytics-overview-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; }
 .analytics-receivable { margin-top: 15px; border-top: 1px solid #e2e8f0; min-width: 0; }
 .analytics-receivable > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; color: #c2410c; font-size: .77rem; font-weight: 700; cursor: pointer; list-style: none; }
 .analytics-receivable > summary::-webkit-details-marker { display: none; }
@@ -126,6 +126,7 @@
 .analytics-bulk-preview > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .35rem 1rem; font-variant-numeric: tabular-nums; }
 .analytics-debt-clients li > button { margin-top: .8rem; }
 @media (max-width: 1200px) {
+  .analytics-page .metrics-grid.analytics-overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analytics-main-grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
   .analytics-stations { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analytics-material-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

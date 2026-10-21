@@ -76,20 +76,26 @@ const periodSums = `
   coalesce(sum("balanceWithoutIva"), 0) AS "balanceWithoutIva",
   coalesce(sum(balance - "balanceWithoutIva"), 0) AS "ivaDue"`;
 
+// Report-only combined indicator: cash principal still outstanding plus pending
+// retention certificates. It does not replace transactional debt or alter LEGACY.
+const portfolioAtCutoffAmount = 'f."balanceWithoutIva" + f."pendingReteFuente" + f."pendingReteIva" + f."pendingIca"';
+
 export async function salesReport(db: Database, auth: AuthSession, input: SalesQuery) {
   return snapshot(db, auth, async tx => {
     const params = [input.from, input.to, input.category ?? null, input.documentType ?? null];
     const totals = (await tx.query<NumericRow>(`WITH ${scopedOrders}
       SELECT ${periodSums},
+        coalesce(sum(${portfolioAtCutoffAmount}), 0) AS "portfolioAtCutoff",
         coalesce(sum(balance) FILTER (WHERE document_type = 'REM'), 0) AS "balanceRem",
         coalesce(sum(balance) FILTER (WHERE document_type = 'FACT'), 0) AS "balanceFact",
         coalesce(sum(gross) FILTER (WHERE document_type = 'FACT'), 0) AS "factGrossAtCutoff",
         coalesce(sum("pendingReteFuente" + "pendingReteIva" + "pendingIca"), 0) AS "pendingRetentions",
         (SELECT coalesce(sum(p.amount), 0) FROM payments p JOIN money m ON m.id = p.order_id
           WHERE p.date BETWEEN $1::date AND $2::date) AS received
-      FROM facts`, params)).rows[0];
+      FROM facts f`, params)).rows[0];
     const categoryRows = (await tx.query<NumericRow>(`WITH ${scopedOrders},
-      sales AS (SELECT category, ${periodSums} FROM facts GROUP BY category),
+      sales AS (SELECT category, ${periodSums},
+        coalesce(sum(${portfolioAtCutoffAmount}), 0) AS "portfolioAtCutoff" FROM facts f GROUP BY category),
       receipts AS (
         SELECT m.category, sum(p.amount) AS received FROM payments p JOIN money m ON m.id = p.order_id
         WHERE p.date BETWEEN $1::date AND $2::date GROUP BY m.category
@@ -129,8 +135,9 @@ export async function salesReport(db: Database, auth: AuthSession, input: SalesQ
       FROM periods d LEFT JOIN sales s ON s.period = d.period LEFT JOIN receipts r ON r.period = d.period ORDER BY d.period`, params)).rows;
     return {
       from: input.from, to: input.to, groupBy: input.groupBy,
-      totals: numbers(totals, [...moneyKeys, 'balanceRem', 'balanceFact', 'factGrossAtCutoff', 'pendingRetentions']),
-      categories: categories.map(category => ({ category, ...numbers(categoryRows.find(row => row.category === category), moneyKeys) })),
+      totals: numbers(totals, [...moneyKeys, 'balanceRem', 'balanceFact', 'factGrossAtCutoff', 'pendingRetentions', 'portfolioAtCutoff']),
+      categories: categories.map(category => ({ category,
+        ...numbers(categoryRows.find(row => row.category === category), [...moneyKeys, 'portfolioAtCutoff']) })),
       documents: (['REM', 'FACT'] as const).map(documentType => ({ documentType,
         ...numbers(documentRows.find(row => row.documentType === documentType),
           ['count', 'base', 'factBase', 'iva', 'gross', 'reteFuente', 'reteIva', 'ica', 'retentions', 'collectible', 'collectibleWithoutIva']) })),
@@ -203,6 +210,7 @@ export async function portfolioReport(db: Database, auth: AuthSession, input: Po
 }
 
 const receivableAmounts: Record<ReceivablesQuery['metric'], string> = {
+  portfolioAtCutoff: portfolioAtCutoffAmount,
   balanceWithIva: 'f.balance',
   balanceWithoutIva: 'f."balanceWithoutIva"',
   rem: "CASE WHEN f.document_type = 'REM' THEN f.balance ELSE 0 END",
