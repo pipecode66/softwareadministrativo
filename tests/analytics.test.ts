@@ -118,6 +118,45 @@ describe('Criterios de reportes y cartera', () => {
     expect(reportSummary(withoutPaymentsOrRetentions, september).factGross).toBe(report.factGross);
   });
 
+  it('TOTAL REM suma el valor completo de REM del período, incluidas pagadas y sin descontar abonos', () => {
+    const previous = order({ id: 'previous-rem', value: 500_000 });
+    const partial = order({ id: 'partial-rem', value: 100_000, createdAt: '2026-09-01T05:00:00Z',
+      payments: [payment('2026-09-10', 25_000)] });
+    const paid = order({ id: 'paid-rem', value: 200_000, createdAt: '2026-10-01T04:59:59Z',
+      payments: [payment('2026-09-30', 200_000)] });
+    const source = [previous, partial, paid, future, current];
+    const report = reportSummary(source, september);
+    expect(report.remBase).toBe(300_000);
+    expect(report.balanceRem).toBe(575_000);
+    expect(report.remBase).toBe(sumMoney([report.base, -report.factBase]));
+    expect(report.documents.find(item => item.type === 'REM')).toMatchObject({ base: report.remBase, gross: report.remBase });
+    const retentionsInPeriod = sumMoney(report.documents.map(item => item.retentions));
+    expect(sumMoney([report.remBase, report.factGross, -retentionsInPeriod])).toBe(report.salesNet);
+    expect(reportSummary(source.map(item => ({ ...item, payments: [] })), september).remBase).toBe(report.remBase);
+    expect(reportSummary(source, september, 'ALL', 'FACT').remBase).toBe(0);
+    expect(reportSummary(source, september, 'ALL', 'REM').remBase).toBe(300_000);
+    expect(reportSummary(source, september, 'Proyecto').remBase).toBe(0);
+    expect(reportSummary(source, { from: '2026-08-01', to: '2026-08-31' }).remBase).toBe(500_000);
+    expect(reportSummary(source, { from: '2026-10-01', to: '2026-10-31' }).remBase).toBe(300_000);
+    expect(reportSummary(source, { from: '2026-07-01', to: '2026-07-31' }).remBase).toBe(0);
+    expect(reportSummary(source, { from: '2026-09-02', to: '2026-09-29' }).remBase).toBe(0);
+  });
+
+  it('concilia REM completo más FACT bruto menos retenciones con ventas totales, sin mezclar saldo REM', () => {
+    const rem = order({ id: 'large-rem', documentType: 'REM', value: 12_156_015,
+      createdAt: '2026-09-10T12:00:00-05:00', payments: [payment('2026-09-11', 5_319_011)] });
+    const fact = order({ id: 'large-fact', documentType: 'FACT', financialRule: 'NEW', value: 38_559_462,
+      createdAt: '2026-09-10T12:00:00-05:00', reteFuente: 1_834_365.11 });
+    const report = reportSummary([rem, fact], september);
+    expect(report.remBase).toBe(12_156_015);
+    expect(report.balanceRem).toBe(6_837_004);
+    expect(report.factGross).toBe(45_885_759.78);
+    expect(sumMoney([report.remBase, report.factGross])).toBe(58_041_774.78);
+    expect(report.salesNet).toBe(56_207_409.67);
+    expect(sumMoney([report.remBase, report.factGross, -fact.reteFuente])).toBe(report.salesNet);
+    expect(sumMoney([report.balanceRem, report.factGross])).toBe(52_722_763.78);
+  });
+
   it('cuadra el detalle por categorías con los totales generales', () => {
     const report = reportSummary(orders, september);
     for (const field of ['base', 'salesNet', 'received', 'balance', 'portfolioAtCutoff', 'portfolioAtCutoffWithIva'] as const) expect(sumMoney(report.categories.map(row => row[field]))).toBe(report[field]);

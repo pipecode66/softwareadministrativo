@@ -225,6 +225,68 @@ describe('reportes con reglas financieras por orden', () => {
     expect(after.body.totals.balanceFact).not.toBe(before.body.totals.balanceFact);
   });
 
+  it('TOTAL REM suma ventas completas del período de Bogotá, incluidas pagadas, y no usa la cartera REM', async () => {
+    await addOrder({ documentType: 'REM', value: 100000, rule: 'NEW', category: 'Otras',
+      createdAt: '2023-12-15T12:00:00-05:00' });
+    await addOrder({ documentType: 'REM', value: 40000, rule: 'NEW', category: 'Otras',
+      createdAt: '2024-01-01T04:59:59.999Z' }); // Still December 31 in Bogotá.
+    const paid = await addOrder({ documentType: 'REM', value: 200000, rule: 'NEW', category: 'Otras',
+      createdAt: '2024-01-01T05:00:00.000Z' });
+    const partial = await addOrder({ documentType: 'REM', value: 300000, rule: 'NEW', category: 'Otras',
+      createdAt: '2024-02-01T04:59:59.999Z' }); // Last instant of January in Bogotá.
+    await addOrder({ documentType: 'REM', value: 400000, rule: 'NEW', category: 'Otras',
+      createdAt: '2024-02-01T05:00:00.000Z' });
+    await addOrder({ documentType: 'REM', value: 70000, rule: 'NEW', category: 'SuperGiros' });
+    await addOrder({ documentType: 'FACT', value: 90000, rule: 'NEW', category: 'Otras' });
+    for (const [orderId, amount] of [[paid, 200000], [partial, 50000]] as const) {
+      await db.query(`INSERT INTO payments (id,order_id,date,amount,recorded_by,request_key,method)
+        VALUES ($1,$2,'2024-01-31',$3,$4,$5,'EFECTIVO')`,
+      [randomUUID(), orderId, amount, userId, randomUUID()]);
+    }
+
+    // The UI derives REM sales from period aggregates, never from balanceRem.
+    const remSales = (totals: { base: number; factBase: number }) => totals.base - totals.factBase;
+    for (const [dates, filter, expected] of [
+      ['from=2024-01-01&to=2024-01-31', '', 620000],
+      ['from=2024-01-01&to=2024-01-31', '&category=Otras', 500000],
+      ['from=2024-01-01&to=2024-01-31', '&category=Otras&documentType=REM', 500000],
+      ['from=2024-01-01&to=2024-01-31', '&category=Otras&documentType=FACT', 0],
+      ['from=2024-01-01&to=2024-01-31', '&category=SuperGiros', 70000],
+      ['from=2024-01-01&to=2024-01-31', '&category=Carro%20Vallas', 0],
+      ['from=2024-01-01&to=2024-01-01', '&category=Otras', 200000],
+      ['from=2024-01-31&to=2024-01-31', '&category=Otras', 300000],
+      ['from=2023-12-01&to=2023-12-31', '&category=Otras', 140000],
+      ['from=2024-02-01&to=2024-02-29', '&category=Otras', 400000],
+      ['from=2024-01-01&to=2024-02-01', '&category=Otras', 900000],
+    ] as const) {
+      const report = await get(`/reports/sales?${dates}${filter}&groupBy=month`);
+      expect(report.status).toBe(200);
+      expect(remSales(report.body.totals)).toBe(expected);
+      expect(Math.round((remSales(report.body.totals) + report.body.totals.factGross - report.body.totals.retentions) * 100))
+        .toBe(Math.round(report.body.totals.salesNet * 100));
+      expect(report.body.documents.find((row: { documentType: string }) => row.documentType === 'REM'))
+        .toMatchObject({ base: expected, gross: expected, iva: 0 });
+      expect(report.body.categories.reduce((sum: number, row: { base: number; factBase: number }) => sum + remSales(row), 0))
+        .toBe(expected);
+      expect(report.body.timeline.reduce((sum: number, row: { base: number; factBase: number }) => sum + remSales(row), 0))
+        .toBe(expected);
+    }
+
+    const path = '/reports/sales?from=2024-01-01&to=2024-01-31&category=Otras&documentType=REM';
+    const before = await get(path);
+    expect(before.body.totals).toMatchObject({ base: 500000, factBase: 0, received: 250000, balanceRem: 390000 });
+    const portfolio = await get('/reports/portfolio?cutoff=2024-01-31&category=Otras&documentType=REM');
+    expect(portfolio.status).toBe(200);
+    expect(portfolio.body.totalBalanceRem).toBe(390000);
+    expect(portfolio.body.items.find((row: { order: { id: string } }) => row.order.id === paid)).toBeUndefined();
+    // Removing only ephemeral fixture payments changes debt, not either sale aggregate.
+    await db.query('DELETE FROM payments WHERE order_id IN ($1,$2)', [paid, partial]);
+    const after = await get(path);
+    expect(after.status).toBe(200);
+    expect(after.body.totals).toMatchObject({ base: 500000, factBase: 0, received: 0, balanceRem: 640000 });
+    expect(remSales(after.body.totals)).toBe(remSales(before.body.totals));
+  });
+
   it('filtra la cartera REM y FACT por categoría y documento y devuelve cero sin coincidencias', async () => {
     const otherRemId = await addOrder({ documentType: 'REM', value: 80000, rule: 'NEW', category: 'Otras' });
     await db.query(`INSERT INTO payments (id,order_id,date,amount,recorded_by,request_key,method)

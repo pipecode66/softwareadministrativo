@@ -43,6 +43,7 @@ export function reportSummary(orders: WorkOrder[], range: DateRange, category: C
     return { type, count: list.length, base: sumMoney(list.map(money => money.base)), iva: sumMoney(list.map(money => money.iva)), gross: sumMoney(list.map(money => money.gross)), retentions: sumMoney(list.map(money => money.retentions)), collectible: sumMoney(list.map(money => money.collectible)) };
   });
   return { sales, received: paymentsInPeriod(relevant), base: sumMoney(sales.map(order => order.value)),
+    remBase: sumMoney(sales.filter(order => order.documentType === 'REM').map(order => order.value)),
     salesNet: netSales(sales),
     factBase: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => order.value)),
     iva: sumMoney(sales.map(order => financials(order).iva)),
@@ -206,6 +207,7 @@ export function ReportsPage() {
   const report = remoteReport ? {
     ...local,
     received: remoteReport.totals.received, base: remoteReport.totals.base, factBase: remoteReport.totals.factBase,
+    remBase: sumMoney([remoteReport.totals.base, -remoteReport.totals.factBase]),
     salesNet: remoteReport.totals.salesNet,
     iva: remoteReport.totals.iva, factGross: remoteReport.totals.factGross,
     balance: remoteReport.totals.balanceWithIva, balanceWithoutIva: remoteReport.totals.balanceWithoutIva, ivaDue: remoteReport.totals.ivaDue,
@@ -216,7 +218,7 @@ export function ReportsPage() {
     categories: remoteReport.categories.map(row => ({ name: row.category, count: row.count, base: row.base, salesNet: row.salesNet, iva: row.iva, received: row.received, balance: row.balance, portfolioAtCutoff: row.portfolioAtCutoff, portfolioAtCutoffWithIva: row.portfolioAtCutoffWithIva })),
     documents: remoteReport.documents.map(row => ({ type: row.documentType, count: row.count, base: row.base, iva: row.iva, gross: row.gross, retentions: row.retentions, collectible: row.collectible })),
   } : local;
-  const { sales, received, salesNet, iva, balanceRem, factGross, portfolioAtCutoff, portfolioAtCutoffWithIva, pendingRetentions, categories, documents } = report;
+  const { sales, received, salesNet, iva, remBase, factGross, portfolioAtCutoff, portfolioAtCutoffWithIva, pendingRetentions, categories, documents } = report;
   const ready = !usingApi || Boolean(remoteReport);
   const moneyValue = (amount: number) => ready ? formatCOP(amount) : '—';
   const debtQuery = (metric: ReceivableMetric): ReceivableQuery => ({ cutoff: range.to, metric,
@@ -237,7 +239,7 @@ export function ReportsPage() {
       <ReceivableKpi key={`${queryKey}|portfolioWithoutIva`} label="Cartera al corte sin IVA" amount={ready ? portfolioAtCutoff : null} icon={Wallet} tone="slate" query={debtQuery('portfolioAtCutoff')} revision={debtRevision} />
     </div>
     <div className="metrics-grid analytics-summary-metrics">
-      <ReceivableKpi key={`${queryKey}|rem`} label="Total REM" amount={ready ? balanceRem : null} icon={Wallet} tone="orange" query={debtQuery('rem')} revision={debtRevision} />
+      <KpiCard label="Total REM" value={moneyValue(remBase)} icon={Wallet} tone="orange" />
       <KpiCard label="Total FACT" value={moneyValue(factGross)} icon={ReceiptText} tone="blue" />
       <ReceivableKpi key={`${queryKey}|retentions`} label="Retenciones totales pendientes por cobrar" amount={ready ? pendingRetentions : null} icon={FileCheck2} tone="blue" query={debtQuery('retentions')} revision={debtRevision} />
     </div>

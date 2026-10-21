@@ -270,13 +270,17 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   await expect(card('Pagos recibidos').locator('details')).toHaveCount(0);
   await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(report.totals.factGross));
   await expect(card('Total FACT').locator('details')).toHaveCount(0);
+  await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(200000));
+  expect(Math.round((200000 + report.totals.factGross - report.totals.retentions) * 100))
+    .toBe(Math.round(report.totals.salesNet * 100));
+  await expect(card('Total REM').locator('details')).toHaveCount(0);
+  await expect(card('Total REM').locator('.kpi-meta')).toHaveCount(0);
   await expect(page.getByText('FACT · ventas sin IVA', { exact: true })).toHaveCount(0);
   await expect(card('Cartera al corte')).toHaveCount(0);
   await expect(page.locator('.kpi-card .kpi-meta')).toHaveCount(1);
   await expect(card('Ventas totales').locator('.kpi-meta')).toHaveText('3 órdenes creadas en el período');
 
   for (const [label, metric, key] of [
-    ['Total REM', 'rem', 'balanceRem'],
     ['Cartera al corte con IVA', 'portfolioAtCutoffWithIva', 'portfolioAtCutoffWithIva'],
     ['Cartera al corte sin IVA', 'portfolioAtCutoff', 'portfolioAtCutoff'],
     ['Retenciones totales pendientes por cobrar', 'retentions', 'pendingRetentions'],
@@ -317,6 +321,7 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   await expect(card('Total IVA').locator('.kpi-value')).toHaveText(money(rem.totals.iva));
   await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(0));
   await expect(card('Total FACT').locator('details')).toHaveCount(0);
+  await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(200000));
   await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(money(200000));
   await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(money(150000));
   await expect(card('Cartera al corte sin IVA').locator('.kpi-value')).toHaveText(money(150000));
@@ -335,13 +340,32 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(money(847200));
   await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(money(614000));
   await expect(card('Cartera al corte sin IVA').locator('.kpi-value')).toHaveText(money(500000));
-  const emptyRem = page.waitForResponse(response => {
-    const url = new URL(response.url());
-    return url.pathname === '/api/v1/reports/receivables' && url.searchParams.get('metric') === 'rem'
-      && url.searchParams.get('documentType') === 'FACT';
-  });
-  await card('Total REM').locator('summary').click();
-  expect((await (await emptyRem).json()).totalAmount).toBe(0);
-  await expect(card('Total REM')).toContainText('No hay órdenes pendientes para este concepto.');
+  await expect(card('Total REM').locator('details')).toHaveCount(0);
+  await page.getByLabel('Documento', { exact: true }).selectOption('ALL');
+  await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(200000));
+  const currentMonth = today.slice(0, 7);
+  for (const offset of [-1, 1]) {
+    const monthDate = new Date(`${currentMonth}-01T12:00:00Z`);
+    monthDate.setUTCMonth(monthDate.getUTCMonth() + offset);
+    const selectedMonth = monthDate.toISOString().slice(0, 7);
+    const changedMonth = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/v1/reports/sales' && url.searchParams.get('from') === `${selectedMonth}-01`
+        && url.searchParams.get('category') === 'SuperGiros' && !url.searchParams.has('documentType');
+    });
+    await page.getByLabel('Mes del reporte', { exact: true }).fill(selectedMonth);
+    const monthlyResponse = await changedMonth;
+    expect(monthlyResponse.status()).toBe(200);
+    const monthlyReport = await monthlyResponse.json();
+    expect(monthlyReport.totals.base - monthlyReport.totals.factBase).toBe(0);
+    await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(0));
+    if (offset > 0) {
+      // Las ventas REM no se acumulan desde meses anteriores; su cartera sí conserva el saldo pendiente.
+      await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(money(764000));
+    }
+  }
+  await page.getByLabel('Mes del reporte', { exact: true }).fill(currentMonth);
+  await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(200000));
+  await expect(card('Total REM').locator('details')).toHaveCount(0);
   expect(emptyOrderLists).toBeGreaterThan(0);
 });

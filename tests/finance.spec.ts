@@ -49,7 +49,7 @@ for (const account of ['adminmaster@intermedios.local', 'administracion@intermed
       await page.goto(path);
       const remCard = page.locator('.kpi-card').filter({ has: page.getByText(path === '/reports' ? 'Total REM' : 'Total cartera REM', { exact: true }) });
       const factCard = page.locator('.kpi-card').filter({ has: page.getByText(path === '/reports' ? 'Total FACT' : 'Total cartera FACT', { exact: true }) });
-      await expect(remCard.locator('.kpi-value')).toHaveText(formatCOP(75_000));
+      await expect(remCard.locator('.kpi-value')).toHaveText(formatCOP(path === '/reports' ? 100_000 : 75_000));
       await expect(factCard.locator('.kpi-value')).toHaveText(formatCOP(path === '/reports' ? 1_190_000 : 1_014_500));
       if (path === '/reports') {
         const portfolioWithIva = page.locator('.kpi-card').filter({ has: page.getByText('Cartera al corte con IVA', { exact: true }) });
@@ -130,6 +130,61 @@ test('TOTAL FACT respeta el mes predeterminado y los períodos seleccionados sin
   await verifyPeriod(350_000, 66_500, 11_000, 207_500);
 });
 
+test('TOTAL REM suma las REM completas del período, incluidas las pagadas, sin acumular otros meses', async ({ page, context }) => {
+  const month = (offset: number) => {
+    const date = new Date(`${today().slice(0, 7)}-01T12:00:00Z`);
+    date.setUTCMonth(date.getUTCMonth() + offset);
+    return date.toISOString().slice(0, 7);
+  };
+  const previousMonth = month(-1), currentMonth = month(0), nextMonth = month(1);
+  const datedRem = (id: string, number: number, value: number, date: string): WorkOrder => ({
+    ...makeOrder(id, number, value), createdAt: `${date}T00:00:00-05:00`, updatedAt: `${date}T00:00:00-05:00`,
+  });
+  const previousRem = datedRem('previous-rem', 201, 1_000_000, `${previousMonth}-10`);
+  previousRem.payments = [{ id: 'previous-rem-payment', date: `${previousMonth}-11`, amount: 400_000, recordedBy: 'u-master' }];
+  const partialRem = datedRem('partial-rem', 202, 100_000, `${currentMonth}-10`);
+  partialRem.payments = [{ id: 'partial-rem-payment', date: `${currentMonth}-11`, amount: 25_000, recordedBy: 'u-master' }];
+  const paidRem = datedRem('paid-rem', 203, 150_000, `${currentMonth}-20`);
+  paidRem.payments = [{ id: 'paid-rem-payment', date: `${currentMonth}-21`, amount: 150_000, recordedBy: 'u-master' }];
+  const futureRem = datedRem('future-rem', 204, 900_000, `${nextMonth}-10`);
+  const data = makeSeed();
+  data.orders = [previousRem, partialRem, paidRem, futureRem];
+  await context.addInitScript(({ key, data }) => localStorage.setItem(key, JSON.stringify(data)), { key: DATA_KEY, data });
+  await login(page);
+  await page.goto('/reports');
+  const card = (label: string) => page.locator('.kpi-card').filter({ has: page.getByText(label, { exact: true }) });
+  const rem = card('Total REM');
+  await expect(page.getByLabel('Mes del reporte', { exact: true })).toHaveValue(currentMonth);
+  await expect(rem.locator('.kpi-value')).toHaveText(formatCOP(250_000));
+  await expect(rem.locator('details')).toHaveCount(0);
+  await expect(rem.locator('.kpi-meta')).toHaveCount(0);
+  for (const label of ['Cartera al corte con IVA', 'Cartera al corte sin IVA']) {
+    await expect(card(label).locator('.kpi-value')).toHaveText(formatCOP(675_000));
+  }
+  await page.getByLabel('Mes del reporte', { exact: true }).fill(previousMonth);
+  await expect(rem.locator('.kpi-value')).toHaveText(formatCOP(1_000_000));
+  await page.getByLabel('Mes del reporte', { exact: true }).fill(nextMonth);
+  await expect(rem.locator('.kpi-value')).toHaveText(formatCOP(900_000));
+  await page.getByRole('button', { name: 'Día', exact: true }).click();
+  await page.getByLabel('Fecha del reporte', { exact: true }).fill(`${currentMonth}-10`);
+  await expect(rem.locator('.kpi-value')).toHaveText(formatCOP(100_000));
+  await page.getByRole('button', { name: 'Rango de fechas', exact: true }).click();
+  await page.getByLabel('Hasta', { exact: true }).fill(`${currentMonth}-20`);
+  await expect(rem.locator('.kpi-value')).toHaveText(formatCOP(250_000));
+  await page.getByLabel('Desde', { exact: true }).fill(`${currentMonth}-11`);
+  await expect(rem.locator('.kpi-value')).toHaveText(formatCOP(150_000));
+  await page.getByRole('button', { name: 'Rango de meses', exact: true }).click();
+  await page.getByLabel('Desde', { exact: true }).fill(previousMonth);
+  await expect(rem.locator('.kpi-value')).toHaveText(formatCOP(1_250_000));
+  await page.getByLabel('Documento', { exact: true }).selectOption('FACT');
+  await expect(rem.locator('.kpi-value')).toHaveText(formatCOP(0));
+  await expect(rem.locator('details')).toHaveCount(0);
+  await page.getByLabel('Documento', { exact: true }).selectOption('REM');
+  await expect(rem.locator('.kpi-value')).toHaveText(formatCOP(1_250_000));
+  await page.getByLabel('Categoría', { exact: true }).selectOption('Otras');
+  await expect(rem.locator('.kpi-value')).toHaveText(formatCOP(0));
+});
+
 test('reporte separa FACT e IVA y registra certificado sin modificar pagos', async ({ page }) => {
   await login(page);
   await page.goto('/reports');
@@ -167,18 +222,18 @@ test('Administración consulta cartera sin IVA más retenciones y la actualiza a
   await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(formatCOP(442_675));
   await expect(totalIva.locator('.kpi-value')).toHaveText(formatCOP(57_000));
   await expect(card('Total FACT').locator('.kpi-value')).toHaveText(formatCOP(357_000));
+  await expect(card('Total REM').locator('.kpi-value')).toHaveText(formatCOP(100_000));
   await expect(retentions.locator('.kpi-value')).toHaveText(formatCOP(14_325));
   await expect(card('Cartera al corte')).toHaveCount(0);
   await expect(page.locator('.kpi-card .kpi-meta')).toHaveCount(1);
   await expect(card('Ventas totales').locator('.kpi-meta')).toHaveText('3 órdenes creadas en el período');
   await page.screenshot({ path: testInfo.outputPath('reportes-desktop.png'), fullPage: true });
-  for (const label of ['Ventas totales', 'Total IVA', 'Pagos recibidos', 'Total FACT']) {
+  for (const label of ['Ventas totales', 'Total IVA', 'Pagos recibidos', 'Total REM', 'Total FACT']) {
     await expect(card(label).locator('details')).toHaveCount(0);
   }
   for (const [label, amount, numbers] of [
     ['Cartera al corte con IVA', 206_500, ['OT #0050', 'OT #0049', 'OT #0009']],
     ['Cartera al corte sin IVA', 178_000, ['OT #0050', 'OT #0049', 'OT #0009']],
-    ['Total REM', 75_000, ['OT #0050']],
     ['Retenciones totales pendientes por cobrar', 14_325, ['OT #0049', 'OT #0009']],
   ] as const) {
     const metric = card(label);
@@ -208,8 +263,8 @@ test('Administración consulta cartera sin IVA más retenciones y la actualiza a
   await page.getByLabel('Documento', { exact: true }).selectOption('FACT');
   await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(formatCOP(125_500));
   await expect(card('Cartera al corte sin IVA').locator('.kpi-value')).toHaveText(formatCOP(97_000));
-  await card('Total REM').locator('summary').click();
-  await expect(card('Total REM').getByText('No hay órdenes pendientes para este concepto.')).toBeVisible();
+  await expect(card('Total REM').locator('.kpi-value')).toHaveText(formatCOP(0));
+  await expect(card('Total REM').locator('details')).toHaveCount(0);
   await page.getByLabel('Documento', { exact: true }).selectOption('ALL');
   await page.setViewportSize({ width: 320, height: 760 });
   await card('Cartera al corte con IVA').locator('summary').click();
