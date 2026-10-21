@@ -83,6 +83,7 @@ export async function salesReport(db: Database, auth: AuthSession, input: SalesQ
       SELECT ${periodSums},
         coalesce(sum(balance) FILTER (WHERE document_type = 'REM'), 0) AS "balanceRem",
         coalesce(sum(balance) FILTER (WHERE document_type = 'FACT'), 0) AS "balanceFact",
+        coalesce(sum(gross) FILTER (WHERE document_type = 'FACT'), 0) AS "factGrossAtCutoff",
         coalesce(sum("pendingReteFuente" + "pendingReteIva" + "pendingIca"), 0) AS "pendingRetentions",
         (SELECT coalesce(sum(p.amount), 0) FROM payments p JOIN money m ON m.id = p.order_id
           WHERE p.date BETWEEN $1::date AND $2::date) AS received
@@ -128,7 +129,7 @@ export async function salesReport(db: Database, auth: AuthSession, input: SalesQ
       FROM periods d LEFT JOIN sales s ON s.period = d.period LEFT JOIN receipts r ON r.period = d.period ORDER BY d.period`, params)).rows;
     return {
       from: input.from, to: input.to, groupBy: input.groupBy,
-      totals: numbers(totals, [...moneyKeys, 'balanceRem', 'balanceFact', 'pendingRetentions']),
+      totals: numbers(totals, [...moneyKeys, 'balanceRem', 'balanceFact', 'factGrossAtCutoff', 'pendingRetentions']),
       categories: categories.map(category => ({ category, ...numbers(categoryRows.find(row => row.category === category), moneyKeys) })),
       documents: (['REM', 'FACT'] as const).map(documentType => ({ documentType,
         ...numbers(documentRows.find(row => row.documentType === documentType),

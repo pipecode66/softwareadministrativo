@@ -79,7 +79,7 @@ describe('reportes con reglas financieras por orden', () => {
     const january = await get('/reports/sales?from=2024-01-01&to=2024-01-31&groupBy=month');
     expect(january.status).toBe(200);
     expect(january.body.totals).toMatchObject({
-      count: 3, base: 250000, factBase: 200000, iva: 38000, factGross: 238000,
+      count: 3, base: 250000, factBase: 200000, iva: 38000, factGross: 238000, factGrossAtCutoff: 238000,
       reteFuente: 10000, reteIva: 6000, ica: 4000, retentions: 20000,
       collectible: 288000, collectibleWithoutIva: 250000,
       received: 50000, balance: 238000, balanceWithoutIva: 200000, ivaDue: 38000,
@@ -89,7 +89,7 @@ describe('reportes con reglas financieras por orden', () => {
     expect(january.body.timeline[0]).toMatchObject({ period: '2024-01', received: 50000 });
     const february = await get('/reports/sales?from=2024-02-01&to=2024-02-29&groupBy=month');
     expect(february.status).toBe(200);
-    expect(february.body.totals).toMatchObject({ count: 0, base: 0, received: 109000,
+    expect(february.body.totals).toMatchObject({ count: 0, base: 0, received: 109000, factGross: 0, factGrossAtCutoff: 238000,
       balance: 129000, balanceWithoutIva: 110000, ivaDue: 19000,
       balanceRem: 50000, balanceFact: 79000, pendingRetentions: 20000 });
     expect(february.body.timeline[0]).toMatchObject({ period: '2024-02', count: 0, received: 109000 });
@@ -115,6 +115,17 @@ describe('reportes con reglas financieras por orden', () => {
       .toMatchObject({ balance: 0, financialRule: 'NEW', pendingReteFuente: 5000 });
   });
 
+  it('TOTAL FACT no cambia al retirar retenciones o abonos y conserva FACT pagadas de períodos anteriores', async () => {
+    const before = await get('/reports/sales?from=2024-02-01&to=2024-02-29');
+    expect(before.status).toBe(200);
+    expect(before.body.totals).toMatchObject({ factGross: 0, factGrossAtCutoff: 238000, balanceFact: 79000 });
+    await db.query('UPDATE orders SET rete_fuente=0, rete_iva=0, ica=0 WHERE document_type=\'FACT\'');
+    await db.query('DELETE FROM payments');
+    const withoutDeductions = await get('/reports/sales?from=2024-02-01&to=2024-02-29');
+    expect(withoutDeductions.status).toBe(200);
+    expect(withoutDeductions.body.totals).toMatchObject({ factGross: 0, factGrossAtCutoff: 238000, balanceFact: 238000 });
+  });
+
   it('filtra la cartera REM y FACT por categoría y documento y devuelve cero sin coincidencias', async () => {
     const otherRemId = await addOrder({ documentType: 'REM', value: 80000, rule: 'NEW', category: 'Otras' });
     await db.query(`INSERT INTO payments (id,order_id,date,amount,recorded_by,request_key,method)
@@ -136,6 +147,7 @@ describe('reportes con reglas financieras por orden', () => {
       expect(sales.status).toBe(200);
       expect(portfolio.status).toBe(200);
       expect(sales.body.totals).toMatchObject({ balanceRem: rem, balanceFact: fact, balance: rem + fact });
+      expect(sales.body.totals.factGrossAtCutoff).toBe(fact > 0 ? 238000 : 0);
       expect(portfolio.body).toMatchObject({ totalBalanceRem: rem, totalBalanceFact: fact, totalBalance: rem + fact });
     }
 
@@ -145,7 +157,7 @@ describe('reportes con reglas financieras por orden', () => {
     ]);
     expect(salesBeforeOrders.status).toBe(200);
     expect(portfolioBeforeOrders.status).toBe(200);
-    expect(salesBeforeOrders.body.totals).toMatchObject({ balanceRem: 0, balanceFact: 0 });
+    expect(salesBeforeOrders.body.totals).toMatchObject({ balanceRem: 0, balanceFact: 0, factGrossAtCutoff: 0 });
     expect(portfolioBeforeOrders.body).toMatchObject({ totalBalanceRem: 0, totalBalanceFact: 0 });
   });
 

@@ -258,7 +258,7 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   const reportResponse = await filteredReport;
   expect(reportResponse.status()).toBe(200);
   const report = await reportResponse.json();
-  expect(report.totals).toMatchObject({ base: 950000, iva: 142500, received: 328500,
+  expect(report.totals).toMatchObject({ base: 950000, iva: 142500, received: 328500, factGrossAtCutoff: 892500,
     balanceRem: 150000, balanceFact: 568700, balanceWithIva: 718700,
     balanceWithoutIva: 604700, pendingRetentions: 45300 });
   const money = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);
@@ -267,11 +267,12 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   await expect(card('Total IVA').locator('details')).toHaveCount(0);
   await expect(card('Ventas · valor base').locator('details')).toHaveCount(0);
   await expect(card('Pagos recibidos').locator('details')).toHaveCount(0);
+  await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(report.totals.factGrossAtCutoff));
+  await expect(card('Total FACT').locator('details')).toHaveCount(0);
   await expect(page.getByText('FACT · ventas sin IVA', { exact: true })).toHaveCount(0);
 
   for (const [label, metric, key] of [
     ['Total REM', 'rem', 'balanceRem'],
-    ['Total FACT', 'fact', 'balanceFact'],
     ['Cartera al corte con IVA', 'balanceWithIva', 'balanceWithIva'],
     ['Cartera al corte sin IVA', 'balanceWithoutIva', 'balanceWithoutIva'],
     ['Retenciones totales pendientes por cobrar', 'retentions', 'pendingRetentions'],
@@ -311,14 +312,7 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   const rem = await remResponse.json();
   await expect(card('Total IVA').locator('.kpi-value')).toHaveText(money(rem.totals.iva));
   await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(0));
-  const emptyFact = page.waitForResponse(response => {
-    const url = new URL(response.url());
-    return url.pathname === '/api/v1/reports/receivables' && url.searchParams.get('metric') === 'fact'
-      && url.searchParams.get('documentType') === 'REM';
-  });
-  await card('Total FACT').locator('summary').click();
-  expect((await (await emptyFact).json()).totalAmount).toBe(0);
-  await expect(card('Total FACT')).toContainText('No hay órdenes pendientes para este concepto.');
+  await expect(card('Total FACT').locator('details')).toHaveCount(0);
 
   const factReport = page.waitForResponse(response => {
     const url = new URL(response.url());
@@ -329,14 +323,15 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   expect(factResponse.status()).toBe(200);
   const fact = await factResponse.json();
   await expect(card('Total IVA').locator('.kpi-value')).toHaveText(money(fact.totals.iva));
+  await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(fact.totals.factGrossAtCutoff));
   await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(0));
-  const factDetails = page.waitForResponse(response => {
+  const emptyRem = page.waitForResponse(response => {
     const url = new URL(response.url());
-    return url.pathname === '/api/v1/reports/receivables' && url.searchParams.get('metric') === 'fact'
+    return url.pathname === '/api/v1/reports/receivables' && url.searchParams.get('metric') === 'rem'
       && url.searchParams.get('documentType') === 'FACT';
   });
-  await card('Total FACT').locator('summary').click();
-  expect((await (await factDetails).json()).totalAmount).toBe(fact.totals.balanceFact);
-  await expect(card('Total FACT').locator('ol.analytics-receivable-list > li')).toHaveCount(1);
+  await card('Total REM').locator('summary').click();
+  expect((await (await emptyRem).json()).totalAmount).toBe(0);
+  await expect(card('Total REM')).toContainText('No hay órdenes pendientes para este concepto.');
   expect(emptyOrderLists).toBeGreaterThan(0);
 });

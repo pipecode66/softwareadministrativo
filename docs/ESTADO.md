@@ -4,6 +4,8 @@ Actualizado: 2026-10-21.
 
 ## Estado actual
 
+Tras la aclaración posterior del 21/10, **TOTAL FACT en Reportes** suma el valor completo con IVA de todas las OT FACT hasta el corte, incluidas las pagadas, sin afectar el importe con abonos ni retenciones. Se añadió `totals.factGrossAtCutoff` en el servidor y su equivalente local, manteniendo separados el bruto del período y la cartera real. Se retiró únicamente de este cuadro el desplegable de deuda, porque ya no representa un saldo pendiente. TOTAL IVA mantiene su criterio del período. No se modificaron la pantalla Cartera, las OT, pagos ni retenciones guardados; no requiere SQL. Archivos: `src/pages/Reports.tsx`, `src/data/api.ts`, `server/src/reports/service.ts`, pruebas financieras locales/API/E2E y documentos de continuidad.
+
 El 21/10/2026 se reorganizó Reportes en ocho cuadros principales con los nombres solicitados. TOTAL IVA muestra el IVA original de las FACT del período, independiente de abonos/retenciones; el reemplazo de IVA pendiente muestra la suma actual de retenciones pendientes de certificado. Las dos carteras se presentan juntas. Cada cuadro de cobro (cinco principales y tres individuales de retenciones) despliega sus OT positivas por número descendente, con cliente, descripción, importe, paginación y enlace. Se añadió consulta de detalle protegida y se unificaron filtros de categoría/documento con certificados; marcar un certificado actualiza también el total superior. El gráfico remoto usa agregados del servidor y los cuadros evitan sustituir la carga/error remoto por totales parciales locales. No se modificaron reglas de cobro, datos productivos ni la pantalla Cartera; no requiere SQL.
 
 Archivos de este tramo: `src/pages/Reports.tsx`, `src/components/ReceivableKpi.tsx`, `src/components/ui.tsx`, `src/domain/receivables.ts`, `src/data/api.ts`, `src/pages/analytics.css`, `server/src/reports/{router,schemas,service}.ts`, `server/tests/reports_finance.test.ts`, `tests/{analytics.test,finance.spec,api-e2e.spec}.ts` y documentación de continuidad.
@@ -46,10 +48,11 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 
 ## Funcionalidades terminadas en este tramo
 
+- Total FACT en Reportes muestra base + IVA de todas las FACT hasta el corte sin descuentos; los saldos de cartera y las reglas de cobro permanecen intactos.
 - Reportes resume sus cuadros principales; Total IVA conserva únicamente el IVA original de las FACT seleccionadas y Retenciones totales pendientes por cobrar suma los certificados pendientes de RETEFUENTE, RETE IVA e ICA.
 - Los cuadros de cobro despliegan sus OT por número descendente con importe y enlace; se incluyen únicamente las que aportan saldo a ese concepto, incluso FACT pagadas con retenciones pendientes de certificado.
 - Categoría/documento/corte coinciden entre cuadros, listas y certificados. El registro de certificados refresca los totales sin alterar el IVA facturado ni el saldo en efectivo.
-- Total cartera REM y Total cartera FACT disponibles en Reportes y Cartera para ambos perfiles administrativos, respetando fecha de corte, abonos y filtros.
+- Total cartera REM y Total cartera FACT disponibles en Cartera para ambos perfiles administrativos; en Reportes Total REM sigue siendo saldo, pero Total FACT es ahora el valor completo con IVA, no una deuda.
 - Adminmaster puede crear cuentas con el nuevo perfil Apoyo Comercial.
 - Apoyo Comercial entra directamente a Nueva OT y no recibe otros módulos ni buscador global de órdenes.
 - Puede buscar clientes existentes y crear clientes nuevos dentro del formulario, sin abrir el directorio o sus fichas.
@@ -138,6 +141,8 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 
 ## Verificación local
 
+- Ajuste posterior de Total FACT del 21/10: frontend 169/169, backend completo 289/289 y pruebas financieras dirigidas del servidor 12/12; ambos builds (con TypeScript) y `git diff --check` aprobados. Los casos comprueban FACT históricas/pagadas, independencia de abonos y retenciones, separación del bruto del período, filtros y corte.
+- Ajuste posterior de Total FACT: E2E financiero local 6/6 y E2E con API real/PGlite aislado 1/1. Ambos perfiles administrativos ven el bruto completo en Reportes, mientras Cartera conserva la deuda real. Se comprueban ceros al filtrar REM, ausencia de desplegable de deuda en Total FACT, certificados sin efecto en IVA/cartera y móvil 320 px; captura revisada. No se accedió a producción.
 - Tramo 21/10: frontend 168/168 y backend 288/288; pruebas financieras dirigidas 11/11. Ambos typecheck y builds aprobados. Se verifican IVA de 2 FACT × $150.000 = $57.000, conciliación de cada detalle con su cuadro, certificados parciales/recibidos, reglas NEW/LEGACY, corte, filtros y 53 OT paginadas por número descendente.
 - Tramo 21/10: seis casos E2E financieros locales aprobados (cuatro en el recorrido inicial y dos repetidos tras colisión de archivos de traza entre runners concurrentes). Se verificaron Administración/Adminmaster, ausencia de desplegables en ventas/pagos/IVA, actualización de retenciones sin alterar cobros, filtros, cuadro vacío, carteras juntas y móvil 320 px. Capturas locales revisadas.
 - Tramo 21/10: prueba E2E dirigida API real 1/1 con PGlite efímero: aun con la caché de órdenes vacía, los cinco cuadros principales de cobro y sus desgloses concuerdan con respuestas del servidor; se comprueban importes, enlaces, orden y filtros. Sin consultas a producción ni evidencia del despliegue posterior al push.
@@ -216,7 +221,8 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Desglose de cartera REM y FACT del 20/10 | 1 | 0 |
 | Resumen y nombres de cuadros de Reportes del 21/10 | 1 | 0 |
 | Desplegables de OT por concepto de cobro del 21/10 | 1 | 1 |
-| **Acumulado** | **53** | **32** |
+| Ajuste de Total FACT bruto independiente de pagos y retenciones del 21/10 | 1 | 0 |
+| **Acumulado** | **54** | **32** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
@@ -248,6 +254,8 @@ Los cuadros de cartera REM y FACT se consideran un cambio menor: desglosan un sa
 
 El resumen de cuadros del 21/10 es un cambio menor de presentación y agregación existente. El detalle de OT por concepto sí se considera significativo porque añade una consulta financiera paginada y protegida, filtros compartidos, seguimiento por OT y acceso directo desde cada cuadro. Las correcciones de coherencia y actualización de certificados forman parte de esa entrega y no se cuentan aparte.
 
+La aclaración posterior de Total FACT bruto se cuenta como un ajuste menor de la métrica: no cambia datos comerciales, cobros ni responsabilidades del flujo productivo.
+
 ## Pendiente para producción
 
 1. Ejecutar manualmente `server/migrations/012_disable_order_deletion.sql` en Supabase antes de publicar este código.
@@ -267,6 +275,6 @@ npm test
 npm --prefix server run typecheck
 npm --prefix server test
 $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright\chromium-1217\chrome-win64\chrome.exe'
-npx playwright test tests/finance.spec.ts --output=test-results/finance-report21
-npx playwright test --config playwright.api.config.ts --grep 'reportes y desgloses' --output=test-results/api-report21
+npx playwright test tests/finance.spec.ts --output=test-results/factgross-local
+npx playwright test --config playwright.api.config.ts --grep 'reportes y desgloses' --output=test-results/factgross-api
 ```
