@@ -237,6 +237,7 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   expect(clientResponse.status(), await clientResponse.text()).toBe(201);
   const { client } = await clientResponse.json();
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  let retainedFact: { id: string; number: number } | undefined;
   for (const [documentType, value, received] of [['FACT', 600000, 100000], ['FACT', 150000, 178500], ['REM', 200000, 50000]] as const) {
     const description = `Trabajo ${documentType} de ${value} para reporte remoto`;
     const created = await page.request.post('/api/v1/orders', { headers, data: {
@@ -246,6 +247,8 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
       initialPayment: { date: today, amount: received, method: 'EFECTIVO' },
     } });
     expect(created.status(), await created.text()).toBe(201);
+    const result = await created.json();
+    if (documentType === 'FACT' && value === 600000) retainedFact = result.order;
   }
   const initialReport = page.waitForResponse(response => response.url().includes('/api/v1/reports/sales') && response.status() === 200);
   await page.goto('/reports');
@@ -268,10 +271,12 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(money(report.totals.salesNet));
   await expect(card('Ventas totales').locator('details')).toHaveCount(0);
   await expect(card('Pagos recibidos').locator('details')).toHaveCount(0);
-  await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(report.totals.factGross));
+  const factNet = Math.round((report.totals.factGross - report.totals.retentions) * 100) / 100;
+  expect(factNet).toBe(847200);
+  await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(factNet));
   await expect(card('Total FACT').locator('details')).toHaveCount(0);
   await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(200000));
-  expect(Math.round((200000 + report.totals.factGross - report.totals.retentions) * 100))
+  expect(Math.round((200000 + factNet) * 100))
     .toBe(Math.round(report.totals.salesNet * 100));
   await expect(card('Total REM').locator('details')).toHaveCount(0);
   await expect(card('Total REM').locator('.kpi-meta')).toHaveCount(0);
@@ -335,7 +340,7 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   expect(factResponse.status()).toBe(200);
   const fact = await factResponse.json();
   await expect(card('Total IVA').locator('.kpi-value')).toHaveText(money(fact.totals.iva));
-  await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(fact.totals.factGross));
+  await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(847200));
   await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(0));
   await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(money(847200));
   await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(money(614000));
@@ -367,5 +372,25 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   await page.getByLabel('Mes del reporte', { exact: true }).fill(currentMonth);
   await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(200000));
   await expect(card('Total REM').locator('details')).toHaveCount(0);
+  // Un certificado recibido reduce pendientes, no vuelve a sumar retenciones a las ventas.
+  const certificate = page.getByRole('checkbox', { name: `Certificado RETEFUENTE recibido para OT #${retainedFact!.number}`, exact: true });
+  await certificate.click();
+  await expect(certificate).toBeChecked();
+  await expect(card('Retenciones totales pendientes por cobrar').locator('.kpi-value')).toHaveText(money(21300));
+  await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(847200));
+  await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(money(1047200));
+  // Un abono adicional sí reduce deuda, pero nunca el valor neto de la venta FACT.
+  const payment = await page.request.post(`/api/v1/orders/${retainedFact!.id}/payments`, {
+    headers, data: { date: today, amount: 10000, method: 'EFECTIVO', requestId: randomUUID() },
+  });
+  expect(payment.status(), await payment.text()).toBe(201);
+  await page.reload();
+  await page.getByLabel('Categoría', { exact: true }).selectOption('SuperGiros');
+  await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(200000));
+  await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(847200));
+  await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(money(1047200));
+  await expect(card('Pagos recibidos').locator('.kpi-value')).toHaveText(money(338500));
+  await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(money(730000));
+  await expect(card('Cartera al corte sin IVA').locator('.kpi-value')).toHaveText(money(616000));
   expect(emptyOrderLists).toBeGreaterThan(0);
 });

@@ -42,9 +42,10 @@ export function reportSummary(orders: WorkOrder[], range: DateRange, category: C
     const list = sales.filter(order => order.documentType === type).map(order => financials(order));
     return { type, count: list.length, base: sumMoney(list.map(money => money.base)), iva: sumMoney(list.map(money => money.iva)), gross: sumMoney(list.map(money => money.gross)), retentions: sumMoney(list.map(money => money.retentions)), collectible: sumMoney(list.map(money => money.collectible)) };
   });
+  const remBase = sumMoney(sales.filter(order => order.documentType === 'REM').map(order => order.value));
+  const factNet = netSales(sales.filter(order => order.documentType === 'FACT'));
   return { sales, received: paymentsInPeriod(relevant), base: sumMoney(sales.map(order => order.value)),
-    remBase: sumMoney(sales.filter(order => order.documentType === 'REM').map(order => order.value)),
-    salesNet: netSales(sales),
+    remBase, factNet, salesNet: sumMoney([remBase, factNet]),
     factBase: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => order.value)),
     iva: sumMoney(sales.map(order => financials(order).iva)),
     factGross: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => financials(order).gross)),
@@ -210,6 +211,7 @@ export function ReportsPage() {
     remBase: sumMoney([remoteReport.totals.base, -remoteReport.totals.factBase]),
     salesNet: remoteReport.totals.salesNet,
     iva: remoteReport.totals.iva, factGross: remoteReport.totals.factGross,
+    factNet: sumMoney([remoteReport.totals.factGross, -remoteReport.totals.retentions]),
     balance: remoteReport.totals.balanceWithIva, balanceWithoutIva: remoteReport.totals.balanceWithoutIva, ivaDue: remoteReport.totals.ivaDue,
     balanceRem: remoteReport.totals.balanceRem, balanceFact: remoteReport.totals.balanceFact,
     pendingRetentions: remoteReport.totals.pendingRetentions,
@@ -218,7 +220,7 @@ export function ReportsPage() {
     categories: remoteReport.categories.map(row => ({ name: row.category, count: row.count, base: row.base, salesNet: row.salesNet, iva: row.iva, received: row.received, balance: row.balance, portfolioAtCutoff: row.portfolioAtCutoff, portfolioAtCutoffWithIva: row.portfolioAtCutoffWithIva })),
     documents: remoteReport.documents.map(row => ({ type: row.documentType, count: row.count, base: row.base, iva: row.iva, gross: row.gross, retentions: row.retentions, collectible: row.collectible })),
   } : local;
-  const { sales, received, salesNet, iva, remBase, factGross, portfolioAtCutoff, portfolioAtCutoffWithIva, pendingRetentions, categories, documents } = report;
+  const { sales, received, salesNet, iva, remBase, factNet, portfolioAtCutoff, portfolioAtCutoffWithIva, pendingRetentions, categories, documents } = report;
   const ready = !usingApi || Boolean(remoteReport);
   const moneyValue = (amount: number) => ready ? formatCOP(amount) : '—';
   const debtQuery = (metric: ReceivableMetric): ReceivableQuery => ({ cutoff: range.to, metric,
@@ -240,7 +242,7 @@ export function ReportsPage() {
     </div>
     <div className="metrics-grid analytics-summary-metrics">
       <KpiCard label="Total REM" value={moneyValue(remBase)} icon={Wallet} tone="orange" />
-      <KpiCard label="Total FACT" value={moneyValue(factGross)} icon={ReceiptText} tone="blue" />
+      <KpiCard label="Total FACT" value={moneyValue(factNet)} icon={ReceiptText} tone="blue" />
       <ReceivableKpi key={`${queryKey}|retentions`} label="Retenciones totales pendientes por cobrar" amount={ready ? pendingRetentions : null} icon={FileCheck2} tone="blue" query={debtQuery('retentions')} revision={debtRevision} />
     </div>
     {ready && <><div className="analytics-main-grid"><Card><CardHeader title="Ventas en el tiempo" description="Fecha de creación de la OT · valores antes de IVA" /><SalesChart orders={sales} range={range} remoteTimeline={remoteReport?.timeline} /></Card><Card><CardHeader title="Ventas por categoría" description="Participación sobre el valor base del período" /><CategoryChart orders={sales} categoryRows={categories} /></Card></div>

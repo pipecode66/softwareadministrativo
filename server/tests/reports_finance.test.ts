@@ -174,7 +174,7 @@ describe('reportes con reglas financieras por orden', () => {
     expect(withoutDeductions.body.totals).toMatchObject({ factGross: 0, factGrossAtCutoff: 238000, balanceFact: 238000 });
   });
 
-  it('TOTAL FACT usa solo el período inclusivo de Bogotá, con filtros y sin efectos de abonos o retenciones', async () => {
+  it('conserva FACT bruto del período y permite obtener FACT neto sin duplicar retenciones', async () => {
     await addOrder({ documentType: 'FACT', value: 100000, rule: 'NEW', category: 'Otras',
       createdAt: '2023-12-15T12:00:00-05:00' });
     await addOrder({ documentType: 'FACT', value: 40000, rule: 'NEW', category: 'Otras',
@@ -208,6 +208,9 @@ describe('reportes con reglas financieras por orden', () => {
       const report = await get(`/reports/sales?${dates}${filter}`);
       expect(report.status).toBe(200);
       expect(report.body.totals.factGross).toBe(gross);
+      const factNet = Math.round((report.body.totals.factGross - report.body.totals.retentions) * 100) / 100;
+      const remBase = Math.round((report.body.totals.base - report.body.totals.factBase) * 100) / 100;
+      expect(Math.round((remBase + factNet) * 100)).toBe(Math.round(report.body.totals.salesNet * 100));
       expect(report.body.documents.find((item: { documentType: string }) => item.documentType === 'FACT').gross).toBe(gross);
       expect(report.body.timeline.reduce((sum: number, row: { factGross: number }) => sum + row.factGross, 0)).toBe(gross);
     }
@@ -216,12 +219,16 @@ describe('reportes con reglas financieras por orden', () => {
     const before = await get(path);
     expect(before.body.totals).toMatchObject({ factBase: 500000, iva: 95000, factGross: 595000,
       retentions: 50000, received: 268000 });
+    expect(before.body.totals.factGross - before.body.totals.retentions).toBe(545000);
+    expect(before.body.totals.salesNet).toBe(545000);
     await db.query('UPDATE orders SET rete_fuente=0, rete_iva=0, ica=0 WHERE id IN ($1,$2)', [first, last]);
     await db.query('DELETE FROM payments WHERE order_id IN ($1,$2)', [first, last]);
     const after = await get(path);
     expect(after.status).toBe(200);
     expect(after.body.totals).toMatchObject({ factBase: 500000, iva: 95000, factGross: 595000,
       retentions: 0, received: 0 });
+    expect(after.body.totals.factGross - after.body.totals.retentions).toBe(595000);
+    expect(after.body.totals.salesNet).toBe(595000);
     expect(after.body.totals.balanceFact).not.toBe(before.body.totals.balanceFact);
   });
 

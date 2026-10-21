@@ -4,6 +4,8 @@ Actualizado: 2026-10-21.
 
 ## Estado actual
 
+Confirmación final del 21/10: **Total FACT se muestra neto (base + IVA − retenciones) y Ventas totales es exactamente Total REM + Total FACT**, sin otra resta. La vista local calcula `factNet` a partir de las FACT del período y suma las dos partes; la remota deriva `factNet` en céntimos de los campos existentes `factGross − retentions`, conservando `salesNet` canónico del servidor. El descuento no depende de abonos ni certificados recibidos. El cuadro de retenciones pendientes queda independiente. Se mantienen período, filtros, carteras, Total IVA, pagos y ausencia de descripciones. No cambia SQL, contrato API ni cobros almacenados; no requiere migración. Sustituye únicamente la presentación bruta de FACT de los tramos anteriores. Archivos: `src/pages/Reports.tsx`, pruebas financieras/E2E y documentos. Sigue el contador 59/32: aclaración de las métricas ya entregadas.
+
 Última confirmación del 21/10: **Total REM ya muestra ventas REM completas del período sin restar abonos**, incluidas las pagadas, y no saldo pendiente. El cuadro usa `remBase` en el adaptador local o la diferencia en céntimos `totals.base − totals.factBase` en API, sin cambiar consultas/contrato del servidor. Se retiró de ese cuadro el desplegable de deuda y se conservó la ausencia de descripción inferior. Las carteras REM siguen mostrando deuda acumulada tras pagos. Se revisó además Ventas totales: su fórmula sigue siendo `Total REM + Total FACT − retenciones del período`; no debe igualarse al bruto REM + FACT ni a saldos de cartera. Se añadió conciliación explícita con céntimos y un ejemplo sintético que reproduce la diferencia reportada sin afirmar acceso a datos productivos. Archivos: `src/pages/Reports.tsx`, `tests/{analytics.test,finance.spec,api-e2e.spec}.ts`, `server/tests/reports_finance.test.ts` y documentación. No requiere SQL. Cierra la aclaración pendiente, sin incrementar el contador comercial (59 cambios, 32 significativos).
 
 Tramo anterior del 21/10: Ventas totales reemplaza Ventas · valor base y muestra `salesNet = base + IVA − retenciones` del período, conforme al mensaje más reciente del usuario. Pagos recibidos exige que creación de OT y fecha de pago pertenezcan ambas al período (también en categorías/serie temporal); los pagos de OT anteriores siguen almacenados y descontando cartera. Se restauran Cartera al corte con IVA (`balanceWithIva + pendingRetentions`) y sin IVA (`balanceWithoutIva + pendingRetentions`), ambas acumuladas y con desglose coincidente por OT. La columna de cartera por categoría usa la versión con IVA. Se quitaron las descripciones inferiores de todos los cuadros de Reportes salvo el conteo de órdenes de ventas. Total FACT continúa bruto por período, sin retenciones. No se cambian cobros históricos, OT ni pagos; no requiere SQL. La aclaración sobre Total REM, pendiente en ese momento, ya quedó resuelta en el tramo más reciente descrito arriba. Archivos: `src/pages/{Reports.tsx,analytics.css}`, `src/domain/receivables.ts`, `src/data/api.ts`, `server/src/reports/{schemas,service}.ts`, pruebas financieras/E2E y documentación.
@@ -56,9 +58,9 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 
 ## Funcionalidades terminadas en este tramo
 
-- Total REM y Total FACT son ventas completas del período, independientes de abonos. Sus valores brutos menos retenciones del período concilian con Ventas totales. La deuda pendiente se mantiene exclusivamente en los indicadores de cartera.
+- Total REM es el valor completo de REM del período; Total FACT ya incluye IVA menos retenciones del período. Su suma directa coincide con Ventas totales, sin descontar abonos ni volver a restar retenciones. La deuda pendiente permanece en cartera.
 - Reportes muestra Ventas totales con IVA menos retenciones, Pagos recibidos de OT y pagos del período y dos carteras acumuladas con/sin IVA, ambas con retenciones pendientes y desglose por OT. Solo ventas conserva descripción inferior.
-- Total FACT en Reportes muestra base + IVA de todas las FACT del período seleccionado, respetando ambas fechas, sin descuentos; los saldos de cartera y las reglas de cobro permanecen intactos.
+- Total FACT en Reportes muestra base + IVA − retenciones de las FACT del período seleccionado, respetando ambas fechas y sin descontar abonos; los saldos de cartera y las reglas de cobro permanecen intactos.
 - Reportes resume sus cuadros principales; Total IVA conserva únicamente el IVA original de las FACT seleccionadas y Retenciones totales pendientes por cobrar suma los certificados pendientes de RETEFUENTE, RETE IVA e ICA.
 - Los cuadros de cobro despliegan sus OT por número descendente con importe y enlace; se incluyen únicamente las que aportan saldo a ese concepto, incluso FACT pagadas con retenciones pendientes de certificado.
 - Categoría/documento/corte coinciden entre cuadros, listas y certificados. El registro de certificados refresca los totales sin alterar el IVA facturado ni el saldo en efectivo.
@@ -151,6 +153,8 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 
 ## Verificación local
 
+- Confirmación de FACT neto del 21/10: frontend 173/173, pruebas financieras dirigidas del servidor 16/16, build frontend con TypeScript y `git diff --check` aprobados. Total FACT descuenta retenciones almacenadas una sola vez; la suma directa REM + FACT neto coincide con `salesNet`, incluyendo cifras grandes y céntimos. No se modifica código SQL ni contratos.
+- FACT neto: E2E local 8/8 y API real/PGlite 1/1 aprobados (tras adaptar el selector de certificado a su confirmación asíncrona). Cubren perfiles administrativos, mes/rangos/filtros, móvil 320 px y recepción de certificado más abono posterior sin modificar FACT neto ni ventas; cartera y pagos se actualizan independientemente. Sin acceso a producción ni comprobación del despliegue posterior.
 - Total REM del período y revisión de conciliación del 21/10: frontend 173/173, pruebas financieras dirigidas del servidor 16/16, build frontend con TypeScript y `git diff --check` aprobados. Se prueban REM pagadas/parciales, meses anteriores y posteriores, límites inclusivos de Bogotá, filtros, independencia de abonos y diferencia respecto a cartera. Se verifica `REM + FACT − retenciones del período = salesNet`, también con cifras de millones y céntimos en un ejemplo sintético.
 - Total REM: E2E local 8/8 y API real/PGlite 1/1 (repetida 1/1 tras añadir identidad de conciliación) aprobados. La API usa agregados canónicos aun con caché local vacía; no hay desplegable de deuda ni meta en REM, y las carteras se mantienen tras cambiar de período. Captura móvil revisada. No se consultó producción ni se confirmó despliegue posterior.
 - Últimas reglas de ventas/pagos/carteras del 21/10: frontend 171/171, backend 292/292 (15 financieras dirigidas), typecheck y builds frontend/servidor y `git diff --check` aprobados. Comprobadas ventas netas NEW/LEGACY sin efecto de abonos/certificados, pagos con doble condición de período, conservación de cartera histórica y conciliación de ambos desgloses.
@@ -287,6 +291,8 @@ Las cuatro solicitudes posteriores sobre ventas netas, descripciones, pagos del 
 
 La respuesta sobre Total REM completa la aclaración pendiente de esas mismas métricas; no se añade un cargo ni un cambio comercial por separado. La revisión posterior de Ventas totales comprueba la conciliación sin modificar su regla.
 
+La confirmación de Total FACT neto consolida la misma presentación: el descuento ya presente en ventas se refleja también en FACT, evitando descontarlo otra vez al sumar los dos cuadros. No incrementa contador comercial ni significativos.
+
 ## Pendiente para producción
 
 1. Ejecutar manualmente `server/migrations/012_disable_order_deletion.sql` en Supabase antes de publicar este código.
@@ -306,6 +312,6 @@ npm test
 npm --prefix server run typecheck
 npm --prefix server test
 $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright\chromium-1217\chrome-win64\chrome.exe'
-npx playwright test tests/finance.spec.ts --output=test-results/remperiod-local
-npx playwright test --config playwright.api.config.ts --grep 'reportes y desgloses' --output=test-results/remperiod-api-reconcile
+npx playwright test tests/finance.spec.ts --output=test-results/netfact-local
+npx playwright test --config playwright.api.config.ts --grep 'reportes y desgloses' --output=test-results/netfact-api
 ```
