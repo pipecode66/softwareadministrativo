@@ -3,6 +3,7 @@ import { monthEnd, periodMode } from '../src/components/PeriodFilter';
 import { materialConsumption } from '../src/pages/Materials';
 import { bulkAllocationPreview, portfolioAtCutoff } from '../src/pages/Portfolio';
 import { periodBuckets, reportSummary, sumMoney } from '../src/pages/Reports';
+import { receivableAmounts, receivableItems, type ReceivableMetric } from '../src/domain/receivables';
 import { MATERIALS } from '../src/domain/utils';
 import type { DateRange, WorkOrder } from '../src/domain/types';
 
@@ -94,6 +95,108 @@ describe('Criterios de reportes y cartera', () => {
     expect(portfolioAtCutoff([old, current], '2026-10-01').map(row => [row.order.id, row.money.balance])).toEqual([['current', 36_000]]);
     expect(portfolioAtCutoff([old], '2026-08-14')[0].money.balance).toBe(100_000);
     expect(portfolioAtCutoff([old], '2026-08-15')[0].money.balance).toBe(75_000);
+  });
+});
+
+describe('Detalle de cuadros pendientes de cobro', () => {
+  it('TOTAL IVA conserva el 19 % de dos FACT de $150.000 aunque tengan retenciones y abonos', () => {
+    const paidFact = order({ id: 'paid-fact', number: 50, value: 150_000, documentType: 'FACT', financialRule: 'NEW',
+      createdAt: '2026-09-10T12:00:00-05:00', reteFuente: 6_000, reteIva: 4_275, ica: 1_050,
+      payments: [payment('2026-09-11', 167_175)] });
+    const partialFact = order({ id: 'partial-fact', number: 49, value: 150_000, documentType: 'FACT', financialRule: 'NEW',
+      createdAt: '2026-09-12T12:00:00-05:00', payments: [payment('2026-09-13', 50_000)] });
+    const report = reportSummary([paidFact, partialFact, old], september);
+
+    expect(report.factBase).toBe(300_000);
+    expect(report.iva).toBe(57_000);
+    expect(report.balanceFact).toBe(128_500);
+    expect(report.pendingRetentions).toBe(11_325);
+    expect(reportSummary([paidFact, partialFact, old], september, 'ALL', 'REM').iva).toBe(0);
+  });
+
+  it('ordena las OT numéricamente de mayor a menor y excluye saldos cero del desplegable', () => {
+    const source = [
+      order({ id: 'two', number: 2, value: 20 }),
+      order({ id: 'fifty', number: 50, value: 50 }),
+      order({ id: 'nine', number: 9, value: 90 }),
+      order({ id: 'forty-nine', number: 49, value: 40 }),
+      order({ id: 'paid', number: 100, value: 100, payments: [payment('2026-09-15', 100)] }),
+    ];
+    const items = receivableItems(source, [], { cutoff: september.to, metric: 'balanceWithIva' });
+
+    expect(items.map(item => [item.number, item.amount])).toEqual([[50, 50], [49, 40], [9, 90], [2, 20]]);
+    expect(items.every(item => item.amount > 0)).toBe(true);
+  });
+
+  it('hace coincidir cada desplegable con su cuadro y conserva el desglose REM / FACT', () => {
+    const paidFact = order({ id: 'paid-with-pending-certificates', number: 50, documentType: 'FACT', financialRule: 'NEW',
+      value: 1_000, reteFuente: 40, reteIva: 28.50, ica: 7,
+      payments: [payment('2026-09-15', 1_114.50)], certificates: { reteFuente: true, reteIva: false, ica: false } });
+    const source = [...orders, paidFact];
+    const report = reportSummary(source, september);
+    const fields: Array<[ReceivableMetric, keyof typeof report]> = [
+      ['balanceWithIva', 'balance'], ['balanceWithoutIva', 'balanceWithoutIva'],
+      ['rem', 'balanceRem'], ['fact', 'balanceFact'], ['retentions', 'pendingRetentions'],
+    ];
+    for (const [metric, field] of fields) {
+      const items = receivableItems(source, [], { cutoff: september.to, metric });
+      expect(sumMoney(items.map(item => item.amount))).toBe(report[field]);
+    }
+    expect(sumMoney([report.balanceRem, report.balanceFact])).toBe(report.balance);
+    expect(sumMoney([report.balanceWithoutIva, report.ivaDue])).toBe(report.balance);
+    expect(report.pendingRetentions).toBe(18_035.50);
+  });
+
+  it('incluye retenciones de FACT ya pagadas y deja de incluir solo los certificados recibidos', () => {
+    const paidFact = order({ id: 'paid-fact', number: 25, documentType: 'FACT', financialRule: 'NEW',
+      value: 1_000, reteFuente: 40, reteIva: 28.50, ica: 7,
+      payments: [payment('2026-09-15', 1_114.50)] });
+    const query = { cutoff: september.to, metric: 'retentions' as const };
+    expect(receivableItems([paidFact], [], { ...query, metric: 'balanceWithIva' })).toEqual([]);
+    expect(receivableItems([paidFact], [], query).map(item => item.amount)).toEqual([75.50]);
+
+    const partialCertificates = { ...paidFact, certificates: { reteFuente: true, reteIva: false, ica: false } };
+    expect(receivableAmounts(partialCertificates, september.to)).toMatchObject({ reteFuente: 0, reteIva: 28.50, ica: 7, retentions: 35.50 });
+    expect(receivableItems([partialCertificates], [], { ...query, metric: 'reteFuente' })).toEqual([]);
+    expect(reportSummary([partialCertificates], september).pendingRetentions).toBe(35.50);
+
+    const allReceived = { ...paidFact, certificates: { reteFuente: true, reteIva: true, ica: true } };
+    expect(receivableItems([allReceived], [], query)).toEqual([]);
+    expect(reportSummary([allReceived], september).pendingRetentions).toBe(0);
+  });
+
+  it('aplica corte, documento y categoría iguales al cuadro y detalle, incluyendo deuda anterior al período', () => {
+    const source = [old, current, future];
+    for (const category of ['ALL', 'SuperGiros', 'Otras'] as const) {
+      for (const documentType of ['ALL', 'REM', 'FACT'] as const) {
+        const report = reportSummary(source, september, category, documentType);
+        const query = { cutoff: september.to,
+          ...(category !== 'ALL' ? { category } : {}),
+          ...(documentType !== 'ALL' ? { documentType } : {}),
+        };
+        for (const [metric, amount] of [
+          ['balanceWithIva', report.balance], ['balanceWithoutIva', report.balanceWithoutIva],
+          ['rem', report.balanceRem], ['fact', report.balanceFact], ['retentions', report.pendingRetentions],
+        ] as const) {
+          expect(sumMoney(receivableItems(source, [], { ...query, metric }).map(item => item.amount))).toBe(amount);
+        }
+      }
+    }
+    expect(receivableItems(source, [], { cutoff: september.to, metric: 'rem' }).map(item => item.orderId)).toEqual(['old']);
+    expect(reportSummary(source, september).sales.map(item => item.id)).toEqual(['current']);
+    expect(receivableItems(source, [], { cutoff: '2026-07-31', metric: 'balanceWithIva' })).toEqual([]);
+    expect(receivableItems(source, [], { cutoff: september.to, metric: 'balanceWithIva', category: 'Proyecto' })).toEqual([]);
+  });
+
+  it('no descuenta pagos posteriores al corte ni muestra deuda sin IVA negativa', () => {
+    const fact = order({ id: 'last-iva', number: 36, documentType: 'FACT', financialRule: 'NEW', value: 100,
+      payments: [payment('2026-09-15', 105), payment('2026-10-01', 14)] });
+    expect(receivableAmounts(fact, september.to)).toMatchObject({ balanceWithIva: 14, balanceWithoutIva: 0, fact: 14 });
+    expect(receivableItems([fact], [], { cutoff: september.to, metric: 'balanceWithoutIva' })).toEqual([]);
+    expect(receivableItems([fact], [], { cutoff: september.to, metric: 'fact' }).map(item => item.amount)).toEqual([14]);
+    expect(reportSummary([fact], september)).toMatchObject({ balance: 14, balanceWithoutIva: 0, received: 105 });
+    expect(receivableAmounts(fact, '2026-10-01')).toMatchObject({ balanceWithIva: 0, balanceWithoutIva: 0, fact: 0 });
+    expect(receivableItems([fact], [], { cutoff: '2026-10-01', metric: 'fact' })).toEqual([]);
   });
 });
 

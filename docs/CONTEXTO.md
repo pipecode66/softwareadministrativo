@@ -54,9 +54,9 @@ Cada OT muestra su trazabilidad a todos los perfiles autorizados para consultarl
 
 ## Reportes
 
-Administración consulta ventas por fecha, mes o rango, filtradas por categoría y REM/FACT. FACT e IVA aparecen separados. Cartera muestra saldos al corte con IVA, sin IVA e IVA pendiente. Los certificados recibidos restan de la métrica pendiente de cada retención, no del efectivo ya cobrado. El consumo de materiales cuenta m² únicamente cuando finaliza Impresión.
+Administración consulta ventas por fecha, mes o rango, filtradas por categoría y REM/FACT. En Reportes se conservan Ventas · valor base y Pagos recibidos. TOTAL IVA suma el IVA original (19 % de la base) de las FACT del período, independientemente de abonos, retenciones o pago completo de la OT; representa impuesto generado, no una transferencia comprobada a la DIAN. Se retira el cuadro FACT · ventas sin IVA. Cartera al corte con IVA y sin IVA se muestran juntas; el cálculo de cartera conserva la imputación de abonos primero al componente sin IVA. Los certificados recibidos restan de la métrica pendiente de cada retención, no del efectivo ya cobrado. El consumo de materiales cuenta m² únicamente cuando finaliza Impresión.
 
-Reportes y Cartera incluyen dos cuadros: Total cartera REM y Total cartera FACT. Suman únicamente saldos pendientes al corte tras los abonos; FACT incluye IVA y conserva las retenciones de cada OT. Respetan los filtros de cada pantalla y solo están disponibles para ADMINMASTER y ADMIN_GENERAL.
+En Reportes, los cuadros se llaman Total REM y Total FACT; suman saldos pendientes al corte tras abonos y retenciones. El cuadro IVA pendiente de cobro fue reemplazado por Retenciones totales pendientes por cobrar, que suma RETEFUENTE, RETE IVA e ICA con certificado todavía pendiente, incluso de OT ya pagadas. Cada cuadro de cobro, incluidos los tres desgloses individuales de retenciones, permite desplegar las OT que aportan un importe positivo, ordenadas por número descendente, con cliente, descripción, valor y enlace a la OT. Totales y listas respetan los mismos filtros; registrar un certificado refresca también los cuadros superiores. Las pantallas y los desgloses son exclusivos de ADMINMASTER y ADMIN_GENERAL. Cartera conserva sus cuadros propios.
 
 ## Fuera de alcance
 

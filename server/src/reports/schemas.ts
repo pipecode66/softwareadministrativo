@@ -33,8 +33,13 @@ export const portfolioSchema = z.object({
   pageSize: z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().max(100)).default(50),
 }).strict();
 
+export const receivablesSchema = portfolioSchema.extend({
+  metric: z.enum(['balanceWithIva', 'balanceWithoutIva', 'rem', 'fact', 'retentions', 'reteFuente', 'reteIva', 'ica']),
+});
+
 export const certificateQuerySchema = z.object({
   cutoff: reportDate,
+  ...commercialFilters,
   page: z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().max(1_000_000)).default(1),
   pageSize: z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().max(100)).default(50),
 }).strict();
@@ -51,6 +56,7 @@ export const certificateUpdateSchema = z.object({
 
 export type SalesQuery = z.infer<typeof salesSchema>;
 export type PortfolioQuery = z.infer<typeof portfolioSchema>;
+export type ReceivablesQuery = z.infer<typeof receivablesSchema>;
 export type MaterialQuery = z.infer<typeof materialSchema>;
 export type CertificateQuery = z.infer<typeof certificateQuerySchema>;
 export type CertificateUpdate = z.infer<typeof certificateUpdateSchema>;

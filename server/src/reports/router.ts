@@ -2,8 +2,8 @@ import { Router } from 'express';
 import type { Database } from '../db/types.js';
 import { ApiError } from '../errors.js';
 import { isAdmin } from '../orders/domain.js';
-import { certificateQuerySchema, certificateUpdateSchema, materialSchema, portfolioSchema, salesSchema } from './schemas.js';
-import { certificateReport, materialReport, portfolioReport, salesReport, updateCertificates } from './service.js';
+import { certificateQuerySchema, certificateUpdateSchema, materialSchema, portfolioSchema, receivablesSchema, salesSchema } from './schemas.js';
+import { certificateReport, materialReport, portfolioReport, receivablesReport, salesReport, updateCertificates } from './service.js';
 
 /** Mounted after real authentication and mandatory password-change enforcement. */
 export function createReportsRouter(db: Database): Router {
@@ -18,6 +18,9 @@ export function createReportsRouter(db: Database): Router {
   });
   router.get('/portfolio', async (request, response) => {
     response.json(await portfolioReport(db, request.auth!, portfolioSchema.parse(request.query)));
+  });
+  router.get('/receivables', async (request, response) => {
+    response.json(await receivablesReport(db, request.auth!, receivablesSchema.parse(request.query)));
   });
   router.get('/materials', async (request, response) => {
     response.json(await materialReport(db, request.auth!, materialSchema.parse(request.query)));

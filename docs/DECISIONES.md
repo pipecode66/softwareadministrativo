@@ -49,6 +49,9 @@
 
 47. Los cuadros Total cartera REM y Total cartera FACT desglosan el saldo pendiente al corte en Reportes y Cartera, con los filtros vigentes. FACT incluye IVA, retenciones según la regla de cada OT y pagos hasta el corte. La cartera incluye órdenes anteriores al período de ventas; los dos cuadros son exclusivos de ADMINMASTER y ADMIN_GENERAL.
 
+48. Desde el 21/10, Reportes organiza ocho cuadros principales: Ventas · valor base, Total IVA, Pagos recibidos, Cartera al corte con IVA, Cartera al corte sin IVA, Total REM, Total FACT y Retenciones totales pendientes por cobrar. Total IVA suma el IVA original de las FACT del período seleccionado y no depende de abonos ni retenciones; no representa un giro comprobado a la DIAN. Se retiran FACT · ventas sin IVA e IVA pendiente de cobro de esta pantalla. Los importes de cartera y las reglas de cobro de las OT se conservan.
+49. Cada cuadro de cobro de Reportes tiene un desplegable de OT con importe positivo para ese concepto, ordenado por número descendente antes de paginar. Usa los mismos filtros y fecha de corte que su total. Retenciones pendientes se basa en certificados actuales e incluye OT pagadas; no se añade de nuevo a cartera como deuda en efectivo. Los tres cuadros individuales de retenciones conservan este mismo acceso al detalle. Ventas, Pagos recibidos y Total IVA no tienen desplegable de cobro. Consultas exclusivas de ADMINMASTER y ADMIN_GENERAL.
+
 ## Decisiones sustituidas
 
 - La regla del 15/09 que sumaba retenciones al cobrable fue sustituida por la solicitud del 20/09 para nuevas FACT. Solo se conserva como LEGACY para datos previos.

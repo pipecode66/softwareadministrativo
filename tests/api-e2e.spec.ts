@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
 
 async function login(page: Page) {
@@ -216,4 +217,126 @@ test('carga de Diseño separa responsables y métricas sin desbordarse', async (
   await corrected.getByRole('button', { name: 'Iniciar', exact: true }).click();
   await corrected.getByRole('button', { name: 'Finalizar', exact: true }).click();
   await expect(corrected).toContainText('Terminada');
+});
+
+test('reportes y desgloses consultan las OT reales aunque el listado local esté vacío', async ({ page }) => {
+  let emptyOrderLists = 0;
+  await page.route(url => url.pathname === '/api/v1/orders', async route => {
+    if (route.request().method() !== 'GET') { await route.continue(); return; }
+    emptyOrderLists++;
+    await route.fulfill({ json: { items: [], clients: [], total: 0, page: 1, pageSize: 100 } });
+  });
+  await login(page);
+  const sessionResponse = await page.request.get('/api/v1/auth/session');
+  expect(sessionResponse.status()).toBe(200);
+  const session = await sessionResponse.json();
+  const headers = { Origin: 'http://127.0.0.1:5174', 'X-CSRF-Token': session.csrfToken };
+  const clientResponse = await page.request.post('/api/v1/clients', { headers, data: {
+    name: 'Cliente reportes sin listado local', identification: `REPORT-${randomUUID()}`, phone: '3001234567',
+  } });
+  expect(clientResponse.status(), await clientResponse.text()).toBe(201);
+  const { client } = await clientResponse.json();
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  for (const [documentType, value, received] of [['FACT', 600000, 100000], ['FACT', 150000, 178500], ['REM', 200000, 50000]] as const) {
+    const description = `Trabajo ${documentType} de ${value} para reporte remoto`;
+    const created = await page.request.post('/api/v1/orders', { headers, data: {
+      clientId: client.id, description, value, documentType, category: 'SuperGiros',
+      route: 'WORKSHOP_ONLY', requiresInstallation: false, requestId: randomUUID(),
+      products: [{ description, quantity: 1, unitValue: value, materials: [], activities: [{ area: 'WORKSHOP' }] }],
+      initialPayment: { date: today, amount: received, method: 'EFECTIVO' },
+    } });
+    expect(created.status(), await created.text()).toBe(201);
+  }
+  const initialReport = page.waitForResponse(response => response.url().includes('/api/v1/reports/sales') && response.status() === 200);
+  await page.goto('/reports');
+  await initialReport;
+  const filteredReport = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/v1/reports/sales' && url.searchParams.get('category') === 'SuperGiros' && !url.searchParams.has('documentType');
+  });
+  await page.getByLabel('Categoría', { exact: true }).selectOption('SuperGiros');
+  const reportResponse = await filteredReport;
+  expect(reportResponse.status()).toBe(200);
+  const report = await reportResponse.json();
+  expect(report.totals).toMatchObject({ base: 950000, iva: 142500, received: 328500,
+    balanceRem: 150000, balanceFact: 568700, balanceWithIva: 718700,
+    balanceWithoutIva: 604700, pendingRetentions: 45300 });
+  const money = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);
+  const card = (label: string) => page.locator('.kpi-card').filter({ has: page.getByText(label, { exact: true }) });
+  await expect(card('Total IVA').locator('.kpi-value')).toHaveText(money(report.totals.iva));
+  await expect(card('Total IVA').locator('details')).toHaveCount(0);
+  await expect(card('Ventas · valor base').locator('details')).toHaveCount(0);
+  await expect(card('Pagos recibidos').locator('details')).toHaveCount(0);
+  await expect(page.getByText('FACT · ventas sin IVA', { exact: true })).toHaveCount(0);
+
+  for (const [label, metric, key] of [
+    ['Total REM', 'rem', 'balanceRem'],
+    ['Total FACT', 'fact', 'balanceFact'],
+    ['Cartera al corte con IVA', 'balanceWithIva', 'balanceWithIva'],
+    ['Cartera al corte sin IVA', 'balanceWithoutIva', 'balanceWithoutIva'],
+    ['Retenciones totales pendientes por cobrar', 'retentions', 'pendingRetentions'],
+  ] as const) {
+    const selectedCard = card(label);
+    await expect(selectedCard.locator('.kpi-value')).toHaveText(money(report.totals[key]));
+    const detailsResponse = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/v1/reports/receivables' && url.searchParams.get('metric') === metric
+        && url.searchParams.get('category') === 'SuperGiros' && url.searchParams.get('cutoff') === report.to;
+    });
+    await selectedCard.locator('summary').click();
+    const fetched = await detailsResponse;
+    expect(fetched.status()).toBe(200);
+    const detail = await fetched.json();
+    expect(detail.totalAmount).toBe(report.totals[key]);
+    const rows = selectedCard.locator('ol.analytics-receivable-list > li');
+    await expect(rows).toHaveCount(detail.items.length);
+    expect(detail.items.map((item: { number: number }) => item.number))
+      .toEqual(detail.items.map((item: { number: number }) => item.number).sort((a: number, b: number) => b - a));
+    for (let index = 0; index < detail.items.length; index++) {
+      const item = detail.items[index];
+      await expect(rows.nth(index).getByRole('link')).toHaveText(`OT #${String(item.number).padStart(4, '0')}`);
+      await expect(rows.nth(index).getByRole('link')).toHaveAttribute('href', `/orders/${item.orderId}`);
+      await expect(rows.nth(index).locator('.analytics-receivable-amount strong')).toHaveText(money(item.amount));
+    }
+    expect(detail.items.reduce((sum: number, item: { amount: number }) => sum + item.amount, 0)).toBe(detail.totalAmount);
+  }
+
+  const remReport = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/v1/reports/sales' && url.searchParams.get('documentType') === 'REM';
+  });
+  await page.getByLabel('Documento', { exact: true }).selectOption('REM');
+  const remResponse = await remReport;
+  expect(remResponse.status()).toBe(200);
+  const rem = await remResponse.json();
+  await expect(card('Total IVA').locator('.kpi-value')).toHaveText(money(rem.totals.iva));
+  await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(0));
+  const emptyFact = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/v1/reports/receivables' && url.searchParams.get('metric') === 'fact'
+      && url.searchParams.get('documentType') === 'REM';
+  });
+  await card('Total FACT').locator('summary').click();
+  expect((await (await emptyFact).json()).totalAmount).toBe(0);
+  await expect(card('Total FACT')).toContainText('No hay órdenes pendientes para este concepto.');
+
+  const factReport = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/v1/reports/sales' && url.searchParams.get('documentType') === 'FACT';
+  });
+  await page.getByLabel('Documento', { exact: true }).selectOption('FACT');
+  const factResponse = await factReport;
+  expect(factResponse.status()).toBe(200);
+  const fact = await factResponse.json();
+  await expect(card('Total IVA').locator('.kpi-value')).toHaveText(money(fact.totals.iva));
+  await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(0));
+  const factDetails = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/v1/reports/receivables' && url.searchParams.get('metric') === 'fact'
+      && url.searchParams.get('documentType') === 'FACT';
+  });
+  await card('Total FACT').locator('summary').click();
+  expect((await (await factDetails).json()).totalAmount).toBe(fact.totals.balanceFact);
+  await expect(card('Total FACT').locator('ol.analytics-receivable-list > li')).toHaveCount(1);
+  expect(emptyOrderLists).toBeGreaterThan(0);
 });

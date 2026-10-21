@@ -4,7 +4,7 @@ import type { Database, SqlConnection } from '../db/types.js';
 import { ApiError } from '../errors.js';
 import { categories, isAdmin, iso, materials } from '../orders/domain.js';
 import { requireCurrentActor } from '../security/actor.js';
-import type { CertificateQuery, CertificateUpdate, MaterialQuery, PortfolioQuery, SalesQuery } from './schemas.js';
+import type { CertificateQuery, CertificateUpdate, MaterialQuery, PortfolioQuery, ReceivablesQuery, SalesQuery } from './schemas.js';
 
 type NumericRow = Record<string, string | number>;
 const moneyKeys = ['count', 'base', 'factBase', 'iva', 'factGross', 'reteFuente', 'reteIva', 'ica', 'retentions', 'collectible', 'collectibleWithoutIva', 'received', 'balance', 'balanceWithIva', 'balanceWithoutIva', 'ivaDue'] as const;
@@ -83,6 +83,7 @@ export async function salesReport(db: Database, auth: AuthSession, input: SalesQ
       SELECT ${periodSums},
         coalesce(sum(balance) FILTER (WHERE document_type = 'REM'), 0) AS "balanceRem",
         coalesce(sum(balance) FILTER (WHERE document_type = 'FACT'), 0) AS "balanceFact",
+        coalesce(sum("pendingReteFuente" + "pendingReteIva" + "pendingIca"), 0) AS "pendingRetentions",
         (SELECT coalesce(sum(p.amount), 0) FROM payments p JOIN money m ON m.id = p.order_id
           WHERE p.date BETWEEN $1::date AND $2::date) AS received
       FROM facts`, params)).rows[0];
@@ -127,7 +128,7 @@ export async function salesReport(db: Database, auth: AuthSession, input: SalesQ
       FROM periods d LEFT JOIN sales s ON s.period = d.period LEFT JOIN receipts r ON r.period = d.period ORDER BY d.period`, params)).rows;
     return {
       from: input.from, to: input.to, groupBy: input.groupBy,
-      totals: numbers(totals, [...moneyKeys, 'balanceRem', 'balanceFact']),
+      totals: numbers(totals, [...moneyKeys, 'balanceRem', 'balanceFact', 'pendingRetentions']),
       categories: categories.map(category => ({ category, ...numbers(categoryRows.find(row => row.category === category), moneyKeys) })),
       documents: (['REM', 'FACT'] as const).map(documentType => ({ documentType,
         ...numbers(documentRows.find(row => row.documentType === documentType),
@@ -200,9 +201,47 @@ export async function portfolioReport(db: Database, auth: AuthSession, input: Po
   });
 }
 
+const receivableAmounts: Record<ReceivablesQuery['metric'], string> = {
+  balanceWithIva: 'f.balance',
+  balanceWithoutIva: 'f."balanceWithoutIva"',
+  rem: "CASE WHEN f.document_type = 'REM' THEN f.balance ELSE 0 END",
+  fact: "CASE WHEN f.document_type = 'FACT' THEN f.balance ELSE 0 END",
+  retentions: 'f."pendingReteFuente" + f."pendingReteIva" + f."pendingIca"',
+  reteFuente: 'f."pendingReteFuente"',
+  reteIva: 'f."pendingReteIva"',
+  ica: 'f."pendingIca"',
+};
+
+/** Each amount is the same OT contribution used by the corresponding report card. */
+export async function receivablesReport(db: Database, auth: AuthSession, input: ReceivablesQuery) {
+  return snapshot(db, auth, async tx => {
+    const params = [input.cutoff, input.cutoff, input.category ?? null, input.documentType ?? null];
+    const source = `WITH ${scopedOrders}, contributions AS (
+      SELECT f.*, ${receivableAmounts[input.metric]} AS amount FROM facts f WHERE $1::date = $2::date
+    ), outstanding AS (SELECT * FROM contributions WHERE amount > 0)`;
+    const summary = (await tx.query<NumericRow>(`${source}
+      SELECT count(*) AS total, coalesce(sum(amount), 0) AS "totalAmount" FROM outstanding`, params)).rows[0];
+    const rows = (await tx.query<NumericRow & {
+      id: string; client_id: string; client_name: string; description: string; document_type: 'REM' | 'FACT';
+    }>(`${source}
+      SELECT o.id, o.number, o.client_id, c.name AS client_name, o.description, o.document_type, o.amount
+      FROM outstanding o JOIN clients c ON c.id = o.client_id
+      ORDER BY o.number DESC, o.id DESC LIMIT $5 OFFSET $6`,
+    [...params, input.pageSize, (input.page - 1) * input.pageSize])).rows;
+    return {
+      cutoff: input.cutoff, metric: input.metric, page: input.page, pageSize: input.pageSize,
+      ...numbers(summary, ['total', 'totalAmount']),
+      items: rows.map(row => ({
+        orderId: row.id, number: Number(row.number), clientId: row.client_id, clientName: row.client_name,
+        description: row.description, documentType: row.document_type, amount: Number(row.amount),
+      })),
+    };
+  });
+}
+
 export async function certificateReport(db: Database, auth: AuthSession, input: CertificateQuery) {
   return snapshot(db, auth, async tx => {
-    const params = [input.cutoff, input.cutoff, null, 'FACT'];
+    const params = [input.cutoff, input.cutoff, input.category ?? null, input.documentType ?? 'FACT'];
     const source = `WITH ${scopedOrders}, certificates AS (
       SELECT f.*, c.name AS client_name FROM facts f JOIN clients c ON c.id = f.client_id
       WHERE f.document_type = 'FACT' AND f.retentions > 0 AND $1::date = $2::date
@@ -218,7 +257,7 @@ export async function certificateReport(db: Database, auth: AuthSession, input: 
         document_type, financial_rule, certificate_rete_fuente, certificate_rete_iva, certificate_ica,
         "reteFuente", "reteIva", icaAmount AS ica, "pendingReteFuente", "pendingReteIva", "pendingIca",
         iva, collectible, "collectibleWithoutIva", paid, balance, "balanceWithoutIva", version
-      FROM certificates ORDER BY created_at, number, id LIMIT $5 OFFSET $6`,
+      FROM certificates ORDER BY number DESC, id DESC LIMIT $5 OFFSET $6`,
     [...params, input.pageSize, (input.page - 1) * input.pageSize])).rows;
     return {
       cutoff: input.cutoff,

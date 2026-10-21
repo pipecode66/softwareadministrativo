@@ -23,9 +23,9 @@ test.beforeEach(async ({ context }) => {
   await context.addInitScript(({ key, data }) => localStorage.setItem(key, JSON.stringify(data)), { key: DATA_KEY, data });
 });
 
-async function login(page: import('@playwright/test').Page) {
+async function login(page: import('@playwright/test').Page, email = 'adminmaster@intermedios.local') {
   await page.goto('/login');
-  await page.getByLabel('Usuario o correo').fill('adminmaster@intermedios.local');
+  await page.getByLabel('Usuario o correo').fill(email);
   await page.getByLabel('Contraseña', { exact: true }).fill(LOCAL_REVIEW_PASSWORD);
   await page.getByRole('button', { name: 'Ingresar al sistema' }).click();
   await expect(page).not.toHaveURL(/\/login$/);
@@ -47,8 +47,8 @@ for (const account of ['adminmaster@intermedios.local', 'administracion@intermed
     await expect(page).not.toHaveURL(/\/login$/);
     for (const path of ['/reports', '/portfolio']) {
       await page.goto(path);
-      const remCard = page.locator('.kpi-card').filter({ has: page.getByText('Total cartera REM', { exact: true }) });
-      const factCard = page.locator('.kpi-card').filter({ has: page.getByText('Total cartera FACT', { exact: true }) });
+      const remCard = page.locator('.kpi-card').filter({ has: page.getByText(path === '/reports' ? 'Total REM' : 'Total cartera REM', { exact: true }) });
+      const factCard = page.locator('.kpi-card').filter({ has: page.getByText(path === '/reports' ? 'Total FACT' : 'Total cartera FACT', { exact: true }) });
       await expect(remCard.locator('.kpi-value')).toHaveText(formatCOP(75_000));
       await expect(factCard.locator('.kpi-value')).toHaveText(formatCOP(1_014_500));
       await page.getByLabel('Documento', { exact: true }).selectOption('FACT');
@@ -61,8 +61,8 @@ for (const account of ['adminmaster@intermedios.local', 'administracion@intermed
 test('reporte separa FACT e IVA y registra certificado sin modificar cartera', async ({ page }) => {
   await login(page);
   await page.goto('/reports');
-  await expect(page.getByText('FACT · ventas sin IVA')).toBeVisible();
-  await expect(page.getByText('IVA · ventas FACT')).toBeVisible();
+  await expect(page.getByText('FACT · ventas sin IVA', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Total IVA', { exact: true })).toBeVisible();
   await expect(page.getByText('Cartera al corte sin IVA')).toBeVisible();
   const before = await page.evaluate(key => {
     const order = (JSON.parse(localStorage.getItem(key)!) as AppData).orders.find(item => item.id === 'finance-fact')!;
@@ -73,6 +73,59 @@ test('reporte separa FACT e IVA y registra certificado sin modificar cartera', a
     const order = (JSON.parse(localStorage.getItem(key)!) as AppData).orders.find(item => item.id === 'finance-fact')!;
     return { received: order.certificates?.reteFuente, payments: order.payments.length };
   }, DATA_KEY)).toEqual({ received: true, payments: before });
+});
+
+test('Administración consulta deudas por cuadro, separa IVA y actualiza retenciones al recibir certificados', async ({ page, context }, testInfo) => {
+  const data = makeSeed();
+  const rem = makeOrder('rem-50', 50, 100_000);
+  rem.payments = [{ id: 'rem-abono', date: today(), amount: 25_000, recordedBy: 'u-master' }];
+  const fact = { ...makeOrder('fact-49', 49, 150_000, 'FACT'), reteFuente: 6_000, reteIva: 4_275, ica: 1_050 };
+  fact.payments = [{ id: 'fact-abono', date: today(), amount: 50_000, recordedBy: 'u-master' }];
+  const paidFact = { ...makeOrder('paid-fact-9', 9, 150_000, 'FACT'), reteFuente: 3_000, reteIva: 0, ica: 0 };
+  paidFact.payments = [{ id: 'fact-pagada', date: today(), amount: 175_500, recordedBy: 'u-master' }];
+  data.orders = [paidFact, rem, fact];
+  await context.addInitScript(({ key, data }) => localStorage.setItem(key, JSON.stringify(data)), { key: DATA_KEY, data });
+  await login(page, 'administracion@intermedios.local');
+  await page.goto('/reports');
+  const card = (label: string) => page.locator('.kpi-card').filter({ has: page.getByText(label, { exact: true }) });
+  const totalIva = card('Total IVA');
+  const retentions = card('Retenciones totales pendientes por cobrar');
+  await expect(totalIva.locator('.kpi-value')).toHaveText(formatCOP(57_000));
+  await expect(retentions.locator('.kpi-value')).toHaveText(formatCOP(14_325));
+  await page.screenshot({ path: testInfo.outputPath('reportes-desktop.png'), fullPage: true });
+  for (const label of ['Ventas · valor base', 'Total IVA', 'Pagos recibidos']) {
+    await expect(card(label).locator('details')).toHaveCount(0);
+  }
+  for (const [label, amount, numbers] of [
+    ['Cartera al corte con IVA', 192_175, ['OT #0050', 'OT #0049']],
+    ['Cartera al corte sin IVA', 163_675, ['OT #0050', 'OT #0049']],
+    ['Total REM', 75_000, ['OT #0050']],
+    ['Total FACT', 117_175, ['OT #0049']],
+    ['Retenciones totales pendientes por cobrar', 14_325, ['OT #0049', 'OT #0009']],
+  ] as const) {
+    const metric = card(label);
+    await expect(metric.locator('.kpi-value')).toHaveText(formatCOP(amount));
+    await metric.locator('summary').click();
+    await expect(metric.locator('.analytics-receivable-list a')).toHaveText([...numbers]);
+  }
+  const withIva = await card('Cartera al corte con IVA').boundingBox();
+  const withoutIva = await card('Cartera al corte sin IVA').boundingBox();
+  expect(Math.abs(withIva!.y - withoutIva!.y)).toBeLessThan(2);
+  await page.getByRole('checkbox', { name: 'Certificado RETEFUENTE recibido para OT #49', exact: true }).check();
+  await expect(retentions.locator('.kpi-value')).toHaveText(formatCOP(8_325));
+  await expect(totalIva.locator('.kpi-value')).toHaveText(formatCOP(57_000));
+  await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(formatCOP(192_175));
+  await page.getByLabel('Documento', { exact: true }).selectOption('REM');
+  await expect(totalIva.locator('.kpi-value')).toHaveText(formatCOP(0));
+  await expect(retentions.locator('.kpi-value')).toHaveText(formatCOP(0));
+  await card('Total FACT').locator('summary').click();
+  await expect(card('Total FACT').getByText('No hay órdenes pendientes para este concepto.')).toBeVisible();
+  await page.getByLabel('Documento', { exact: true }).selectOption('ALL');
+  await page.setViewportSize({ width: 320, height: 760 });
+  await card('Total FACT').locator('summary').click();
+  await expect(card('Total FACT').getByRole('link', { name: 'OT #0049', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('reportes-mobile.png'), fullPage: true });
 });
 
 test('cartera distribuye un pago grupal del menor saldo al mayor y guarda el medio', async ({ page }) => {
@@ -101,7 +154,7 @@ test('reportes y pago grupal caben en pantalla móvil estrecha', async ({ page }
   await page.setViewportSize({ width: 320, height: 760 });
   await login(page);
   await page.goto('/reports');
-  await expect(page.getByText('IVA · ventas FACT')).toBeVisible();
+  await expect(page.getByText('Total IVA', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.goto('/portfolio');
   await page.locator('.analytics-debt-clients li').filter({ hasText: 'SuperGiros S.A.' }).getByRole('button', { name: 'Pago a varias OT' }).click();

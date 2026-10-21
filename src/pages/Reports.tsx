@@ -3,7 +3,9 @@ import { Banknote, ChartNoAxesCombined, FileCheck2, ReceiptText, Wallet } from '
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useApp } from '../data/AppContext';
 import { PeriodFilter } from '../components/PeriodFilter';
-import { Card, CardHeader, DataTable, EmptyState, Field, KpiCard, PageHeader, Pagination } from '../components/ui';
+import { ReceivableKpi } from '../components/ReceivableKpi';
+import { receivableAmounts, type ReceivableMetric, type ReceivableQuery } from '../domain/receivables';
+import { Button, Card, CardHeader, DataTable, EmptyState, Field, KpiCard, PageHeader, Pagination } from '../components/ui';
 import type { CertificateReport } from '../data/api';
 import type { Category, DateRange, DocumentType, WorkOrder } from '../domain/types';
 import { CATEGORIES, currentMonthRange, dateOnly, financials, formatCOP, formatNumber, inRange, isCalendarDate, roundMoney } from '../domain/utils';
@@ -14,13 +16,12 @@ export const shortMoney = (n: number) => Math.abs(n) >= 1_000_000 ? `$${formatNu
 export const sumMoney = (values: number[]) => values.reduce((sum, value) => sum + Math.round(roundMoney(value) * 100), 0) / 100;
 
 export function reportSummary(orders: WorkOrder[], range: DateRange, category: Category | 'ALL' = 'ALL', document: DocumentType | 'ALL' = 'ALL') {
-  const relevant = orders.filter(order => (category === 'ALL' || order.category === category) && (document === 'ALL' || order.documentType === document));
+  const relevant = orders.filter(order => dateOnly(order.createdAt) <= range.to && (category === 'ALL' || order.category === category) && (document === 'ALL' || order.documentType === document));
   const sales = relevant.filter(order => inRange(order.createdAt, range));
   const paymentsInPeriod = (source: WorkOrder[]) => sumMoney(source.flatMap(order => order.payments.filter(payment => inRange(payment.date, range)).map(payment => payment.amount)));
-  const debtAtCutoff = (source: WorkOrder[]) => sumMoney(source.filter(order => dateOnly(order.createdAt) <= range.to).map(order => financials(order, range.to).balance));
+  const debtAtCutoff = (source: WorkOrder[]) => sumMoney(source.map(order => receivableAmounts(order, range.to).balanceWithIva));
   const debtWithoutIvaAtCutoff = (source: WorkOrder[]) => sumMoney(source.filter(order => dateOnly(order.createdAt) <= range.to).map(order => {
-    const money = financials(order, range.to);
-    return Math.max(0, money.balance - money.iva);
+    return receivableAmounts(order, range.to).balanceWithoutIva;
   }));
   const balance = debtAtCutoff(relevant);
   const balanceRem = debtAtCutoff(relevant.filter(order => order.documentType === 'REM'));
@@ -39,7 +40,8 @@ export function reportSummary(orders: WorkOrder[], range: DateRange, category: C
     factBase: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => order.value)),
     iva: sumMoney(sales.map(order => financials(order).iva)),
     factGross: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => financials(order).gross)),
-    balance, balanceRem, balanceFact, balanceWithoutIva, ivaDue: sumMoney([balance, -balanceWithoutIva]), categories, documents };
+    balance, balanceRem, balanceFact, balanceWithoutIva, ivaDue: sumMoney([balance, -balanceWithoutIva]),
+    pendingRetentions: sumMoney(relevant.map(order => receivableAmounts(order, range.to).retentions)), categories, documents };
 }
 
 export function periodBuckets(range: DateRange) {
@@ -60,7 +62,7 @@ export function periodBuckets(range: DateRange) {
   return { monthly, buckets };
 }
 
-export function SalesChart({ orders, range }: { orders: WorkOrder[]; range: DateRange }) {
+export function SalesChart({ orders, range, remoteTimeline }: { orders: WorkOrder[]; range: DateRange; remoteTimeline?: Array<{ period: string; base: number; factBase: number }> }) {
   const { monthly, buckets } = periodBuckets(range);
   const chart = buckets.map(bucket => ({ ...bucket, REM: 0, FACT: 0 }));
   for (const order of orders) {
@@ -68,7 +70,12 @@ export function SalesChart({ orders, range }: { orders: WorkOrder[]; range: Date
     const bucket = chart.find(item => item.key === (monthly ? date.slice(0, 7) : date));
     if (bucket && inRange(order.createdAt, range)) bucket[order.documentType] = sumMoney([bucket[order.documentType], order.value]);
   }
-  if (!orders.length) return <EmptyState title="Sin ventas en este período" description="Cambia los filtros o registra una orden para consultar su distribución." />;
+  if (remoteTimeline) for (const bucket of chart) {
+    const row = remoteTimeline.find(item => item.period === bucket.key);
+    bucket.FACT = row?.factBase ?? 0;
+    bucket.REM = sumMoney([row?.base ?? 0, -bucket.FACT]);
+  }
+  if (!chart.some(row => row.REM || row.FACT)) return <EmptyState title="Sin ventas en este período" description="Cambia los filtros o registra una orden para consultar su distribución." />;
   return <>
     <div className="analytics-chart" aria-label="Gráfico de ventas base por fecha y tipo de documento">
       <ResponsiveContainer width="100%" height="100%">
@@ -100,23 +107,24 @@ export function CategoryChart({ orders, categoryRows }: { orders: WorkOrder[]; c
   </div>;
 }
 
-function CertificatesPanel({ cutoff }: { cutoff: string }) {
+function CertificatesPanel({ cutoff, category, document, onChanged }: { cutoff: string; category: Category | 'ALL'; document: DocumentType | 'ALL'; onChanged: () => void }) {
   const { data, usingApi, loadCertificateReport, setCertificates, toast } = useApp();
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [remote, setRemote] = useState<CertificateReport | null>(null);
-  useEffect(() => { setPage(1); }, [cutoff]);
+  useEffect(() => { setPage(1); }, [cutoff, category, document]);
   useEffect(() => {
     if (!usingApi) { setRemote(null); return; }
     let active = true;
-    void loadCertificateReport({ cutoff, page, pageSize: 10 })
+    setRemote(null);
+    void loadCertificateReport({ cutoff, page, pageSize: 10, category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document })
       .then(report => { if (active) setRemote(report); })
       .catch(error => { if (active) toast(error instanceof Error ? error.message : 'No se pudieron consultar los certificados.', 'error'); });
     return () => { active = false; };
-  }, [cutoff, page, revision, usingApi]);
-  const localItems = data.orders.filter(order => order.documentType === 'FACT' && dateOnly(order.createdAt) <= cutoff && financials(order).retentions > 0)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.number - b.number)
+  }, [cutoff, category, document, page, revision, usingApi, data.orders]);
+  const localItems = data.orders.filter(order => document !== 'REM' && order.documentType === 'FACT' && dateOnly(order.createdAt) <= cutoff && financials(order).retentions > 0 && (category === 'ALL' || order.category === category))
+    .sort((a, b) => b.number - a.number || a.id.localeCompare(b.id))
     .map(order => ({
       orderId: order.id, number: order.number, clientId: order.clientId,
       clientName: data.clients.find(client => client.id === order.clientId)?.name ?? 'Cliente',
@@ -144,6 +152,7 @@ function CertificatesPanel({ cutoff }: { cutoff: string }) {
       await setCertificates(item.orderId, item.version, { ...item.certificates, [key]: !item.certificates[key] });
       setRemote(null);
       setRevision(value => value + 1);
+      onChanged();
       toast('Control de certificado actualizado.', 'success');
     } catch (error) { toast(error instanceof Error ? error.message : 'No se pudo actualizar el certificado.', 'error'); }
     finally { setSavingId(null); }
@@ -151,9 +160,9 @@ function CertificatesPanel({ cutoff }: { cutoff: string }) {
   const certificateCell = (item: CertificateReport['items'][number], key: 'reteFuente' | 'reteIva' | 'ica') => item[key] > 0 ?
     <label className="analytics-certificate-control"><input type="checkbox" checked={item.certificates[key]} disabled={Boolean(savingId)} onChange={() => { void toggle(item, key); }} aria-label={`Certificado ${key === 'reteFuente' ? 'RETEFUENTE' : key === 'reteIva' ? 'RETE IVA' : 'ICA'} recibido para OT #${item.number}`} /><span>{formatCOP(item[key])}</span><small>{item.certificates[key] ? 'Recibido' : 'Pendiente'}</small></label> : <span className="muted">—</span>;
   return <><div className="metrics-grid">
-    <KpiCard label="RETEFUENTE pendiente" value={formatCOP(outstanding.reteFuente)} icon={FileCheck2} tone="blue" meta="Certificado aún no recibido" />
-    <KpiCard label="RETE IVA pendiente" value={formatCOP(outstanding.reteIva)} icon={FileCheck2} tone="slate" meta="Certificado aún no recibido" />
-    <KpiCard label="ICA pendiente" value={formatCOP(outstanding.ica)} icon={FileCheck2} tone="amber" meta="Certificado aún no recibido" />
+    <ReceivableKpi label="RETEFUENTE pendiente" amount={usingApi && !remote ? null : outstanding.reteFuente} icon={FileCheck2} tone="blue" meta="Certificado aún no recibido" query={{ cutoff, metric: 'reteFuente', category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document }} revision={revision} />
+    <ReceivableKpi label="RETE IVA pendiente" amount={usingApi && !remote ? null : outstanding.reteIva} icon={FileCheck2} tone="slate" meta="Certificado aún no recibido" query={{ cutoff, metric: 'reteIva', category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document }} revision={revision} />
+    <ReceivableKpi label="ICA pendiente" amount={usingApi && !remote ? null : outstanding.ica} icon={FileCheck2} tone="amber" meta="Certificado aún no recibido" query={{ cutoff, metric: 'ica', category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document }} revision={revision} />
   </div><Card><CardHeader title="Certificados de retención" description={`Pendientes de recibir para FACT creadas hasta ${cutoff}. El estado de recibido es actual; no es una fotografía histórica.`} />
     {items.length ? <><DataTable rows={items} rowKey={item => item.orderId} columns={[
       { key: 'order', label: 'Orden / cliente', render: item => <div><strong>OT #{String(item.number).padStart(4, '0')}</strong><span className="cell-subtitle">{item.clientName}</span></div> },
@@ -165,20 +174,25 @@ function CertificatesPanel({ cutoff }: { cutoff: string }) {
 }
 
 export function ReportsPage() {
-  const { data, usingApi, loadSalesReport, toast } = useApp();
+  const { data, usingApi, loadSalesReport } = useApp();
   const [range, setRange] = useState<DateRange>(currentMonthRange);
   const [category, setCategory] = useState<Category | 'ALL'>('ALL');
   const [document, setDocument] = useState<DocumentType | 'ALL'>('ALL');
-  const [remoteReport, setRemoteReport] = useState<Awaited<ReturnType<typeof loadSalesReport>> | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [reportError, setReportError] = useState('');
+  const queryKey = `${range.from}|${range.to}|${category}|${document}`;
+  const dataVersion = data.orders.map(order => `${order.id}:${order.version}:${order.updatedAt}`).join('|');
+  const [remote, setRemote] = useState<{ key: string; report: Awaited<ReturnType<typeof loadSalesReport>> } | null>(null);
+  const remoteReport = remote?.key === queryKey ? remote.report : null;
   useEffect(() => {
-    if (!usingApi) { setRemoteReport(null); return; }
+    if (!usingApi) { setRemote(null); return; }
     let active = true;
-    setRemoteReport(null);
-    void loadSalesReport({ from: range.from, to: range.to, category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document })
-      .then(report => { if (active) setRemoteReport(report); })
-      .catch(error => { if (active) toast(error instanceof Error ? error.message : 'No se pudo cargar el reporte.', 'error'); });
+    setReportError('');
+    void loadSalesReport({ from: range.from, to: range.to, groupBy: periodBuckets(range).monthly ? 'month' : 'day', category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document })
+      .then(report => { if (active) setRemote({ key: queryKey, report }); })
+      .catch(error => { if (active) { setRemote(null); setReportError(error instanceof Error ? error.message : 'No se pudo cargar el reporte.'); } });
     return () => { active = false; };
-  }, [category, document, range.from, range.to, usingApi]);
+  }, [queryKey, dataVersion, revision, usingApi]);
   const local = reportSummary(data.orders, range, category, document);
   const report = remoteReport ? {
     ...local,
@@ -186,25 +200,36 @@ export function ReportsPage() {
     iva: remoteReport.totals.iva, factGross: remoteReport.totals.factGross,
     balance: remoteReport.totals.balanceWithIva, balanceWithoutIva: remoteReport.totals.balanceWithoutIva, ivaDue: remoteReport.totals.ivaDue,
     balanceRem: remoteReport.totals.balanceRem, balanceFact: remoteReport.totals.balanceFact,
+    pendingRetentions: remoteReport.totals.pendingRetentions,
     categories: remoteReport.categories.map(row => ({ name: row.category, count: row.count, base: row.base, iva: row.iva, received: row.received, balance: row.balance })),
     documents: remoteReport.documents.map(row => ({ type: row.documentType, count: row.count, base: row.base, iva: row.iva, gross: row.gross, retentions: row.retentions, collectible: row.collectible })),
   } : local;
-  const { sales, received, base, factBase, iva, balance, balanceRem, balanceFact, balanceWithoutIva, ivaDue, categories, documents } = report;
+  const { sales, received, base, iva, balance, balanceRem, balanceFact, balanceWithoutIva, pendingRetentions, categories, documents } = report;
+  const ready = !usingApi || Boolean(remoteReport);
+  const moneyValue = (amount: number) => ready ? formatCOP(amount) : '—';
+  const debtQuery = (metric: ReceivableMetric): ReceivableQuery => ({ cutoff: range.to, metric,
+    category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document });
+  const debtRevision = `${revision}|${dataVersion}`;
   return <div className="page-stack analytics-page">
     <PageHeader eyebrow="ANÁLISIS COMERCIAL" title="Reportes de ventas" description="Ventas, recaudo y cartera: cada indicador con su fecha y criterio de cálculo." />
     <Card><div className="analytics-filters"><PeriodFilter value={range} onChange={setRange} /><div className="analytics-filter-pair"><Field label="Categoría" htmlFor="reports-category"><select id="reports-category" className="select" value={category} onChange={event => setCategory(event.target.value as Category | 'ALL')}><option value="ALL">Todas las categorías</option>{CATEGORIES.map(name => <option key={name}>{name}</option>)}</select></Field><Field label="Documento" htmlFor="reports-document"><select id="reports-document" className="select" value={document} onChange={event => setDocument(event.target.value as DocumentType | 'ALL')}><option value="ALL">REM y FACT</option><option>REM</option><option>FACT</option></select></Field></div></div></Card>
-    <div className="metrics-grid">
-      <KpiCard label="Ventas · valor base" value={formatCOP(base)} icon={ChartNoAxesCombined} tone="orange" meta={`${remoteReport?.totals.count ?? sales.length} órdenes creadas en el período`} />
-      <KpiCard label="FACT · ventas sin IVA" value={formatCOP(factBase)} icon={ReceiptText} tone="blue" meta="Solo valor base de las FACT del período" />
-      <KpiCard label="IVA · ventas FACT" value={formatCOP(iva)} icon={ReceiptText} tone="slate" meta="IVA de FACT creadas en el período" />
-      <KpiCard label="Pagos recibidos" value={formatCOP(received)} icon={Banknote} tone="green" meta="Por fecha del pago, incluso de órdenes anteriores" />
-      <KpiCard label="Cartera al corte con IVA" value={formatCOP(balance)} icon={Wallet} tone="amber" meta={`Saldo acumulado hasta ${range.to}`} />
-      <KpiCard label="Total cartera REM" value={formatCOP(balanceRem)} icon={Wallet} tone="orange" meta={`Saldo pendiente de REM al ${range.to}`} />
-      <KpiCard label="Total cartera FACT" value={formatCOP(balanceFact)} icon={ReceiptText} tone="blue" meta={`Saldo pendiente de FACT con IVA al ${range.to}`} />
-      <KpiCard label="Cartera al corte sin IVA" value={formatCOP(balanceWithoutIva)} icon={Wallet} tone="slate" meta="Cartera después de separar el IVA pendiente" />
-      <KpiCard label="IVA pendiente de cobro" value={formatCOP(ivaDue)} icon={Wallet} tone="blue" meta="Diferencia entre cartera con y sin IVA" />
+    {reportError && <div className="notice notice-warning" role="alert">{reportError} <Button variant="secondary" onClick={() => setRevision(value => value + 1)}>Reintentar reporte</Button></div>}
+    {!ready && !reportError && <p className="muted" role="status">Consultando los valores del reporte…</p>}
+    <div className="metrics-grid analytics-summary-metrics">
+      <KpiCard label="Ventas · valor base" value={moneyValue(base)} icon={ChartNoAxesCombined} tone="orange" meta={ready ? `${remoteReport?.totals.count ?? sales.length} órdenes creadas en el período` : 'Consultando ventas…'} />
+      <KpiCard label="Total IVA" value={moneyValue(iva)} icon={ReceiptText} tone="slate" meta="19 % del valor base de las FACT del período, independiente de abonos y retenciones" />
+      <KpiCard label="Pagos recibidos" value={moneyValue(received)} icon={Banknote} tone="green" meta="Por fecha del pago, incluso de órdenes anteriores" />
     </div>
-    <div className="analytics-main-grid"><Card><CardHeader title="Ventas en el tiempo" description="Fecha de creación de la OT · valores antes de IVA" /><SalesChart orders={sales} range={range} /></Card><Card><CardHeader title="Ventas por categoría" description="Participación sobre el valor base del período" /><CategoryChart orders={sales} categoryRows={categories} /></Card></div>
+    <div className="metrics-grid analytics-balance-metrics">
+      <ReceivableKpi key={`${queryKey}|withIva`} label="Cartera al corte con IVA" amount={ready ? balance : null} icon={Wallet} tone="amber" meta={`Saldo acumulado hasta ${range.to}`} query={debtQuery('balanceWithIva')} revision={debtRevision} />
+      <ReceivableKpi key={`${queryKey}|withoutIva`} label="Cartera al corte sin IVA" amount={ready ? balanceWithoutIva : null} icon={Wallet} tone="slate" meta="Saldo pendiente sin IVA, después de abonos y retenciones" query={debtQuery('balanceWithoutIva')} revision={debtRevision} />
+    </div>
+    <div className="metrics-grid analytics-summary-metrics">
+      <ReceivableKpi key={`${queryKey}|rem`} label="Total REM" amount={ready ? balanceRem : null} icon={Wallet} tone="orange" meta={`Saldo pendiente de REM al ${range.to}`} query={debtQuery('rem')} revision={debtRevision} />
+      <ReceivableKpi key={`${queryKey}|fact`} label="Total FACT" amount={ready ? balanceFact : null} icon={ReceiptText} tone="blue" meta={`Saldo pendiente de FACT con IVA al ${range.to}`} query={debtQuery('fact')} revision={debtRevision} />
+      <ReceivableKpi key={`${queryKey}|retentions`} label="Retenciones totales pendientes por cobrar" amount={ready ? pendingRetentions : null} icon={FileCheck2} tone="blue" meta="Suma de RETEFUENTE, RETE IVA e ICA con certificado aún no recibido" query={debtQuery('retentions')} revision={debtRevision} />
+    </div>
+    {ready && <><div className="analytics-main-grid"><Card><CardHeader title="Ventas en el tiempo" description="Fecha de creación de la OT · valores antes de IVA" /><SalesChart orders={sales} range={range} remoteTimeline={remoteReport?.timeline} /></Card><Card><CardHeader title="Ventas por categoría" description="Participación sobre el valor base del período" /><CategoryChart orders={sales} categoryRows={categories} /></Card></div>
     <Card><CardHeader title="Desglose por categoría" description="Los pagos se agrupan por su propia fecha; la cartera incluye órdenes anteriores al período." /><DataTable rows={categories} rowKey={row => row.name} columns={[
       { key: 'category', label: 'Categoría', render: row => <strong>{row.name}</strong> },
       { key: 'count', label: 'Órdenes', render: row => row.count },
@@ -221,7 +246,8 @@ export function ReportsPage() {
       { key: 'retentions', label: 'Retenciones', render: row => formatCOP(row.retentions) },
       { key: 'collectible', label: 'Total cobrable', render: row => <strong>{formatCOP(row.collectible)}</strong> },
     ]} renderCard={row => <div className="analytics-mobile-record"><strong>{row.type} · {row.count} órdenes</strong><dl><div><dt>Valor base</dt><dd>{formatCOP(row.base)}</dd></div><div><dt>IVA</dt><dd>{formatCOP(row.iva)}</dd></div><div><dt>Total con IVA</dt><dd>{formatCOP(row.gross)}</dd></div><div><dt>Retenciones</dt><dd>{formatCOP(row.retentions)}</dd></div><div><dt>Total cobrable</dt><dd>{formatCOP(row.collectible)}</dd></div></dl></div>} /></Card>
-    <CertificatesPanel cutoff={range.to} />
+    </>}
+    <CertificatesPanel key={queryKey} cutoff={range.to} category={category} document={document} onChanged={() => setRevision(value => value + 1)} />
     <p className="analytics-footnote">FACT es una clasificación de control interno. Esta aplicación no emite facturas electrónicas ni está conectada con la DIAN.</p>
   </div>;
 }

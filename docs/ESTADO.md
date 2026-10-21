@@ -1,8 +1,12 @@
 # Estado de continuidad
 
-Actualizado: 2026-10-20.
+Actualizado: 2026-10-21.
 
 ## Estado actual
+
+El 21/10/2026 se reorganizó Reportes en ocho cuadros principales con los nombres solicitados. TOTAL IVA muestra el IVA original de las FACT del período, independiente de abonos/retenciones; el reemplazo de IVA pendiente muestra la suma actual de retenciones pendientes de certificado. Las dos carteras se presentan juntas. Cada cuadro de cobro (cinco principales y tres individuales de retenciones) despliega sus OT positivas por número descendente, con cliente, descripción, importe, paginación y enlace. Se añadió consulta de detalle protegida y se unificaron filtros de categoría/documento con certificados; marcar un certificado actualiza también el total superior. El gráfico remoto usa agregados del servidor y los cuadros evitan sustituir la carga/error remoto por totales parciales locales. No se modificaron reglas de cobro, datos productivos ni la pantalla Cartera; no requiere SQL.
+
+Archivos de este tramo: `src/pages/Reports.tsx`, `src/components/ReceivableKpi.tsx`, `src/components/ui.tsx`, `src/domain/receivables.ts`, `src/data/api.ts`, `src/pages/analytics.css`, `server/src/reports/{router,schemas,service}.ts`, `server/tests/reports_finance.test.ts`, `tests/{analytics.test,finance.spec,api-e2e.spec}.ts` y documentación de continuidad.
 
 El 20/10/2026 se añadieron los cuadros **Total cartera REM** y **Total cartera FACT** en Reportes y Cartera para ADMINMASTER y ADMIN_GENERAL. Se usa el saldo pendiente al corte, descontando los abonos y conservando IVA/retenciones de FACT; se respetan filtros y órdenes de períodos anteriores. El servidor calcula los totales sin depender de la página consultada. No requiere SQL ni migraciones. Archivos de este tramo: `src/pages/Reports.tsx`, `src/pages/Portfolio.tsx`, `src/data/api.ts`, `server/src/reports/service.ts`, `tests/analytics.test.ts`, `tests/finance.spec.ts` y `server/tests/reports_finance.test.ts`.
 
@@ -42,6 +46,9 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 
 ## Funcionalidades terminadas en este tramo
 
+- Reportes resume sus cuadros principales; Total IVA conserva únicamente el IVA original de las FACT seleccionadas y Retenciones totales pendientes por cobrar suma los certificados pendientes de RETEFUENTE, RETE IVA e ICA.
+- Los cuadros de cobro despliegan sus OT por número descendente con importe y enlace; se incluyen únicamente las que aportan saldo a ese concepto, incluso FACT pagadas con retenciones pendientes de certificado.
+- Categoría/documento/corte coinciden entre cuadros, listas y certificados. El registro de certificados refresca los totales sin alterar el IVA facturado ni el saldo en efectivo.
 - Total cartera REM y Total cartera FACT disponibles en Reportes y Cartera para ambos perfiles administrativos, respetando fecha de corte, abonos y filtros.
 - Adminmaster puede crear cuentas con el nuevo perfil Apoyo Comercial.
 - Apoyo Comercial entra directamente a Nueva OT y no recibe otros módulos ni buscador global de órdenes.
@@ -131,6 +138,9 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 
 ## Verificación local
 
+- Tramo 21/10: frontend 168/168 y backend 288/288; pruebas financieras dirigidas 11/11. Ambos typecheck y builds aprobados. Se verifican IVA de 2 FACT × $150.000 = $57.000, conciliación de cada detalle con su cuadro, certificados parciales/recibidos, reglas NEW/LEGACY, corte, filtros y 53 OT paginadas por número descendente.
+- Tramo 21/10: seis casos E2E financieros locales aprobados (cuatro en el recorrido inicial y dos repetidos tras colisión de archivos de traza entre runners concurrentes). Se verificaron Administración/Adminmaster, ausencia de desplegables en ventas/pagos/IVA, actualización de retenciones sin alterar cobros, filtros, cuadro vacío, carteras juntas y móvil 320 px. Capturas locales revisadas.
+- Tramo 21/10: prueba E2E dirigida API real 1/1 con PGlite efímero: aun con la caché de órdenes vacía, los cinco cuadros principales de cobro y sus desgloses concuerdan con respuestas del servidor; se comprueban importes, enlaces, orden y filtros. Sin consultas a producción ni evidencia del despliegue posterior al push.
 - Tramo 20/10: `npm test -- --run tests/analytics.test.ts` 17/17 y `npm --prefix server test -- tests/reports_finance.test.ts` 6/6. Confirman REM/FACT, IVA, retenciones, pagos al corte, órdenes históricas, filtros, ceros y permisos de ambos administradores; los otros roles reciben 403.
 - Tramo 20/10: E2E de importes y filtro REM/FACT en Reportes/Cartera para ADMINMASTER y ADMIN_GENERAL, y regresión móvil 320 px: 3/3. `npm run typecheck`, `npm --prefix server run typecheck`, ambos builds y `git diff --check` aprobados. Sin consulta ni modificación de datos productivos; despliegue posterior al push no comprobado.
 - `npm run typecheck`: aprobado.
@@ -204,7 +214,9 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Corrección de preparación técnica para Diseño del 15/10 | 1 | 0 |
 | Rol Apoyo Comercial del 17/10 | 1 | 1 |
 | Desglose de cartera REM y FACT del 20/10 | 1 | 0 |
-| **Acumulado** | **51** | **31** |
+| Resumen y nombres de cuadros de Reportes del 21/10 | 1 | 0 |
+| Desplegables de OT por concepto de cobro del 21/10 | 1 | 1 |
+| **Acumulado** | **53** | **32** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
@@ -234,6 +246,8 @@ El rol Apoyo Comercial se considera significativo porque incorpora un perfil per
 
 Los cuadros de cartera REM y FACT se consideran un cambio menor: desglosan un saldo ya existente sin modificar reglas de cobro, permisos ni flujo productivo.
 
+El resumen de cuadros del 21/10 es un cambio menor de presentación y agregación existente. El detalle de OT por concepto sí se considera significativo porque añade una consulta financiera paginada y protegida, filtros compartidos, seguimiento por OT y acceso directo desde cada cuadro. Las correcciones de coherencia y actualización de certificados forman parte de esa entrega y no se cuentan aparte.
+
 ## Pendiente para producción
 
 1. Ejecutar manualmente `server/migrations/012_disable_order_deletion.sql` en Supabase antes de publicar este código.
@@ -252,4 +266,7 @@ npm run typecheck
 npm test
 npm --prefix server run typecheck
 npm --prefix server test
+$env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright\chromium-1217\chrome-win64\chrome.exe'
+npx playwright test tests/finance.spec.ts --output=test-results/finance-report21
+npx playwright test --config playwright.api.config.ts --grep 'reportes y desgloses' --output=test-results/api-report21
 ```

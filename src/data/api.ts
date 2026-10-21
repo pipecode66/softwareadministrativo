@@ -1,4 +1,5 @@
 import type { Client, OrderAction, OrderActivity, OrderInput, OrderProduct, OrderProductInput, PaymentMethod, ProductMaterial, Role, User, WorkOrder } from '../domain/types';
+import type { ReceivableItem, ReceivableQuery } from '../domain/receivables';
 
 export const usingApi = import.meta.env.VITE_USE_API !== 'false';
 const API = '/api/v1';
@@ -271,7 +272,7 @@ export function apiHistory(query: { page?: number; pageSize?: number; orderId?: 
 
 export interface SalesReport {
   from: string; to: string; groupBy: 'day' | 'month';
-  totals: { count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; collectibleWithoutIva: number; received: number; balance: number; balanceWithIva: number; balanceRem: number; balanceFact: number; balanceWithoutIva: number; ivaDue: number };
+  totals: { count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; pendingRetentions: number; collectible: number; collectibleWithoutIva: number; received: number; balance: number; balanceWithIva: number; balanceRem: number; balanceFact: number; balanceWithoutIva: number; ivaDue: number };
   categories: Array<{ category: string; count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; received: number; balance: number; balanceWithoutIva: number; ivaDue: number }>;
   documents: Array<{ documentType: 'REM' | 'FACT'; count: number; base: number; factBase: number; iva: number; gross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number }>;
   timeline: Array<{ period: string; count: number; base: number; factBase: number; iva: number; factGross: number; reteFuente: number; reteIva: number; ica: number; retentions: number; collectible: number; received: number }>;
@@ -303,8 +304,15 @@ export function apiSalesReport(query: { from: string; to: string; groupBy?: 'day
 export function apiPortfolioReport(query: { cutoff: string; page?: number; pageSize?: number; category?: string; documentType?: 'REM' | 'FACT' }): Promise<PortfolioReport> {
   return request<PortfolioReport>(`/reports/portfolio?${queryString(query)}`);
 }
-export function apiCertificateReport(query: { cutoff: string; page?: number; pageSize?: number }): Promise<CertificateReport> {
+export function apiCertificateReport(query: { cutoff: string; page?: number; pageSize?: number; category?: string; documentType?: 'REM' | 'FACT' }): Promise<CertificateReport> {
   return request<CertificateReport>(`/reports/certificates?${queryString(query)}`);
+}
+export interface ReceivableReport {
+  cutoff: string; metric: ReceivableQuery['metric']; page: number; pageSize: number;
+  total: number; totalAmount: number; items: ReceivableItem[];
+}
+export function apiReceivables(query: ReceivableQuery & { page?: number; pageSize?: number }): Promise<ReceivableReport> {
+  return request<ReceivableReport>(`/reports/receivables?${queryString({ ...query })}`);
 }
 export function apiSetCertificates(input: { orderId: string; expectedVersion: number; certificates: { reteFuente: boolean; reteIva: boolean; ica: boolean } }): Promise<{ orderId: string; version: number; certificates: { reteFuente: boolean; reteIva: boolean; ica: boolean } }> {
   return request('/reports/certificates', { method: 'POST', body: JSON.stringify(input) });
