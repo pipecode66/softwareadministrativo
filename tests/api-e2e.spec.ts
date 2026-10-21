@@ -40,7 +40,7 @@ test('sesión real carga reportes desde el servidor', async ({ page }) => {
   await page.goto('/reports');
   await expect((await reportResponse).status()).toBe(200);
   await expect(page.getByRole('heading', { name: 'Reportes de ventas' })).toBeVisible();
-  await expect(page.getByText('Ventas · valor base')).toBeVisible();
+  await expect(page.getByText('Ventas totales')).toBeVisible();
 });
 
 test('perfil muestra acciones de contraseña y salida, y permite revisar lo digitado', async ({ page }) => {
@@ -258,25 +258,27 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   const reportResponse = await filteredReport;
   expect(reportResponse.status()).toBe(200);
   const report = await reportResponse.json();
-  expect(report.totals).toMatchObject({ base: 950000, iva: 142500, received: 328500, factGross: 892500,
+  expect(report.totals).toMatchObject({ base: 950000, iva: 142500, received: 328500, factGross: 892500, salesNet: 1047200,
     balanceRem: 150000, balanceFact: 568700, balanceWithIva: 718700,
-    balanceWithoutIva: 604700, pendingRetentions: 45300, portfolioAtCutoff: 650000 });
+    balanceWithoutIva: 604700, pendingRetentions: 45300, portfolioAtCutoff: 650000, portfolioAtCutoffWithIva: 764000 });
   const money = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);
   const card = (label: string) => page.locator('.kpi-card').filter({ has: page.getByText(label, { exact: true }) });
   await expect(card('Total IVA').locator('.kpi-value')).toHaveText(money(report.totals.iva));
   await expect(card('Total IVA').locator('details')).toHaveCount(0);
-  await expect(card('Ventas · valor base').locator('details')).toHaveCount(0);
+  await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(money(report.totals.salesNet));
+  await expect(card('Ventas totales').locator('details')).toHaveCount(0);
   await expect(card('Pagos recibidos').locator('details')).toHaveCount(0);
   await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(report.totals.factGross));
   await expect(card('Total FACT').locator('details')).toHaveCount(0);
   await expect(page.getByText('FACT · ventas sin IVA', { exact: true })).toHaveCount(0);
-  await expect(card('Cartera al corte')).toHaveCount(1);
-  await expect(page.getByText('Cartera al corte con IVA', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Cartera al corte sin IVA', { exact: true })).toHaveCount(0);
+  await expect(card('Cartera al corte')).toHaveCount(0);
+  await expect(page.locator('.kpi-card .kpi-meta')).toHaveCount(1);
+  await expect(card('Ventas totales').locator('.kpi-meta')).toHaveText('3 órdenes creadas en el período');
 
   for (const [label, metric, key] of [
     ['Total REM', 'rem', 'balanceRem'],
-    ['Cartera al corte', 'portfolioAtCutoff', 'portfolioAtCutoff'],
+    ['Cartera al corte con IVA', 'portfolioAtCutoffWithIva', 'portfolioAtCutoffWithIva'],
+    ['Cartera al corte sin IVA', 'portfolioAtCutoff', 'portfolioAtCutoff'],
     ['Retenciones totales pendientes por cobrar', 'retentions', 'pendingRetentions'],
   ] as const) {
     const selectedCard = card(label);
@@ -315,7 +317,9 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   await expect(card('Total IVA').locator('.kpi-value')).toHaveText(money(rem.totals.iva));
   await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(0));
   await expect(card('Total FACT').locator('details')).toHaveCount(0);
-  await expect(card('Cartera al corte').locator('.kpi-value')).toHaveText(money(150000));
+  await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(money(200000));
+  await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(money(150000));
+  await expect(card('Cartera al corte sin IVA').locator('.kpi-value')).toHaveText(money(150000));
 
   const factReport = page.waitForResponse(response => {
     const url = new URL(response.url());
@@ -328,7 +332,9 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   await expect(card('Total IVA').locator('.kpi-value')).toHaveText(money(fact.totals.iva));
   await expect(card('Total FACT').locator('.kpi-value')).toHaveText(money(fact.totals.factGross));
   await expect(card('Total REM').locator('.kpi-value')).toHaveText(money(0));
-  await expect(card('Cartera al corte').locator('.kpi-value')).toHaveText(money(500000));
+  await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(money(847200));
+  await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(money(614000));
+  await expect(card('Cartera al corte sin IVA').locator('.kpi-value')).toHaveText(money(500000));
   const emptyRem = page.waitForResponse(response => {
     const url = new URL(response.url());
     return url.pathname === '/api/v1/reports/receivables' && url.searchParams.get('metric') === 'rem'

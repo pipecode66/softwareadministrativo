@@ -18,7 +18,11 @@ export const sumMoney = (values: number[]) => values.reduce((sum, value) => sum 
 export function reportSummary(orders: WorkOrder[], range: DateRange, category: Category | 'ALL' = 'ALL', document: DocumentType | 'ALL' = 'ALL') {
   const relevant = orders.filter(order => dateOnly(order.createdAt) <= range.to && (category === 'ALL' || order.category === category) && (document === 'ALL' || order.documentType === document));
   const sales = relevant.filter(order => inRange(order.createdAt, range));
-  const paymentsInPeriod = (source: WorkOrder[]) => sumMoney(source.flatMap(order => order.payments.filter(payment => inRange(payment.date, range)).map(payment => payment.amount)));
+  const paymentsInPeriod = (source: WorkOrder[]) => sumMoney(source.filter(order => inRange(order.createdAt, range)).flatMap(order => order.payments.filter(payment => inRange(payment.date, range)).map(payment => payment.amount)));
+  const netSales = (source: WorkOrder[]) => sumMoney(source.map(order => {
+    const money = financials(order);
+    return sumMoney([money.gross, -money.retentions]);
+  }));
   const debtAtCutoff = (source: WorkOrder[]) => sumMoney(source.map(order => receivableAmounts(order, range.to).balanceWithIva));
   const debtWithoutIvaAtCutoff = (source: WorkOrder[]) => sumMoney(source.filter(order => dateOnly(order.createdAt) <= range.to).map(order => {
     return receivableAmounts(order, range.to).balanceWithoutIva;
@@ -28,21 +32,24 @@ export function reportSummary(orders: WorkOrder[], range: DateRange, category: C
   const balanceFact = debtAtCutoff(relevant.filter(order => order.documentType === 'FACT'));
   const balanceWithoutIva = debtWithoutIvaAtCutoff(relevant);
   const portfolioAtCutoff = (source: WorkOrder[]) => sumMoney(source.map(order => receivableAmounts(order, range.to).portfolioAtCutoff));
+  const portfolioAtCutoffWithIva = (source: WorkOrder[]) => sumMoney(source.map(order => receivableAmounts(order, range.to).portfolioAtCutoffWithIva));
   const categories = CATEGORIES.filter(name => category === 'ALL' || name === category).map(name => {
     const categorySales = sales.filter(order => order.category === name);
     const categorySource = relevant.filter(order => order.category === name);
-    return { name, count: categorySales.length, base: sumMoney(categorySales.map(order => order.value)), iva: sumMoney(categorySales.map(order => financials(order).iva)), received: paymentsInPeriod(categorySource), balance: debtAtCutoff(categorySource), portfolioAtCutoff: portfolioAtCutoff(categorySource) };
+    return { name, count: categorySales.length, base: sumMoney(categorySales.map(order => order.value)), salesNet: netSales(categorySales), iva: sumMoney(categorySales.map(order => financials(order).iva)), received: paymentsInPeriod(categorySource), balance: debtAtCutoff(categorySource), portfolioAtCutoff: portfolioAtCutoff(categorySource), portfolioAtCutoffWithIva: portfolioAtCutoffWithIva(categorySource) };
   });
   const documents = (['FACT', 'REM'] as const).filter(type => document === 'ALL' || document === type).map(type => {
     const list = sales.filter(order => order.documentType === type).map(order => financials(order));
     return { type, count: list.length, base: sumMoney(list.map(money => money.base)), iva: sumMoney(list.map(money => money.iva)), gross: sumMoney(list.map(money => money.gross)), retentions: sumMoney(list.map(money => money.retentions)), collectible: sumMoney(list.map(money => money.collectible)) };
   });
   return { sales, received: paymentsInPeriod(relevant), base: sumMoney(sales.map(order => order.value)),
+    salesNet: netSales(sales),
     factBase: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => order.value)),
     iva: sumMoney(sales.map(order => financials(order).iva)),
     factGross: sumMoney(sales.filter(order => order.documentType === 'FACT').map(order => financials(order).gross)),
     balance, balanceRem, balanceFact, balanceWithoutIva, ivaDue: sumMoney([balance, -balanceWithoutIva]),
     portfolioAtCutoff: portfolioAtCutoff(relevant),
+    portfolioAtCutoffWithIva: portfolioAtCutoffWithIva(relevant),
     pendingRetentions: sumMoney(relevant.map(order => receivableAmounts(order, range.to).retentions)), categories, documents };
 }
 
@@ -162,9 +169,9 @@ function CertificatesPanel({ cutoff, category, document, onChanged }: { cutoff: 
   const certificateCell = (item: CertificateReport['items'][number], key: 'reteFuente' | 'reteIva' | 'ica') => item[key] > 0 ?
     <label className="analytics-certificate-control"><input type="checkbox" checked={item.certificates[key]} disabled={Boolean(savingId)} onChange={() => { void toggle(item, key); }} aria-label={`Certificado ${key === 'reteFuente' ? 'RETEFUENTE' : key === 'reteIva' ? 'RETE IVA' : 'ICA'} recibido para OT #${item.number}`} /><span>{formatCOP(item[key])}</span><small>{item.certificates[key] ? 'Recibido' : 'Pendiente'}</small></label> : <span className="muted">—</span>;
   return <><div className="metrics-grid">
-    <ReceivableKpi label="RETEFUENTE pendiente" amount={usingApi && !remote ? null : outstanding.reteFuente} icon={FileCheck2} tone="blue" meta="Certificado aún no recibido" query={{ cutoff, metric: 'reteFuente', category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document }} revision={revision} />
-    <ReceivableKpi label="RETE IVA pendiente" amount={usingApi && !remote ? null : outstanding.reteIva} icon={FileCheck2} tone="slate" meta="Certificado aún no recibido" query={{ cutoff, metric: 'reteIva', category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document }} revision={revision} />
-    <ReceivableKpi label="ICA pendiente" amount={usingApi && !remote ? null : outstanding.ica} icon={FileCheck2} tone="amber" meta="Certificado aún no recibido" query={{ cutoff, metric: 'ica', category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document }} revision={revision} />
+    <ReceivableKpi label="RETEFUENTE pendiente" amount={usingApi && !remote ? null : outstanding.reteFuente} icon={FileCheck2} tone="blue" query={{ cutoff, metric: 'reteFuente', category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document }} revision={revision} />
+    <ReceivableKpi label="RETE IVA pendiente" amount={usingApi && !remote ? null : outstanding.reteIva} icon={FileCheck2} tone="slate" query={{ cutoff, metric: 'reteIva', category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document }} revision={revision} />
+    <ReceivableKpi label="ICA pendiente" amount={usingApi && !remote ? null : outstanding.ica} icon={FileCheck2} tone="amber" query={{ cutoff, metric: 'ica', category: category === 'ALL' ? undefined : category, documentType: document === 'ALL' ? undefined : document }} revision={revision} />
   </div><Card><CardHeader title="Certificados de retención" description={`Pendientes de recibir para FACT creadas hasta ${cutoff}. El estado de recibido es actual; no es una fotografía histórica.`} />
     {items.length ? <><DataTable rows={items} rowKey={item => item.orderId} columns={[
       { key: 'order', label: 'Orden / cliente', render: item => <div><strong>OT #{String(item.number).padStart(4, '0')}</strong><span className="cell-subtitle">{item.clientName}</span></div> },
@@ -199,15 +206,17 @@ export function ReportsPage() {
   const report = remoteReport ? {
     ...local,
     received: remoteReport.totals.received, base: remoteReport.totals.base, factBase: remoteReport.totals.factBase,
+    salesNet: remoteReport.totals.salesNet,
     iva: remoteReport.totals.iva, factGross: remoteReport.totals.factGross,
     balance: remoteReport.totals.balanceWithIva, balanceWithoutIva: remoteReport.totals.balanceWithoutIva, ivaDue: remoteReport.totals.ivaDue,
     balanceRem: remoteReport.totals.balanceRem, balanceFact: remoteReport.totals.balanceFact,
     pendingRetentions: remoteReport.totals.pendingRetentions,
     portfolioAtCutoff: remoteReport.totals.portfolioAtCutoff,
-    categories: remoteReport.categories.map(row => ({ name: row.category, count: row.count, base: row.base, iva: row.iva, received: row.received, balance: row.balance, portfolioAtCutoff: row.portfolioAtCutoff })),
+    portfolioAtCutoffWithIva: remoteReport.totals.portfolioAtCutoffWithIva,
+    categories: remoteReport.categories.map(row => ({ name: row.category, count: row.count, base: row.base, salesNet: row.salesNet, iva: row.iva, received: row.received, balance: row.balance, portfolioAtCutoff: row.portfolioAtCutoff, portfolioAtCutoffWithIva: row.portfolioAtCutoffWithIva })),
     documents: remoteReport.documents.map(row => ({ type: row.documentType, count: row.count, base: row.base, iva: row.iva, gross: row.gross, retentions: row.retentions, collectible: row.collectible })),
   } : local;
-  const { sales, received, base, iva, balanceRem, factGross, portfolioAtCutoff, pendingRetentions, categories, documents } = report;
+  const { sales, received, salesNet, iva, balanceRem, factGross, portfolioAtCutoff, portfolioAtCutoffWithIva, pendingRetentions, categories, documents } = report;
   const ready = !usingApi || Boolean(remoteReport);
   const moneyValue = (amount: number) => ready ? formatCOP(amount) : '—';
   const debtQuery = (metric: ReceivableMetric): ReceivableQuery => ({ cutoff: range.to, metric,
@@ -218,26 +227,29 @@ export function ReportsPage() {
     <Card><div className="analytics-filters"><PeriodFilter value={range} onChange={setRange} /><div className="analytics-filter-pair"><Field label="Categoría" htmlFor="reports-category"><select id="reports-category" className="select" value={category} onChange={event => setCategory(event.target.value as Category | 'ALL')}><option value="ALL">Todas las categorías</option>{CATEGORIES.map(name => <option key={name}>{name}</option>)}</select></Field><Field label="Documento" htmlFor="reports-document"><select id="reports-document" className="select" value={document} onChange={event => setDocument(event.target.value as DocumentType | 'ALL')}><option value="ALL">REM y FACT</option><option>REM</option><option>FACT</option></select></Field></div></div></Card>
     {reportError && <div className="notice notice-warning" role="alert">{reportError} <Button variant="secondary" onClick={() => setRevision(value => value + 1)}>Reintentar reporte</Button></div>}
     {!ready && !reportError && <p className="muted" role="status">Consultando los valores del reporte…</p>}
-    <div className="metrics-grid analytics-overview-metrics">
-      <KpiCard label="Ventas · valor base" value={moneyValue(base)} icon={ChartNoAxesCombined} tone="orange" meta={ready ? `${remoteReport?.totals.count ?? sales.length} órdenes creadas en el período` : 'Consultando ventas…'} />
-      <KpiCard label="Total IVA" value={moneyValue(iva)} icon={ReceiptText} tone="slate" meta="19 % del valor base de las FACT del período, independiente de abonos y retenciones" />
-      <KpiCard label="Pagos recibidos" value={moneyValue(received)} icon={Banknote} tone="green" meta="Por fecha del pago, incluso de órdenes anteriores" />
-      <ReceivableKpi key={`${queryKey}|portfolio`} label="Cartera al corte" amount={ready ? portfolioAtCutoff : null} icon={Wallet} tone="amber" meta={`Saldo sin IVA + retenciones pendientes de certificado hasta ${range.to}`} query={debtQuery('portfolioAtCutoff')} revision={debtRevision} />
+    <div className="metrics-grid analytics-summary-metrics">
+      <KpiCard label="Ventas totales" value={moneyValue(salesNet)} icon={ChartNoAxesCombined} tone="orange" meta={ready ? `${remoteReport?.totals.count ?? sales.length} órdenes creadas en el período` : 'Consultando ventas…'} />
+      <KpiCard label="Total IVA" value={moneyValue(iva)} icon={ReceiptText} tone="slate" />
+      <KpiCard label="Pagos recibidos" value={moneyValue(received)} icon={Banknote} tone="green" />
+    </div>
+    <div className="metrics-grid analytics-balance-metrics">
+      <ReceivableKpi key={`${queryKey}|portfolioWithIva`} label="Cartera al corte con IVA" amount={ready ? portfolioAtCutoffWithIva : null} icon={Wallet} tone="amber" query={debtQuery('portfolioAtCutoffWithIva')} revision={debtRevision} />
+      <ReceivableKpi key={`${queryKey}|portfolioWithoutIva`} label="Cartera al corte sin IVA" amount={ready ? portfolioAtCutoff : null} icon={Wallet} tone="slate" query={debtQuery('portfolioAtCutoff')} revision={debtRevision} />
     </div>
     <div className="metrics-grid analytics-summary-metrics">
-      <ReceivableKpi key={`${queryKey}|rem`} label="Total REM" amount={ready ? balanceRem : null} icon={Wallet} tone="orange" meta={`Saldo pendiente de REM al ${range.to}`} query={debtQuery('rem')} revision={debtRevision} />
-      <KpiCard label="Total FACT" value={moneyValue(factGross)} icon={ReceiptText} tone="blue" meta={`Base + IVA de las FACT del ${range.from} al ${range.to}, sin descontar abonos ni retenciones`} />
-      <ReceivableKpi key={`${queryKey}|retentions`} label="Retenciones totales pendientes por cobrar" amount={ready ? pendingRetentions : null} icon={FileCheck2} tone="blue" meta="Suma de RETEFUENTE, RETE IVA e ICA con certificado aún no recibido" query={debtQuery('retentions')} revision={debtRevision} />
+      <ReceivableKpi key={`${queryKey}|rem`} label="Total REM" amount={ready ? balanceRem : null} icon={Wallet} tone="orange" query={debtQuery('rem')} revision={debtRevision} />
+      <KpiCard label="Total FACT" value={moneyValue(factGross)} icon={ReceiptText} tone="blue" />
+      <ReceivableKpi key={`${queryKey}|retentions`} label="Retenciones totales pendientes por cobrar" amount={ready ? pendingRetentions : null} icon={FileCheck2} tone="blue" query={debtQuery('retentions')} revision={debtRevision} />
     </div>
     {ready && <><div className="analytics-main-grid"><Card><CardHeader title="Ventas en el tiempo" description="Fecha de creación de la OT · valores antes de IVA" /><SalesChart orders={sales} range={range} remoteTimeline={remoteReport?.timeline} /></Card><Card><CardHeader title="Ventas por categoría" description="Participación sobre el valor base del período" /><CategoryChart orders={sales} categoryRows={categories} /></Card></div>
-    <Card><CardHeader title="Desglose por categoría" description="Los pagos se agrupan por su propia fecha; la cartera suma saldos sin IVA y retenciones pendientes de certificado, incluidas órdenes anteriores al período." /><DataTable rows={categories} rowKey={row => row.name} columns={[
+    <Card><CardHeader title="Desglose por categoría" description="Pagos del período de OT creadas en el mismo período; la cartera acumula saldos con IVA y retenciones pendientes de certificado hasta el corte." /><DataTable rows={categories} rowKey={row => row.name} columns={[
       { key: 'category', label: 'Categoría', render: row => <strong>{row.name}</strong> },
       { key: 'count', label: 'Órdenes', render: row => row.count },
       { key: 'base', label: 'Ventas base', render: row => formatCOP(row.base) },
       { key: 'iva', label: 'IVA', render: row => formatCOP(row.iva) },
       { key: 'received', label: 'Pagos del período', render: row => formatCOP(row.received) },
-      { key: 'portfolioAtCutoff', label: 'Cartera al corte', render: row => <strong className="analytics-amber">{formatCOP(row.portfolioAtCutoff)}</strong> },
-    ]} renderCard={row => <div className="analytics-mobile-record"><strong>{row.name} <span className="muted">· {row.count} OT</span></strong><dl><div><dt>Ventas base</dt><dd>{formatCOP(row.base)}</dd></div><div><dt>IVA</dt><dd>{formatCOP(row.iva)}</dd></div><div><dt>Pagos del período</dt><dd>{formatCOP(row.received)}</dd></div><div><dt>Cartera al corte</dt><dd>{formatCOP(row.portfolioAtCutoff)}</dd></div></dl></div>} /></Card>
+      { key: 'portfolioAtCutoffWithIva', label: 'Cartera al corte', render: row => <strong className="analytics-amber">{formatCOP(row.portfolioAtCutoffWithIva)}</strong> },
+    ]} renderCard={row => <div className="analytics-mobile-record"><strong>{row.name} <span className="muted">· {row.count} OT</span></strong><dl><div><dt>Ventas base</dt><dd>{formatCOP(row.base)}</dd></div><div><dt>IVA</dt><dd>{formatCOP(row.iva)}</dd></div><div><dt>Pagos del período</dt><dd>{formatCOP(row.received)}</dd></div><div><dt>Cartera al corte</dt><dd>{formatCOP(row.portfolioAtCutoffWithIva)}</dd></div></dl></div>} /></Card>
     <Card><CardHeader title="Control REM / FACT" description="Órdenes creadas en el período seleccionado. Las retenciones de OT nuevas se descuentan del valor base; las históricas conservan su regla original." /><DataTable rows={documents} rowKey={row => row.type} columns={[
       { key: 'type', label: 'Documento', render: row => <strong>{row.type} · {row.count} OT</strong> },
       { key: 'base', label: 'Valor base', render: row => formatCOP(row.base) },

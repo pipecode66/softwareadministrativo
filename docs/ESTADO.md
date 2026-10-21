@@ -4,6 +4,8 @@ Actualizado: 2026-10-21.
 
 ## Estado actual
 
+Último tramo del 21/10: Ventas totales reemplaza Ventas · valor base y muestra `salesNet = base + IVA − retenciones` del período, conforme al mensaje más reciente del usuario. Pagos recibidos exige que creación de OT y fecha de pago pertenezcan ambas al período (también en categorías/serie temporal); los pagos de OT anteriores siguen almacenados y descontando cartera. Se restauran Cartera al corte con IVA (`balanceWithIva + pendingRetentions`) y sin IVA (`balanceWithoutIva + pendingRetentions`), ambas acumuladas y con desglose coincidente por OT. La columna de cartera por categoría usa la versión con IVA. Se quitaron las descripciones inferiores de todos los cuadros de Reportes salvo el conteo de órdenes de ventas. Total FACT continúa bruto por período, sin retenciones. No se cambian cobros históricos, OT ni pagos; no requiere SQL. Total REM conserva su saldo acumulado hasta recibir respuesta a la aclaración sobre si debe convertirse en ventas del período. Archivos: `src/pages/{Reports.tsx,analytics.css}`, `src/domain/receivables.ts`, `src/data/api.ts`, `server/src/reports/{schemas,service}.ts`, pruebas financieras/E2E y documentación.
+
 Corrección más reciente del 21/10: **TOTAL FACT respeta inicio y fin del período seleccionado**, no acumula meses anteriores. Se usa el agregado existente `factGross` del servidor y el equivalente local filtrado por período. El texto del cuadro muestra ambas fechas; el mes inicial sigue siendo el mes actual. Conserva base + IVA, incluye pagadas e ignora abonos/retenciones. Se añadió regresión local/servidor/navegador con FACT antes, dentro y después del período y cambios de mes/rango. `factGrossAtCutoff` se mantiene en el contrato API solo por compatibilidad, pero ya no se calcula en el adaptador local ni se consume en la vista. No se modificaron cartera, REM, OT ni pagos. No requiere SQL; es corrección propia y no incrementa el contador comercial (55 cambios, 32 significativos).
 
 Último ajuste del 21/10: **Cartera al corte** es ahora un solo cuadro en Reportes y sustituye los cuadros con IVA y sin IVA. Su importe es `balanceWithoutIva + pendingRetentions`: saldo sin IVA después de abonos más RETEFUENTE/RETE IVA/ICA pendientes de certificado. Se usa una contribución canónica `portfolioAtCutoff` por OT en servidor y adaptador local, también para el desplegable paginado y la tabla por categoría. Incluye OT pagadas que todavía tengan certificados pendientes; recibir uno reduce este indicador sin modificar pagos. Se conservan componentes y reglas NEW/LEGACY, importes fiscales de OT, Total IVA, Total FACT y pantalla Cartera. El cambio es solo de Reportes, no elimina IVA de las facturas ni convierte certificados en efectivo. No requiere SQL. Archivos: `src/pages/{Reports.tsx,analytics.css}`, `src/domain/receivables.ts`, `src/data/api.ts`, `server/src/reports/{schemas,service}.ts`, pruebas financieras/E2E y documentos de continuidad.
@@ -52,7 +54,7 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 
 ## Funcionalidades terminadas en este tramo
 
-- Cartera al corte en Reportes unifica saldo pendiente sin IVA y retenciones pendientes de certificado; el detalle por OT y el total por categoría concuerdan con el cuadro. Se retiraron los dos cuadros anteriores, no los campos históricos de deuda ni la pantalla Cartera.
+- Reportes muestra Ventas totales con IVA menos retenciones, Pagos recibidos de OT y pagos del período y dos carteras acumuladas con/sin IVA, ambas con retenciones pendientes y desglose por OT. Solo ventas conserva descripción inferior.
 - Total FACT en Reportes muestra base + IVA de todas las FACT del período seleccionado, respetando ambas fechas, sin descuentos; los saldos de cartera y las reglas de cobro permanecen intactos.
 - Reportes resume sus cuadros principales; Total IVA conserva únicamente el IVA original de las FACT seleccionadas y Retenciones totales pendientes por cobrar suma los certificados pendientes de RETEFUENTE, RETE IVA e ICA.
 - Los cuadros de cobro despliegan sus OT por número descendente con importe y enlace; se incluyen únicamente las que aportan saldo a ese concepto, incluso FACT pagadas con retenciones pendientes de certificado.
@@ -146,6 +148,8 @@ El 17/10/2026 se implementó el rol `APOYO_COMERCIAL` (“Apoyo Comercial”). S
 
 ## Verificación local
 
+- Últimas reglas de ventas/pagos/carteras del 21/10: frontend 171/171, backend 292/292 (15 financieras dirigidas), typecheck y builds frontend/servidor y `git diff --check` aprobados. Comprobadas ventas netas NEW/LEGACY sin efecto de abonos/certificados, pagos con doble condición de período, conservación de cartera histórica y conciliación de ambos desgloses.
+- E2E de últimas reglas: local 7/7 tras acotar un selector de prueba a su cuadro, API real/PGlite 1/1. Se verifican metadatos solo en ventas, filtros, ambas carteras, certificados, pago actual de OT de mes anterior excluido de Pagos recibidos pero aplicado a deuda y móvil 320 px sin desbordamiento. Sin consultas a producción ni confirmación del despliegue posterior.
 - Corrección del período de TOTAL FACT del 21/10: frontend 170/170, pruebas financieras del servidor 14/14, ambos builds TypeScript y `git diff --check` aprobados. El servidor ya ofrecía el bruto por período correcto; se corrigió qué agregado consume el cuadro, sin alterar consultas ni datos del servidor.
 - Corrección del período de TOTAL FACT: E2E local 7/7 y E2E API real/PGlite 1/1 aprobados. Se prueban mes actual predeterminado, FACT anteriores/dentro/posteriores, meses previo/siguiente, rango de fechas y meses, límites inclusivos de Bogotá, pagadas/retenciones, filtros y coincidencia con IVA/desglose/serie temporal. Sin acceso a producción ni confirmación del despliegue posterior al push.
 - Unificación de Cartera al corte del 21/10: frontend 170/170, backend 290/290 (13 pruebas financieras dirigidas), builds frontend/servidor con TypeScript y `git diff --check` aprobados. Se verifican fórmula uniforme NEW/LEGACY, redondeo, corte/filtros, IVA residual excluido, OT pagadas con certificados pendientes, categorías y suma exacta del desglose.
@@ -232,7 +236,11 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Desplegables de OT por concepto de cobro del 21/10 | 1 | 1 |
 | Ajuste de Total FACT bruto independiente de pagos y retenciones del 21/10 | 1 | 0 |
 | Unificación de Cartera al corte sin IVA más retenciones pendientes del 21/10 | 1 | 0 |
-| **Acumulado** | **55** | **32** |
+| Ventas totales con IVA y descuento de retenciones del 21/10 | 1 | 0 |
+| Retiro de descripciones de cuadros salvo ventas del 21/10 | 1 | 0 |
+| Pagos del período restringidos a OT del mismo período del 21/10 | 1 | 0 |
+| Restauración de carteras acumuladas con y sin IVA del 21/10 | 1 | 0 |
+| **Acumulado** | **59** | **32** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
@@ -270,6 +278,8 @@ La unificación posterior de Cartera al corte es un ajuste menor del resumen adm
 
 La corrección del filtro de Total FACT no se cuenta como cambio adicional: subsana el uso erróneo de fechas del indicador entregado. No es cobrable ni incrementa significativos.
 
+Las cuatro solicitudes posteriores sobre ventas netas, descripciones, pagos del mismo período y restauración de carteras se cuentan como ajustes menores de agregación/presentación: no crean persistencia nueva ni cambian el flujo productivo o las reglas de cobro de OT. La última aclaración sobre descontar retenciones forma parte de la misma solicitud de ventas, no es otro cambio.
+
 ## Pendiente para producción
 
 1. Ejecutar manualmente `server/migrations/012_disable_order_deletion.sql` en Supabase antes de publicar este código.
@@ -289,6 +299,6 @@ npm test
 npm --prefix server run typecheck
 npm --prefix server test
 $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright\chromium-1217\chrome-win64\chrome.exe'
-npx playwright test tests/finance.spec.ts --output=test-results/factperiod-local
-npx playwright test --config playwright.api.config.ts --grep 'reportes y desgloses' --output=test-results/factperiod-api
+npx playwright test tests/finance.spec.ts --output=test-results/finalrules-local
+npx playwright test --config playwright.api.config.ts --grep 'reportes y desgloses' --output=test-results/finalrules-api
 ```

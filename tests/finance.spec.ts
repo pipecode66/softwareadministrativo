@@ -52,15 +52,19 @@ for (const account of ['adminmaster@intermedios.local', 'administracion@intermed
       await expect(remCard.locator('.kpi-value')).toHaveText(formatCOP(75_000));
       await expect(factCard.locator('.kpi-value')).toHaveText(formatCOP(path === '/reports' ? 1_190_000 : 1_014_500));
       if (path === '/reports') {
-        const portfolioCard = page.locator('.kpi-card').filter({ has: page.getByText('Cartera al corte', { exact: true }) });
-        await expect(portfolioCard.locator('.kpi-value')).toHaveText(formatCOP(975_000));
+        const portfolioWithIva = page.locator('.kpi-card').filter({ has: page.getByText('Cartera al corte con IVA', { exact: true }) });
+        const portfolioWithoutIva = page.locator('.kpi-card').filter({ has: page.getByText('Cartera al corte sin IVA', { exact: true }) });
+        await expect(portfolioWithIva.locator('.kpi-value')).toHaveText(formatCOP(1_165_000));
+        await expect(portfolioWithoutIva.locator('.kpi-value')).toHaveText(formatCOP(975_000));
       }
       await page.getByLabel('Documento', { exact: true }).selectOption('FACT');
       await expect(remCard.locator('.kpi-value')).toHaveText(formatCOP(0));
       await expect(factCard.locator('.kpi-value')).toHaveText(formatCOP(path === '/reports' ? 1_190_000 : 1_014_500));
       if (path === '/reports') {
-        const portfolioCard = page.locator('.kpi-card').filter({ has: page.getByText('Cartera al corte', { exact: true }) });
-        await expect(portfolioCard.locator('.kpi-value')).toHaveText(formatCOP(900_000));
+        const portfolioWithIva = page.locator('.kpi-card').filter({ has: page.getByText('Cartera al corte con IVA', { exact: true }) });
+        const portfolioWithoutIva = page.locator('.kpi-card').filter({ has: page.getByText('Cartera al corte sin IVA', { exact: true }) });
+        await expect(portfolioWithIva.locator('.kpi-value')).toHaveText(formatCOP(1_090_000));
+        await expect(portfolioWithoutIva.locator('.kpi-value')).toHaveText(formatCOP(900_000));
       }
     }
   });
@@ -80,6 +84,7 @@ test('TOTAL FACT respeta el mes predeterminado y los períodos seleccionados sin
   });
   const previousFact = datedFact('previous-month-fact', 101, 100_000, previousMonth);
   previousFact.reteFuente = 5_000;
+  previousFact.payments = [{ id: 'previous-order-current-payment', date: `${currentMonth}-01`, amount: 20_000, recordedBy: 'u-master' }];
   const currentFact = datedFact('current-month-fact', 102, 200_000, currentMonth);
   currentFact.reteFuente = 10_000;
   currentFact.payments = [{ id: 'current-partial-payment', date: `${currentMonth}-01`, amount: 30_000, recordedBy: 'u-master' }];
@@ -93,30 +98,36 @@ test('TOTAL FACT respeta el mes predeterminado y los períodos seleccionados sin
   await login(page);
   await page.goto('/reports');
   const card = (label: string) => page.locator('.kpi-card').filter({ has: page.getByText(label, { exact: true }) });
-  const verifyPeriod = async (base: number, iva: number) => {
-    await expect(card('Ventas · valor base').locator('.kpi-value')).toHaveText(formatCOP(base));
+  const verifyPeriod = async (base: number, iva: number, retentions: number, received: number) => {
+    await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(formatCOP(base + iva - retentions));
     await expect(card('Total IVA').locator('.kpi-value')).toHaveText(formatCOP(iva));
     await expect(card('Total FACT').locator('.kpi-value')).toHaveText(formatCOP(base + iva));
     await expect(card('Total FACT').locator('details')).toHaveCount(0);
+    await expect(card('Pagos recibidos').locator('.kpi-value')).toHaveText(formatCOP(received));
   };
   await expect(page.getByLabel('Mes del reporte', { exact: true })).toHaveValue(currentMonth);
-  await verifyPeriod(350_000, 66_500);
+  await verifyPeriod(350_000, 66_500, 11_000, 207_500);
+  // El abono de una OT anterior no es un pago de las ventas del mes, pero reduce la cartera acumulada.
+  await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(formatCOP(308_000));
+  await expect(card('Cartera al corte sin IVA').locator('.kpi-value')).toHaveText(formatCOP(251_000));
+  await expect(page.locator('.kpi-card .kpi-meta')).toHaveCount(1);
+  await expect(card('Ventas totales').locator('.kpi-meta')).toHaveText('2 órdenes creadas en el período');
 
   await page.getByLabel('Mes del reporte', { exact: true }).fill(previousMonth);
-  await verifyPeriod(100_000, 19_000);
+  await verifyPeriod(100_000, 19_000, 5_000, 0);
   await page.getByLabel('Mes del reporte', { exact: true }).fill(nextMonth);
-  await verifyPeriod(400_000, 76_000);
+  await verifyPeriod(400_000, 76_000, 0, 0);
 
   await page.getByRole('button', { name: 'Rango de fechas', exact: true }).click();
   await page.getByLabel('Desde', { exact: true }).fill(`${previousMonth}-01`);
   await page.getByLabel('Hasta', { exact: true }).fill(`${currentMonth}-01`);
-  await verifyPeriod(450_000, 85_500);
+  await verifyPeriod(450_000, 85_500, 16_000, 227_500);
 
   await page.getByRole('button', { name: 'Rango de meses', exact: true }).click();
   await page.getByLabel('Hasta', { exact: true }).fill(nextMonth);
-  await verifyPeriod(850_000, 161_500);
+  await verifyPeriod(850_000, 161_500, 16_000, 227_500);
   await page.getByRole('button', { name: 'Mes', exact: true }).click();
-  await verifyPeriod(350_000, 66_500);
+  await verifyPeriod(350_000, 66_500, 11_000, 207_500);
 });
 
 test('reporte separa FACT e IVA y registra certificado sin modificar pagos', async ({ page }) => {
@@ -124,9 +135,9 @@ test('reporte separa FACT e IVA y registra certificado sin modificar pagos', asy
   await page.goto('/reports');
   await expect(page.getByText('FACT · ventas sin IVA', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Total IVA', { exact: true })).toBeVisible();
-  await expect(page.locator('.kpi-card').filter({ has: page.getByText('Cartera al corte', { exact: true }) })).toBeVisible();
-  await expect(page.getByText('Cartera al corte con IVA', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Cartera al corte sin IVA', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.kpi-card').filter({ has: page.getByText('Cartera al corte', { exact: true }) })).toHaveCount(0);
+  await expect(page.getByText('Cartera al corte con IVA', { exact: true })).toBeVisible();
+  await expect(page.getByText('Cartera al corte sin IVA', { exact: true })).toBeVisible();
   const before = await page.evaluate(key => {
     const order = (JSON.parse(localStorage.getItem(key)!) as AppData).orders.find(item => item.id === 'finance-fact')!;
     return order.payments.length;
@@ -153,18 +164,20 @@ test('Administración consulta cartera sin IVA más retenciones y la actualiza a
   const card = (label: string) => page.locator('.kpi-card').filter({ has: page.getByText(label, { exact: true }) });
   const totalIva = card('Total IVA');
   const retentions = card('Retenciones totales pendientes por cobrar');
+  await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(formatCOP(442_675));
   await expect(totalIva.locator('.kpi-value')).toHaveText(formatCOP(57_000));
   await expect(card('Total FACT').locator('.kpi-value')).toHaveText(formatCOP(357_000));
   await expect(retentions.locator('.kpi-value')).toHaveText(formatCOP(14_325));
-  await expect(card('Cartera al corte')).toHaveCount(1);
-  await expect(page.getByText('Cartera al corte con IVA', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Cartera al corte sin IVA', { exact: true })).toHaveCount(0);
+  await expect(card('Cartera al corte')).toHaveCount(0);
+  await expect(page.locator('.kpi-card .kpi-meta')).toHaveCount(1);
+  await expect(card('Ventas totales').locator('.kpi-meta')).toHaveText('3 órdenes creadas en el período');
   await page.screenshot({ path: testInfo.outputPath('reportes-desktop.png'), fullPage: true });
-  for (const label of ['Ventas · valor base', 'Total IVA', 'Pagos recibidos', 'Total FACT']) {
+  for (const label of ['Ventas totales', 'Total IVA', 'Pagos recibidos', 'Total FACT']) {
     await expect(card(label).locator('details')).toHaveCount(0);
   }
   for (const [label, amount, numbers] of [
-    ['Cartera al corte', 178_000, ['OT #0050', 'OT #0049', 'OT #0009']],
+    ['Cartera al corte con IVA', 206_500, ['OT #0050', 'OT #0049', 'OT #0009']],
+    ['Cartera al corte sin IVA', 178_000, ['OT #0050', 'OT #0049', 'OT #0009']],
     ['Total REM', 75_000, ['OT #0050']],
     ['Retenciones totales pendientes por cobrar', 14_325, ['OT #0049', 'OT #0009']],
   ] as const) {
@@ -173,27 +186,34 @@ test('Administración consulta cartera sin IVA más retenciones y la actualiza a
     await metric.locator('summary').click();
     await expect(metric.locator('.analytics-receivable-list a')).toHaveText([...numbers]);
   }
-  await expect(card('Cartera al corte').locator('.analytics-receivable-amount strong')).toHaveText([
+  await expect(card('Cartera al corte sin IVA').locator('.analytics-receivable-amount strong')).toHaveText([
     formatCOP(75_000), formatCOP(100_000), formatCOP(3_000),
+  ]);
+  await expect(card('Cartera al corte con IVA').locator('.analytics-receivable-amount strong')).toHaveText([
+    formatCOP(75_000), formatCOP(128_500), formatCOP(3_000),
   ]);
   await page.getByRole('checkbox', { name: 'Certificado RETEFUENTE recibido para OT #49', exact: true }).check();
   await expect(retentions.locator('.kpi-value')).toHaveText(formatCOP(8_325));
   await expect(totalIva.locator('.kpi-value')).toHaveText(formatCOP(57_000));
-  await expect(card('Cartera al corte').locator('.kpi-value')).toHaveText(formatCOP(172_000));
+  await expect(card('Ventas totales').locator('.kpi-value')).toHaveText(formatCOP(442_675));
+  await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(formatCOP(200_500));
+  await expect(card('Cartera al corte sin IVA').locator('.kpi-value')).toHaveText(formatCOP(172_000));
   await page.getByLabel('Documento', { exact: true }).selectOption('REM');
   await expect(totalIva.locator('.kpi-value')).toHaveText(formatCOP(0));
   await expect(retentions.locator('.kpi-value')).toHaveText(formatCOP(0));
   await expect(card('Total FACT').locator('.kpi-value')).toHaveText(formatCOP(0));
   await expect(card('Total FACT').locator('details')).toHaveCount(0);
-  await expect(card('Cartera al corte').locator('.kpi-value')).toHaveText(formatCOP(75_000));
+  await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(formatCOP(75_000));
+  await expect(card('Cartera al corte sin IVA').locator('.kpi-value')).toHaveText(formatCOP(75_000));
   await page.getByLabel('Documento', { exact: true }).selectOption('FACT');
-  await expect(card('Cartera al corte').locator('.kpi-value')).toHaveText(formatCOP(97_000));
+  await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(formatCOP(125_500));
+  await expect(card('Cartera al corte sin IVA').locator('.kpi-value')).toHaveText(formatCOP(97_000));
   await card('Total REM').locator('summary').click();
   await expect(card('Total REM').getByText('No hay órdenes pendientes para este concepto.')).toBeVisible();
   await page.getByLabel('Documento', { exact: true }).selectOption('ALL');
   await page.setViewportSize({ width: 320, height: 760 });
-  await card('Cartera al corte').locator('summary').click();
-  await expect(card('Cartera al corte').getByRole('link', { name: 'OT #0049', exact: true })).toBeVisible();
+  await card('Cartera al corte con IVA').locator('summary').click();
+  await expect(card('Cartera al corte con IVA').getByRole('link', { name: 'OT #0049', exact: true })).toBeVisible();
   await expect(card('Total FACT').locator('.kpi-value')).toHaveText(formatCOP(357_000));
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('reportes-mobile.png'), fullPage: true });

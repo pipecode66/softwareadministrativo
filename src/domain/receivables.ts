@@ -1,7 +1,7 @@
 import type { Category, Client, DocumentType, WorkOrder } from './types';
 import { dateOnly, financials, roundMoney } from './utils';
 
-export type ReceivableMetric = 'portfolioAtCutoff' | 'balanceWithIva' | 'balanceWithoutIva' | 'rem' | 'fact' | 'retentions' | 'reteFuente' | 'reteIva' | 'ica';
+export type ReceivableMetric = 'portfolioAtCutoffWithIva' | 'portfolioAtCutoff' | 'balanceWithIva' | 'balanceWithoutIva' | 'rem' | 'fact' | 'retentions' | 'reteFuente' | 'reteIva' | 'ica';
 export interface ReceivableQuery {
   cutoff: string; metric: ReceivableMetric; category?: Category; documentType?: DocumentType;
 }
@@ -20,6 +20,7 @@ export function receivableAmounts(order: WorkOrder, cutoff: string): Record<Rece
   const balanceWithoutIva = Math.max(0, roundMoney(balance - money.iva));
   const retentions = (Math.round(reteFuente * 100) + Math.round(reteIva * 100) + Math.round(ica * 100)) / 100;
   return {
+    portfolioAtCutoffWithIva: (Math.round(balance * 100) + Math.round(retentions * 100)) / 100,
     portfolioAtCutoff: (Math.round(balanceWithoutIva * 100) + Math.round(retentions * 100)) / 100,
     balanceWithIva: balance,
     balanceWithoutIva,

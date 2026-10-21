@@ -7,7 +7,7 @@ import { requireCurrentActor } from '../security/actor.js';
 import type { CertificateQuery, CertificateUpdate, MaterialQuery, PortfolioQuery, ReceivablesQuery, SalesQuery } from './schemas.js';
 
 type NumericRow = Record<string, string | number>;
-const moneyKeys = ['count', 'base', 'factBase', 'iva', 'factGross', 'reteFuente', 'reteIva', 'ica', 'retentions', 'collectible', 'collectibleWithoutIva', 'received', 'balance', 'balanceWithIva', 'balanceWithoutIva', 'ivaDue'] as const;
+const moneyKeys = ['count', 'base', 'salesNet', 'factBase', 'iva', 'factGross', 'reteFuente', 'reteIva', 'ica', 'retentions', 'collectible', 'collectibleWithoutIva', 'received', 'balance', 'balanceWithIva', 'balanceWithoutIva', 'ivaDue'] as const;
 function numbers(row: NumericRow | undefined, keys: readonly string[]): Record<string, number> {
   return Object.fromEntries(keys.map(key => [key, Number(row?.[key] ?? 0)]));
 }
@@ -59,9 +59,12 @@ const scopedOrders = `
     FROM money m LEFT JOIN paid p ON p.order_id = m.id
   )`;
 
+// salesNet is a report-only sale value (base + IVA - stored retentions), even
+// for LEGACY. Transactional collectible/balances retain their historical rule.
 const periodSums = `
   count(*) FILTER (WHERE created_on BETWEEN $1::date AND $2::date) AS count,
   coalesce(sum(base) FILTER (WHERE created_on BETWEEN $1::date AND $2::date), 0) AS base,
+  coalesce(sum(gross - retentions) FILTER (WHERE created_on BETWEEN $1::date AND $2::date), 0) AS "salesNet",
   coalesce(sum(base) FILTER (WHERE created_on BETWEEN $1::date AND $2::date AND document_type = 'FACT'), 0) AS "factBase",
   coalesce(sum(iva) FILTER (WHERE created_on BETWEEN $1::date AND $2::date), 0) AS iva,
   coalesce(sum(gross) FILTER (WHERE created_on BETWEEN $1::date AND $2::date AND document_type = 'FACT'), 0) AS "factGross",
@@ -76,9 +79,10 @@ const periodSums = `
   coalesce(sum("balanceWithoutIva"), 0) AS "balanceWithoutIva",
   coalesce(sum(balance - "balanceWithoutIva"), 0) AS "ivaDue"`;
 
-// Report-only combined indicator: cash principal still outstanding plus pending
-// retention certificates. It does not replace transactional debt or alter LEGACY.
+// Report-only combined indicators: outstanding cash with/without IVA plus pending
+// retention certificates. Neither replaces transactional debt nor alters LEGACY.
 const portfolioAtCutoffAmount = 'f."balanceWithoutIva" + f."pendingReteFuente" + f."pendingReteIva" + f."pendingIca"';
+const portfolioAtCutoffWithIvaAmount = 'f.balance + f."pendingReteFuente" + f."pendingReteIva" + f."pendingIca"';
 
 export async function salesReport(db: Database, auth: AuthSession, input: SalesQuery) {
   return snapshot(db, auth, async tx => {
@@ -86,19 +90,21 @@ export async function salesReport(db: Database, auth: AuthSession, input: SalesQ
     const totals = (await tx.query<NumericRow>(`WITH ${scopedOrders}
       SELECT ${periodSums},
         coalesce(sum(${portfolioAtCutoffAmount}), 0) AS "portfolioAtCutoff",
+        coalesce(sum(${portfolioAtCutoffWithIvaAmount}), 0) AS "portfolioAtCutoffWithIva",
         coalesce(sum(balance) FILTER (WHERE document_type = 'REM'), 0) AS "balanceRem",
         coalesce(sum(balance) FILTER (WHERE document_type = 'FACT'), 0) AS "balanceFact",
         coalesce(sum(gross) FILTER (WHERE document_type = 'FACT'), 0) AS "factGrossAtCutoff",
         coalesce(sum("pendingReteFuente" + "pendingReteIva" + "pendingIca"), 0) AS "pendingRetentions",
         (SELECT coalesce(sum(p.amount), 0) FROM payments p JOIN money m ON m.id = p.order_id
-          WHERE p.date BETWEEN $1::date AND $2::date) AS received
+          WHERE p.date BETWEEN $1::date AND $2::date AND m.created_on BETWEEN $1::date AND $2::date) AS received
       FROM facts f`, params)).rows[0];
     const categoryRows = (await tx.query<NumericRow>(`WITH ${scopedOrders},
       sales AS (SELECT category, ${periodSums},
-        coalesce(sum(${portfolioAtCutoffAmount}), 0) AS "portfolioAtCutoff" FROM facts f GROUP BY category),
+        coalesce(sum(${portfolioAtCutoffAmount}), 0) AS "portfolioAtCutoff",
+        coalesce(sum(${portfolioAtCutoffWithIvaAmount}), 0) AS "portfolioAtCutoffWithIva" FROM facts f GROUP BY category),
       receipts AS (
         SELECT m.category, sum(p.amount) AS received FROM payments p JOIN money m ON m.id = p.order_id
-        WHERE p.date BETWEEN $1::date AND $2::date GROUP BY m.category
+        WHERE p.date BETWEEN $1::date AND $2::date AND m.created_on BETWEEN $1::date AND $2::date GROUP BY m.category
       ) SELECT s.*, coalesce(r.received, 0) AS received FROM sales s LEFT JOIN receipts r ON r.category = s.category`, params)).rows;
     const documentRows = (await tx.query<NumericRow>(`WITH ${scopedOrders}
       SELECT document_type AS "documentType", count(*) AS count, coalesce(sum(base), 0) AS base,
@@ -117,7 +123,7 @@ export async function salesReport(db: Database, auth: AuthSession, input: SalesQ
         SELECT generate_series(date_trunc('${unit}', $1::date::timestamp), date_trunc('${unit}', $2::date::timestamp), interval '1 ${unit}') AS period
       ), sales AS (
         SELECT date_trunc('${unit}', created_on::timestamp) AS period, count(*) AS count,
-          sum(base) AS base,
+          sum(base) AS base, sum(gross - retentions) AS "salesNet",
           coalesce(sum(base) FILTER (WHERE document_type = 'FACT'), 0) AS "factBase",
           sum(iva) AS iva, sum("reteFuente") AS "reteFuente",
           sum("reteIva") AS "reteIva", sum(icaAmount) AS ica,
@@ -128,16 +134,16 @@ export async function salesReport(db: Database, auth: AuthSession, input: SalesQ
       ), receipts AS (
         SELECT date_trunc('${unit}', p.date::timestamp) AS period, sum(p.amount) AS received
         FROM payments p JOIN money m ON m.id = p.order_id
-        WHERE p.date BETWEEN $1::date AND $2::date GROUP BY period
-      ) SELECT to_char(d.period, '${pattern}') AS period, s.count, s.base, s."factBase", s.iva,
+        WHERE p.date BETWEEN $1::date AND $2::date AND m.created_on BETWEEN $1::date AND $2::date GROUP BY period
+      ) SELECT to_char(d.period, '${pattern}') AS period, s.count, s.base, s."salesNet", s."factBase", s.iva,
           s."reteFuente", s."reteIva", s.ica, s.retentions, s.collectible,
           s."collectibleWithoutIva", s."factGross", r.received
       FROM periods d LEFT JOIN sales s ON s.period = d.period LEFT JOIN receipts r ON r.period = d.period ORDER BY d.period`, params)).rows;
     return {
       from: input.from, to: input.to, groupBy: input.groupBy,
-      totals: numbers(totals, [...moneyKeys, 'balanceRem', 'balanceFact', 'factGrossAtCutoff', 'pendingRetentions', 'portfolioAtCutoff']),
+      totals: numbers(totals, [...moneyKeys, 'balanceRem', 'balanceFact', 'factGrossAtCutoff', 'pendingRetentions', 'portfolioAtCutoff', 'portfolioAtCutoffWithIva']),
       categories: categories.map(category => ({ category,
-        ...numbers(categoryRows.find(row => row.category === category), [...moneyKeys, 'portfolioAtCutoff']) })),
+        ...numbers(categoryRows.find(row => row.category === category), [...moneyKeys, 'portfolioAtCutoff', 'portfolioAtCutoffWithIva']) })),
       documents: (['REM', 'FACT'] as const).map(documentType => ({ documentType,
         ...numbers(documentRows.find(row => row.documentType === documentType),
           ['count', 'base', 'factBase', 'iva', 'gross', 'reteFuente', 'reteIva', 'ica', 'retentions', 'collectible', 'collectibleWithoutIva']) })),
@@ -211,6 +217,7 @@ export async function portfolioReport(db: Database, auth: AuthSession, input: Po
 
 const receivableAmounts: Record<ReceivablesQuery['metric'], string> = {
   portfolioAtCutoff: portfolioAtCutoffAmount,
+  portfolioAtCutoffWithIva: portfolioAtCutoffWithIvaAmount,
   balanceWithIva: 'f.balance',
   balanceWithoutIva: 'f."balanceWithoutIva"',
   rem: "CASE WHEN f.document_type = 'REM' THEN f.balance ELSE 0 END",
