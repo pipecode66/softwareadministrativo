@@ -160,7 +160,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const [users, clients, remoteOrders] = await remote(() => Promise.all([
         current.role === 'ADMINMASTER' ? apiListUsers() : Promise.resolve([current]),
         isAdmin(current.role) || current.role === 'DISENO' || current.role === 'APOYO_COMERCIAL' ? apiListClients() : Promise.resolve([]),
-        current.role === 'APOYO_COMERCIAL' ? Promise.resolve({ orders: [], clients: [] }) : apiListOrders(),
+        current.role === 'APOYO_COMERCIAL' || current.role === 'INSTALADOR' ? Promise.resolve({ orders: [], clients: [] }) : apiListOrders(),
       ]));
       if (epoch !== sessionEpoch.current) return;
       const previousOrders = dataRef.current.orders;

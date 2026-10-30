@@ -2,7 +2,15 @@
 
 ## Objetivo
 
-Intermedios Gestión centraliza clientes, ventas, cartera y producción publicitaria para una sola sede y hasta 15 usuarios. Los roles son ADMINMASTER, ADMIN_GENERAL, DISENO, IMPRESION y TALLER. Las fuentes de Downloads y el PDF son referencias de solo lectura; las instrucciones directas del usuario prevalecen.
+Intermedios Gestión centraliza clientes, ventas, cartera y producción publicitaria para una sola sede y hasta 15 usuarios. Los roles son ADMINMASTER, ADMIN_GENERAL, APOYO_COMERCIAL, DISENO, IMPRESION, TALLER y el nuevo INSTALADOR en desarrollo local. Las fuentes de Downloads y el PDF son referencias de solo lectura; las instrucciones directas del usuario prevalecen.
+
+## Nuevo alcance: Instalaciones (en desarrollo local)
+
+El usuario autoriza un submódulo específico con interfaz administrativa y bandeja móvil privada por instalador. Incluye asignación individual, varios instaladores y equipos reutilizables con un responsable principal, planificación, registro individual de llegada/salida con ubicación puntual, descanso/almuerzo, aplazamiento por Administración, resultado, checklist y fotografía privada. La disponibilidad depende de terminar todas las áreas productivas de la OT y requerir instalación; no se obliga a que una OT pase por Taller si su recorrido no lo incluye. No duplica ventas ni genera otra OT comercial.
+
+Los permisos se verifican en servidor. Los instaladores no reciben historial general de OT, directorio de clientes ni importes. Cada persona registra su propia asistencia; no se atribuyen tiempos de un instalador a otro al reasignar. Los equipos se copian como asignación del trabajo: cambiar el equipo no altera instalaciones anteriores. El responsable principal coordina el cierre y debe justificar a integrantes que nunca llegaron; quienes sí llegaron deben registrar su salida. No existe rastreo continuo ni cola offline ficticia. Las marcas temporales de registro son del servidor y se muestran en Bogotá. La precisión/ubicación del navegador no constituye prueba antimanipulación. El usuario confirmó excepción administrativa por fallo de ubicación, con motivo obligatorio y trazabilidad; el instalador nunca puede autorizarla por sí mismo.
+
+Desde28/10: **solo local, sin push a main ni despliegue hasta validación expresa**. Rama `feature/instalaciones-local`; nueva migración015 aún no aplicada en producción. Contrato en `docs/INSTALACIONES_CONTRATO.md`; estado y pruebas pendientes en ESTADO. Se prepara un entorno PGlite exclusivo sin copiar ni tocar información productiva.
 
 ## Flujo vigente
 
@@ -68,7 +76,7 @@ El cuadro IVA pendiente de cobro fue reemplazado por Retenciones totales pendien
 
 ## Fuera de alcance
 
-No incluye urgencias, inventario, exportación Excel/CSV, contabilidad integral, emisión DIAN, pasarela de pagos, archivos adjuntos, GPS, firma digital, modo sin conexión, varias sedes ni cuentas independientes de instaladores.
+No incluye urgencias, inventario, exportación Excel/CSV, contabilidad integral, emisión DIAN, pasarela de pagos, adjuntos generales, firma digital, modo sin conexión ni varias sedes. La exclusión anterior de GPS, fotografías y cuentas de instaladores fue sustituida únicamente para el nuevo submódulo de Instalaciones, autorizado el26/10 y ampliado con equipos el28/10. No se habilitan adjuntos ni ubicación en otros módulos.
 
 ## Estado técnico
 

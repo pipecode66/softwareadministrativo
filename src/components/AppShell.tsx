@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowUpRight, ChevronRight, ClipboardList, Hammer, History, KeyRound, LayoutDashboard, LogOut, Menu, PanelsTopLeft, PencilRuler, Plus, Printer, Search, Settings2, SquareStack, Users, Wallet, ChartNoAxesCombined, type LucideIcon } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, ClipboardList, Hammer, History, KeyRound, LayoutDashboard, LogOut, MapPin, Menu, PanelsTopLeft, PencilRuler, Plus, Printer, Search, Settings2, SquareStack, Users, Wallet, ChartNoAxesCombined, type LucideIcon } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import { canCreate, initials, isAdmin, ROLE_LABELS } from '../domain/utils';
 import { Modal } from './ui';
@@ -26,7 +26,10 @@ export function AppShell() {
     {to:'/design',label:'Diseño',icon:PencilRuler,group:'Bandejas operativas'},
     {to:'/printing',label:'Impresión',icon:Printer,group:'Bandejas operativas'},
     {to:'/workshop',label:'Taller',icon:Hammer,group:'Bandejas operativas'},
+    {to:'/installations',label:'Instalaciones',icon:MapPin,group:'Bandejas operativas'},
     ...(user?.role === 'ADMINMASTER' ? [{to:'/settings/users',label:'Usuarios',icon:Settings2,group:'Sistema'}] : []),
+  ] : user?.role === 'INSTALADOR' ? [
+    {to:'/installations',label:'Mis instalaciones',icon:MapPin,group:'Trabajo en campo'},
   ] : user?.role === 'DISENO' ? [
     {to:'/design',label:'Mi bandeja',icon:PencilRuler,group:'Diseño'},
     {to:'/orders',label:'Mis órdenes',icon:ClipboardList,group:'Diseño'},

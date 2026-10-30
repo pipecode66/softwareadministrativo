@@ -21,6 +21,7 @@ const PortfolioPage = lazy(()=>import('./pages/Portfolio').then(m=>({default:m.P
 const MaterialsPage = lazy(()=>import('./pages/Materials').then(m=>({default:m.MaterialsPage})));
 const UsersPage = lazy(()=>import('./pages/Users').then(m=>({default:m.UsersPage})));
 const HistoryPage = lazy(()=>import('./pages/History').then(m=>({default:m.HistoryPage})));
+const InstallationsPage = lazy(()=>import('./pages/Installations').then(m=>({default:m.InstallationsPage})));
 const admins:Role[]=['ADMINMASTER','ADMIN_GENERAL'];
 const operationsAdmins:Role[]=['ADMINMASTER','ADMIN_GENERAL'];
 function Guard({roles,children,allowPasswordChange=false}:{roles?:Role[];children:ReactNode;allowPasswordChange?:boolean}){
@@ -31,10 +32,34 @@ function Guard({roles,children,allowPasswordChange=false}:{roles?:Role[];childre
   if(roles&&!roles.includes(user.role))return <EmptyState title="Acceso restringido" description="Tu perfil no tiene permisos para consultar esta sección." action={<Link className="btn btn-secondary" to="/">Volver a mi inicio</Link>}/>;
   return children;
 }
-function Home(){const {user}=useApp();return user?.role==='APOYO_COMERCIAL'?<Navigate to="/orders/new" replace/>:user?.role==='DISENO'?<Navigate to="/design" replace/>:user?.role==='IMPRESION'?<Navigate to="/printing" replace/>:user?.role==='TALLER'?<Navigate to="/workshop" replace/>:<DashboardPage/>;}
+function Home(){const {user}=useApp();return user?.role==='INSTALADOR'?<Navigate to="/installations" replace/>:user?.role==='APOYO_COMERCIAL'?<Navigate to="/orders/new" replace/>:user?.role==='DISENO'?<Navigate to="/design" replace/>:user?.role==='IMPRESION'?<Navigate to="/printing" replace/>:user?.role==='TALLER'?<Navigate to="/workshop" replace/>:<DashboardPage/>;}
 function Loading(){return <div className="page-stack loading-screen" aria-busy="true" aria-label="Cargando pantalla"><div className="skeleton skeleton-heading"/><div className="grid-3">{[1,2,3].map(n=><div className="skeleton skeleton-card" key={n}/>)}</div><div className="skeleton skeleton-table"/></div>;}
 export class AppErrorBoundary extends Component<{children:ReactNode},{failed:boolean}>{
   state={failed:false};static getDerivedStateFromError(){return {failed:true};}componentDidCatch(error:Error,_info:ErrorInfo){console.error('Intermedios: error de interfaz',error);}
   render(){return this.state.failed?<div className="app-error"><EmptyState title="No pudimos abrir esta pantalla" description="Recarga para intentarlo de nuevo. Los datos guardados en el navegador se conservan." action={<button className="btn btn-primary" onClick={()=>window.location.reload()}>Volver a cargar</button>}/></div>:this.props.children;}
 }
-export default function App(){return <AppErrorBoundary><AppProvider><BrowserRouter><Suspense fallback={<Loading/>}><Routes><Route path="/login" element={<LoginPage/>}/><Route path="/change-password" element={<Guard allowPasswordChange><ChangePasswordPage/></Guard>}/><Route element={<Guard><AppShell/></Guard>}><Route index element={<Home/>}/><Route path="operation" element={<Guard roles={operationsAdmins}><OperationPage/></Guard>}/><Route path="orders" element={<Guard roles={[...operationsAdmins,'DISENO','IMPRESION','TALLER']}><OrdersPage/></Guard>}/><Route path="orders/new" element={<Guard roles={[...operationsAdmins,'APOYO_COMERCIAL','DISENO']}><OrderFormPage/></Guard>}/><Route path="orders/:id/edit" element={<Guard roles={operationsAdmins}><OrderFormPage/></Guard>}/><Route path="orders/:id/print" element={<Guard roles={operationsAdmins}><PrintOrderPage/></Guard>}/><Route path="orders/:id" element={<Guard roles={[...operationsAdmins,'DISENO','IMPRESION','TALLER']}><OrderDetailPage/></Guard>}/><Route path="history" element={<Guard roles={operationsAdmins}><HistoryPage/></Guard>}/><Route path="clients" element={<Guard roles={[...operationsAdmins,'DISENO']}><ClientsPage/></Guard>}/><Route path="clients/:id" element={<Guard roles={[...operationsAdmins,'DISENO']}><ClientDetailPage/></Guard>}/><Route path="portfolio" element={<Guard roles={operationsAdmins}><PortfolioPage/></Guard>}/><Route path="reports" element={<Guard roles={admins}><ReportsPage/></Guard>}/><Route path="materials" element={<Guard roles={operationsAdmins}><MaterialsPage/></Guard>}/><Route path="design" element={<Guard roles={[...operationsAdmins,'DISENO']}><QueuePage department="DISENO"/></Guard>}/><Route path="printing" element={<Guard roles={[...operationsAdmins,'IMPRESION']}><QueuePage department="IMPRESION"/></Guard>}/><Route path="workshop" element={<Guard roles={[...operationsAdmins,'TALLER']}><QueuePage department="TALLER"/></Guard>}/><Route path="settings/users" element={<Guard roles={['ADMINMASTER']}><UsersPage/></Guard>}/><Route path="*" element={<EmptyState title="Esta página no existe" description="Comprueba la dirección o vuelve al inicio." action={<Link className="btn btn-primary" to="/">Ir al inicio</Link>}/>}/></Route></Routes></Suspense></BrowserRouter></AppProvider></AppErrorBoundary>;}
+export default function App(){return <AppErrorBoundary><AppProvider><BrowserRouter><Suspense fallback={<Loading/>}><Routes>
+  <Route path="/login" element={<LoginPage/>}/>
+  <Route path="/change-password" element={<Guard allowPasswordChange><ChangePasswordPage/></Guard>}/>
+  <Route element={<Guard><AppShell/></Guard>}>
+    <Route index element={<Home/>}/>
+    <Route path="operation" element={<Guard roles={operationsAdmins}><OperationPage/></Guard>}/>
+    <Route path="orders" element={<Guard roles={[...operationsAdmins,'DISENO','IMPRESION','TALLER']}><OrdersPage/></Guard>}/>
+    <Route path="orders/new" element={<Guard roles={[...operationsAdmins,'APOYO_COMERCIAL','DISENO']}><OrderFormPage/></Guard>}/>
+    <Route path="orders/:id/edit" element={<Guard roles={operationsAdmins}><OrderFormPage/></Guard>}/>
+    <Route path="orders/:id/print" element={<Guard roles={operationsAdmins}><PrintOrderPage/></Guard>}/>
+    <Route path="orders/:id" element={<Guard roles={[...operationsAdmins,'DISENO','IMPRESION','TALLER']}><OrderDetailPage/></Guard>}/>
+    <Route path="history" element={<Guard roles={operationsAdmins}><HistoryPage/></Guard>}/>
+    <Route path="clients" element={<Guard roles={[...operationsAdmins,'DISENO']}><ClientsPage/></Guard>}/>
+    <Route path="clients/:id" element={<Guard roles={[...operationsAdmins,'DISENO']}><ClientDetailPage/></Guard>}/>
+    <Route path="portfolio" element={<Guard roles={operationsAdmins}><PortfolioPage/></Guard>}/>
+    <Route path="reports" element={<Guard roles={admins}><ReportsPage/></Guard>}/>
+    <Route path="materials" element={<Guard roles={operationsAdmins}><MaterialsPage/></Guard>}/>
+    <Route path="design" element={<Guard roles={[...operationsAdmins,'DISENO']}><QueuePage department="DISENO"/></Guard>}/>
+    <Route path="printing" element={<Guard roles={[...operationsAdmins,'IMPRESION']}><QueuePage department="IMPRESION"/></Guard>}/>
+    <Route path="workshop" element={<Guard roles={[...operationsAdmins,'TALLER']}><QueuePage department="TALLER"/></Guard>}/>
+    <Route path="installations" element={<Guard roles={[...operationsAdmins,'INSTALADOR']}><InstallationsPage/></Guard>}/>
+    <Route path="settings/users" element={<Guard roles={['ADMINMASTER']}><UsersPage/></Guard>}/>
+    <Route path="*" element={<EmptyState title="Esta página no existe" description="Comprueba la dirección o vuelve al inicio." action={<Link className="btn btn-primary" to="/">Ir al inicio</Link>}/>}/>
+  </Route>
+</Routes></Suspense></BrowserRouter></AppProvider></AppErrorBoundary>;}

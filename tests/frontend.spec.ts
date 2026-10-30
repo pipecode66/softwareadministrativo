@@ -279,17 +279,15 @@ test('varios abonos persisten y no se acepta un pago superior al saldo', async (
   await expect(page.getByRole('button', { name: 'Registrar abono o pago', exact: true })).toHaveCount(0);
 });
 
-test('orden histórica: instalación y cierre conservan el estado del trabajo', async ({ page }) => {
+test('una OT pendiente remite al nuevo módulo sin permitir el cierre antiguo', async ({ page }) => {
   await login(page);
   await page.goto('/orders/ot-4');
-  await page.getByRole('button', { name: 'Registrar instalación', exact: true }).click();
-  await page.getByRole('dialog').getByLabel('Observaciones de instalación', { exact: true }).fill('Instalada según revisión del cliente.');
-  await page.getByRole('dialog').getByRole('button', { name: 'Confirmar', exact: true }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await advance(page, 'Cerrar orden');
+  await expect(page.getByRole('button', { name: 'Registrar instalación', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Cerrar orden', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Abrir Instalaciones', exact: true })).toHaveAttribute('href', '/installations?q=4');
   const order = (await storedOrders(page)).find(item => item.id === 'ot-4')!;
-  expect(order.status).toBe('INSTALLED');
-  expect(order.closedAt).toBeTruthy();
+  expect(order.status).toBe('PENDING_INSTALLATION');
+  expect(order.closedAt).toBeFalsy();
 });
 
 test('ruta solo impresión crea una tarea sin paso por Taller', async ({ page }) => {

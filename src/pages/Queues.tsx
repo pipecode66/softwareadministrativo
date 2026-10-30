@@ -16,7 +16,6 @@ export function workflowAction(order: WorkOrder, role?: Role): { action: OrderAc
   if (order.status === 'IN_EXTERNAL' && admin) return { action: 'finishExternal', label: 'Finalizar externo' };
   if (order.status === 'IN_PRINTING' && role === 'IMPRESION') return { action: 'finishPrinting', label: 'Finalizar impresión' };
   if (order.status === 'IN_WORKSHOP' && role === 'TALLER') return order.workshopStartedAt ? { action: 'finishWorkshop', label: 'Finalizar taller' } : { action: 'startWorkshop', label: 'Iniciar taller' };
-  if (order.status === 'PENDING_INSTALLATION' && (admin || role === 'TALLER')) return { action: 'install', label: 'Registrar instalación' };
   return null;
 }
 
@@ -294,7 +293,7 @@ function QueueContents({ department }: { department: QueueDepartment }) {
     {usingApi && <CompositeActivityQueue department={department} />}
     <div className="grid-3">
       <KpiCard label={department === 'DISENO' ? 'OT por enviar' : department === 'IMPRESION' ? 'Por imprimir' : 'Trabajos en Taller'} value={department === 'TALLER' ? active.filter(order => order.status === 'IN_WORKSHOP').length : waiting.length} icon={copy.icon} meta={department === 'DISENO' ? 'Órdenes aún sin distribuir' : 'Órdenes disponibles en tu bandeja'} tone={department === 'DISENO' ? 'amber' : department === 'TALLER' ? 'blue' : 'orange'} />
-      <KpiCard label={department === 'IMPRESION' ? 'Superficie por imprimir' : department === 'TALLER' ? 'Pendientes de instalación' : 'En producción'} value={department === 'IMPRESION' ? `${formatNumber(active.reduce((sum, order) => sum + areaOf(order.printing), 0), 3)} m²` : department === 'TALLER' ? installation.length : active.length - waiting.length} icon={department === 'IMPRESION' ? Ruler : department === 'TALLER' ? MapPin : Workflow} meta={department === 'IMPRESION' ? 'Área total de los trabajos pendientes' : department === 'TALLER' ? 'Confirmación a cargo de Taller o Administración' : 'Trabajos aprobados y en curso'} tone="blue" />
+      <KpiCard label={department === 'IMPRESION' ? 'Superficie por imprimir' : department === 'TALLER' ? 'Pendientes de instalación' : 'En producción'} value={department === 'IMPRESION' ? `${formatNumber(active.reduce((sum, order) => sum + areaOf(order.printing), 0), 3)} m²` : department === 'TALLER' ? installation.length : active.length - waiting.length} icon={department === 'IMPRESION' ? Ruler : department === 'TALLER' ? MapPin : Workflow} meta={department === 'IMPRESION' ? 'Área total de los trabajos pendientes' : department === 'TALLER' ? 'Asignación en el módulo Instalaciones' : 'Trabajos aprobados y en curso'} tone="blue" />
       {showFinished ? <KpiCard label={department === 'IMPRESION' ? 'Impresiones terminadas' : 'Trabajos terminados'} value={finished.length} icon={CheckCircle2} meta="Trabajos finalizados de esta bandeja" tone="green" /> : <KpiCard label={department === 'IMPRESION' ? 'Materiales requeridos' : 'Por iniciar fabricación'} value={department === 'IMPRESION' ? new Set(active.map(order => order.printing?.material).filter(Boolean)).size : waiting.length} icon={department === 'IMPRESION' ? Printer : Clock3} meta={department === 'IMPRESION' ? 'Tipos de material en los trabajos pendientes' : 'Órdenes disponibles para iniciar en Taller'} tone="slate" />}
     </div>
     <Card>

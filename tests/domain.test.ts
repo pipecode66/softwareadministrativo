@@ -4,7 +4,7 @@ import { createWorkOrder, editWorkOrder, recordPayment, transitionWorkOrder, val
 import { areaOf, canCreate, canViewOrder, CATEGORIES, currentMonthRange, dateOnly, financials, formatDate, formatMeasure, formatPesosInput, inRange, isAdmin, isCalendarDate, isFinished, MATERIALS, normalize, roundMoney, today, visibleOrders } from '../src/domain/utils';
 
 const NOW = '2026-09-14T15:00:00.000Z';
-const roles: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'APOYO_COMERCIAL', 'DISENO', 'IMPRESION', 'TALLER'];
+const roles: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'APOYO_COMERCIAL', 'DISENO', 'IMPRESION', 'TALLER', 'INSTALADOR'];
 const user = (role: Role = 'ADMIN_GENERAL', overrides: Partial<User> = {}): User => ({ id: `user-${role}`, name: role, email: `${role}@example.test`, role, active: true, ...overrides });
 const input = (overrides: Partial<OrderInput> = {}): OrderInput => ({ number: 1, clientId: 'client-1', description: '  Trabajo publicitario  ', value: 100000, documentType: 'REM', category: 'Otras', route: 'PRINT_WORKSHOP', requiresInstallation: false, printing: { material: 'Panaflex', length: 2.5, width: 1.2 }, ...overrides });
 const order = (overrides: Partial<WorkOrder> = {}): WorkOrder => ({ ...input(), reteFuente: 0, reteIva: 0, ica: 0, id: 'order-1', createdAt: '2026-01-15T18:00:00.000Z', updatedAt: '2026-01-15T18:00:00.000Z', createdBy: user('DISENO').id, payments: [], status: 'NEW', ...overrides });
@@ -348,17 +348,16 @@ describe('Producción, instalación y cierre', () => {
     expect(finished.status).toBe(requiresInstallation ? 'PENDING_INSTALLATION' : 'COMPLETED');
     expect(financials(finished).balance).toBe(100000);
   });
-  it('registra instalación con fecha y nota, sin convertirla en pago', () => {
+  it('remite el cierre de instalación al nuevo módulo conectado al servidor', () => {
     const original = order({ status: 'PENDING_INSTALLATION', requiresInstallation: true, updatedAt: '2026-09-01T18:00:00Z' });
-    const result = transitionWorkOrder(user('TALLER'), original, 'install', { date: '2026-09-10', note: '  Instalado en fachada.  ' });
-    expect(result).toMatchObject({ status: 'INSTALLED', installedAt: '2026-09-10T12:00:00-05:00', installationNote: 'Instalado en fachada.', updatedAt: NOW });
-    expect(financials(result).balance).toBe(100000);
+    expect(() => transitionWorkOrder(user('TALLER'), original, 'install', { date: '2026-09-10', note: 'Instalado' })).toThrow(/módulo Instalaciones/);
+    expect(financials(original).balance).toBe(100000);
   });
   it.each(['', '2026-02-31', '2026-02-29', '2026-01-14', '2026-09-15'])('no instala con fecha inválida o fuera del intervalo: %s', date => {
-    expect(() => transitionWorkOrder(user(), order({ status: 'PENDING_INSTALLATION', requiresInstallation: true }), 'install', { date })).toThrow(/fecha/);
+    expect(() => transitionWorkOrder(user(), order({ status: 'PENDING_INSTALLATION', requiresInstallation: true }), 'install', { date })).toThrow(/módulo Instalaciones/);
   });
   it('no permite instalar un trabajo que no requiere instalación', () => {
-    expect(() => transitionWorkOrder(user(), order({ status: 'PENDING_INSTALLATION', requiresInstallation: false }), 'install', { date: '2026-09-14' })).toThrow(/pendiente de instalación/);
+    expect(() => transitionWorkOrder(user(), order({ status: 'PENDING_INSTALLATION', requiresInstallation: false }), 'install', { date: '2026-09-14' })).toThrow(/módulo Instalaciones/);
   });
   it('cierre solo administrativo después del fin, independiente del saldo', () => {
     const completed = order({ status: 'COMPLETED' });
@@ -369,16 +368,15 @@ describe('Producción, instalación y cierre', () => {
     expect(() => transitionWorkOrder(user(), closed, 'send')).toThrow(/cerrada/);
     expect(() => transitionWorkOrder(user(), order(), 'close')).toThrow(/terminado/);
   });
-  it('recorre Diseño → Administración → Impresión → Taller → Instalación → Cierre', () => {
-    let work = createWorkOrder(data(), user('DISENO'), input({ requiresInstallation: true }));
+  it('conserva el recorrido local sin instalación y el cierre independiente del pago', () => {
+    let work = createWorkOrder(data(), user('DISENO'), input({ requiresInstallation: false }));
     work = transitionWorkOrder(user(), work, 'send');
     work = transitionWorkOrder(user('IMPRESION'), work, 'finishPrinting', { receivedByWorkshop: 'María Taller' });
     work = transitionWorkOrder(user('TALLER'), work, 'startWorkshop');
     work = transitionWorkOrder(user('TALLER'), work, 'finishWorkshop');
-    work = transitionWorkOrder(user('TALLER'), work, 'install', { date: today() });
     work = transitionWorkOrder(user(), work, 'close');
     work = recordPayment(user(), work, { date: today(), amount: 100000 });
-    expect(work).toMatchObject({ status: 'INSTALLED', printingCompletedAt: NOW, workshopStartedAt: NOW, closedAt: NOW });
+    expect(work).toMatchObject({ status: 'COMPLETED', printingCompletedAt: NOW, workshopStartedAt: NOW, closedAt: NOW });
     expect(financials(work).paymentStatus).toBe('PAID');
   });
 });

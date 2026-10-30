@@ -12,6 +12,7 @@ import { createOrdersRouter } from './orders/router.js';
 import { createReportsRouter } from './reports/router.js';
 import { createWorkRouter } from './work/router.js';
 import { createHistoryRouter } from './history/router.js';
+import { createInstallationsRouter } from './installations/router.js';
 
 const JSON_LIMIT = '32kb';
 
@@ -109,6 +110,8 @@ export async function createApp(db: Database, config: AppConfig): Promise<Expres
   app.use(corsMiddleware(config));
   app.use('/api/v1', requireAllowedOrigin(config));
   app.use('/api/v1', requireJsonWrites());
+  // A single optimized evidence photo; retain the existing small limit everywhere else.
+  app.post('/api/v1/installations/:id/evidence', express.json({ limit: '256kb' }));
   app.use(express.json({ limit: JSON_LIMIT }));
 
   const auth = await createAuth(db, config);
@@ -157,6 +160,7 @@ export async function createApp(db: Database, config: AppConfig): Promise<Expres
   api.use('/reports', auth.requireAuth, auth.requirePasswordReady, auth.requireCsrf, createReportsRouter(db));
   api.use('/work', auth.requireAuth, auth.requirePasswordReady, auth.requireCsrf, createWorkRouter(db));
   api.use('/history', auth.requireAuth, auth.requirePasswordReady, auth.requireCsrf, createHistoryRouter(db));
+  api.use('/installations', auth.requireAuth, auth.requirePasswordReady, auth.requireCsrf, createInstallationsRouter(db));
   api.use((request: Request) => {
     throw new ApiError(404, 'NOT_FOUND', `No existe ${request.method} ${request.path}.`);
   });

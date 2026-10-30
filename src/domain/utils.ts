@@ -2,7 +2,7 @@ import type { Category, DateRange, Financials, Material, Printing, ProductionRou
 
 export const CATEGORIES: Category[] = ['SuperGiros', 'Carro Vallas', 'Proyecto', 'Otras'];
 export const MATERIALS: Material[] = ['Panaflex', 'V. Corte', 'V. Impresión', 'Banner'];
-export const ROLE_LABELS: Record<Role, string> = { ADMINMASTER: 'Adminmaster', ADMIN_GENERAL: 'Administración', APOYO_COMERCIAL: 'Apoyo Comercial', DISENO: 'Diseño', IMPRESION: 'Impresión', TALLER: 'Taller' };
+export const ROLE_LABELS: Record<Role, string> = { ADMINMASTER: 'Adminmaster', ADMIN_GENERAL: 'Administración', APOYO_COMERCIAL: 'Apoyo Comercial', DISENO: 'Diseño', IMPRESION: 'Impresión', TALLER: 'Taller', INSTALADOR: 'Instalador' };
 export const STATUS_LABELS: Record<WorkStatus, string> = { NEW: 'Nueva', PENDING_ADMIN_REVIEW: 'En revisión (anterior)', IN_PRINTING: 'En impresión', IN_WORKSHOP: 'En taller', IN_EXTERNAL: 'En externo', IN_PRODUCTION: 'En producción', PENDING_INSTALLATION: 'Por instalar', COMPLETED: 'Terminada', INSTALLED: 'Instalada' };
 export const ROUTE_LABELS: Record<ProductionRoute, string> = { PRINT_ONLY: 'Solo Impresión', IMPRENTA: 'Imprenta (anterior)', EXTERNO: 'Externo', WORKSHOP_ONLY: 'Solo Taller', PRINT_WORKSHOP: 'Impresión → Taller', MULTI_AREA: 'Varias áreas' };
 export const isAdmin = (role?: Role) => role === 'ADMINMASTER' || role === 'ADMIN_GENERAL';
@@ -15,7 +15,7 @@ export const hasWorkshop = (route: ProductionRoute) => ['WORKSHOP_ONLY', 'PRINT_
 export const canViewOrder = (user: User | null, order: WorkOrder) => {
   if (!user || !user.active) return false;
   if (isAdmin(user.role)) return true;
-  if (user.role === 'APOYO_COMERCIAL') return false;
+  if (user.role === 'APOYO_COMERCIAL' || user.role === 'INSTALADOR') return false;
   if (order.serverVisible) return true;
   if (user.role === 'DISENO') return order.createdBy === user.id || Boolean(order.products?.some(product =>
     product.activities.some(activity => activity.area === 'DESIGN' && (!activity.assignedUserId || activity.assignedUserId === user.id))));

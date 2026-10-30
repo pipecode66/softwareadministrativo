@@ -339,6 +339,9 @@ async function listedById(tx: SqlConnection, id: string): Promise<ListedActivity
 }
 
 export async function listActivities(db: Database, auth: AuthSession, query: z.input<typeof activityListSchema>) {
+  if (!admin(auth.user.role) && !['DISENO', 'IMPRESION', 'TALLER'].includes(auth.user.role)) {
+    throw new ApiError(403, 'FORBIDDEN', 'Tu perfil no tiene acceso a las actividades de producción.');
+  }
   const input = activityListSchema.parse(query);
   return db.transaction(async tx => {
     await tx.exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');

@@ -403,20 +403,17 @@ describe('OT: edición, versiones y flujo productivo', () => {
     expect((await transition(closed, 'close')).status).toBe(409);
   });
 
-  it.each(['PRINT_ONLY', 'WORKSHOP_ONLY', 'PRINT_WORKSHOP'] as const)('recorre %s con instalación simple', async route => {
+  it.each(['PRINT_ONLY', 'WORKSHOP_ONLY', 'PRINT_WORKSHOP'] as const)('libera %s a Instalaciones e impide saltarse su recorrido', async route => {
     let order = await create({ route, requiresInstallation: true, ...(route === 'WORKSHOP_ONLY' ? { printing: undefined } : {}) });
     order = await move(order, 'send');
     if (route !== 'WORKSHOP_ONLY') order = await move(order, 'finishPrinting', await actor('IMPRESION'));
     if (route !== 'PRINT_ONLY') order = await move(order, 'finishWorkshop', await actor('TALLER'));
     expect(order.status).toBe('PENDING_INSTALLATION');
-    expect((await transition(order, 'install', await actor('TALLER'))).status).toBe(400);
-    expect((await transition(order, 'install', await actor('TALLER'), { date: '2000-01-01' })).status).toBe(400);
-    expect((await transition(order, 'install', await actor('TALLER'), { date: '9999-12-31' })).status).toBe(400);
-    order = await move(order, 'install', await actor('TALLER'), { date: dateOnly(), note: '  Instalación revisada  ' });
-    expect(order.status).toBe('INSTALLED');
-    expect(dateOnly(order.installedAt!)).toBe(dateOnly());
-    expect(order.installationNote).toBe('Instalación revisada');
-    expect((await move(order, 'close')).closedAt).toBeDefined();
+    const oldInstall = await transition(order, 'install', await actor('TALLER'), { date: dateOnly(), note: 'Instalación revisada' });
+    expect(oldInstall.status).toBe(409);
+    expect(oldInstall.body.error.code).toBe('INSTALLATION_MODULE_REQUIRED');
+    expect((await transition(order, 'install', admin, { date: dateOnly() })).status).toBe(409);
+    expect((await transition(order, 'close')).status).toBe(409);
   });
 
   it('el cierre productivo no borra la cartera ni impide abonos posteriores', async () => {

@@ -159,7 +159,7 @@ describe('limpieza transaccional de datos de prueba', () => {
     expect((await insertOrder(retainedClient, atCutoff, 'Siguiente OT')).number).toBe(3);
   });
 
-  it('el SQL de entrega vacia todos los datos comerciales, conserva las cuentas y reinicia la OT en 1', async () => {
+  it('el SQL histórico de entrega rechaza las dependencias nuevas sin borrar datos ni reiniciar OT', async () => {
     const client = await insertClient(atCutoff, 'Cliente de prueba final');
     const order = await insertOrder(client, atCutoff, 'OT de prueba final');
     await addDependencies(order.id, client, atCutoff);
@@ -173,15 +173,21 @@ describe('limpieza transaccional de datos de prueba', () => {
       new URL('../maintenance/borrar_todos_los_datos_para_entrega_2026-10-03.sql', import.meta.url),
       'utf8',
     );
-    await db.exec(sql);
-    await db.exec(sql);
+    // The historical utility intentionally does not use CASCADE. New operational
+    // evidence must not be included in a wider destructive operation implicitly.
+    try {
+      await expect(db.exec(sql)).rejects.toThrow(/cannot truncate.*foreign key/i);
+    } finally {
+      // The utility includes BEGIN; release its aborted transaction explicitly.
+      await db.exec('ROLLBACK');
+    }
 
     for (const table of [
       'clients', 'orders', 'payments', 'bulk_payment_batches', 'order_products',
       'order_product_materials', 'order_activities', 'order_events', 'order_drafts',
     ]) {
       const result = await db.query<{ count: number }>(`SELECT count(*)::integer AS count FROM ${table}`);
-      expect(result.rows[0]!.count, table).toBe(0);
+      expect(result.rows[0]!.count, table).toBe(1);
     }
     expect((await db.query('SELECT id FROM users')).rows).toHaveLength(1);
     expect((await db.query('SELECT token_hash FROM sessions')).rows).toHaveLength(1);
@@ -190,8 +196,7 @@ describe('limpieza transaccional de datos de prueba', () => {
       'SELECT count(*)::integer AS count FROM schema_migrations',
     )).rows[0]!.count).toBe(migrationCount);
 
-    const productionClient = await insertClient(atCutoff, 'Primer cliente real');
-    expect((await insertOrder(productionClient, atCutoff, 'Primera OT real')).number).toBe(1);
+    expect((await insertOrder(client, atCutoff, 'Siguiente OT conservando consecutivo')).number).toBe(order.number + 1);
   });
 
   it('rechaza una vista previa obsoleta y revierte sin eliminar nada', async () => {

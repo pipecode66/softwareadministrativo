@@ -166,11 +166,7 @@ export function transitionWorkOrder(user: User, order: WorkOrder, action: OrderA
     next.workshopNotes = details?.workshopNotes?.trim() || '';
     next.status = order.requiresInstallation ? 'PENDING_INSTALLATION' : 'COMPLETED';
   } else if (action === 'install') {
-    assert((admin || user.role === 'TALLER') && order.status === 'PENDING_INSTALLATION' && order.requiresInstallation, 'La orden no está pendiente de instalación.');
-    assert(details?.date && isCalendarDate(details.date) && details.date >= dateOnly(order.readyForInstallationAt || order.updatedAt) && details.date <= today(), 'La fecha de instalación debe estar entre el fin de producción y hoy.');
-    next.installedAt = `${details.date}T12:00:00-05:00`;
-    next.installationNote = details.note?.trim() || '';
-    next.status = 'INSTALLED';
+    throw new Error('La instalación debe registrarla el instalador asignado desde el módulo Instalaciones conectado al servidor.');
   } else { throw new Error('Acción no válida.'); }
   if (next.status === 'PENDING_INSTALLATION' && order.status !== 'PENDING_INSTALLATION') next.readyForInstallationAt = now;
   next.updatedAt = now;

@@ -1,0 +1,146 @@
+/* Instalaciones: superficies Intermedios y acciones móviles sin datos comerciales. */
+.installations-page { --installation-orange: #f97316; --installation-blue: #2563eb; }
+.installations-page .page-heading-actions { flex-wrap: wrap; }
+.installations-page .btn-primary { background: var(--installation-orange); border-color: #c2410c; color: #172033; }
+.installations-page .btn-primary:hover { background: #ea580c; color: #fff; }
+.installation-connection { display: flex; align-items: center; gap: 8px; color: #526579; font-size: 11px; margin-top: -10px; }
+.installation-connection svg { flex-shrink: 0; color: #059669; }
+.installation-offline { border: 1px solid #fed7aa; padding: 12px; border-radius: 8px; background: #fff7ed; color: #9a3412; }
+.installation-offline svg { color: #c2410c; }
+.installation-kpis .kpi-value { font-size: 32px; }
+.installation-main-layout { display: grid; grid-template-columns: minmax(0,1fr) 290px; gap: 22px; align-items: start; }
+.installations-personal .installation-main-layout { grid-template-columns: minmax(0,1fr); }
+.installation-main-layout > * { min-width: 0; }
+.installation-list-card .table { table-layout: fixed; }
+.installation-list-card .table th:first-child { width: 29%; }
+.installation-list-card .table th:nth-child(2) { width: 24%; }
+.installation-list-card .table td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.installation-list-card .table th:last-child { width: 148px; }
+.installation-list-card .table .btn { padding: 9px 11px; white-space: nowrap; overflow-wrap: normal; }
+.installation-filters { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+.installation-filters > .search-input { flex: 1 1 220px; }
+.installation-filters > .field { flex: 1 1 150px; max-width: 220px; }
+.installation-filters .field > label { font-size: 11px; }
+.installation-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: 0 0 6px; }
+.installation-ot { color: #1e293b; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .025em; }
+.installation-job-identity { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.installation-job-identity strong { line-height: 1.45; font-size: 12px; }
+.installation-job-identity p { color: #64748b; font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
+.installation-schedule { display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.installation-person { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: 12px; }
+.installation-person svg { flex-shrink: 0; }
+.installation-assignee-summary { display: flex; flex-direction: column; gap: 7px; }
+.installation-assignee-summary > .muted { font-size: 10px; line-height: 1.5; }
+.installation-member-picker { min-width: 0; margin: 0; border: 1px solid #dce3ed; border-radius: 9px; padding: 10px 12px; display: flex; flex-direction: column; gap: 5px; }
+.installation-member-picker legend { font-size: 12px; color: #334155; font-weight: 600; padding: 0 5px; max-width: 100%; }
+.installation-member-picker > label { display: flex; align-items: center; gap: 11px; min-height: 44px; padding: 8px 5px; font-size: 12px; color: #334155; }
+.installation-member-picker input { flex: 0 0 20px; width: 20px; height: 20px; margin: 0; }
+.installation-team-preview { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid #dbeafe; border-radius: 9px; background: #eff6ff; font-size: 12px; }
+.installation-team-preview p { line-height: 1.6; }
+.installation-team-preview > .muted { font-size: 11px; }
+.installation-team-list { display: flex; flex-direction: column; gap: 13px; }
+.installation-team-record { border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
+.installation-team-record > p { color: #64748b; }
+.installation-team-record > .btn { align-self: flex-start; }
+.installation-teams-modal > p,.installation-teams-modal form > p { font-size: 12px; }
+.installation-members h4 { font-size: 14px; display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.installation-members > p { font-size: 11px; }
+.installation-members ul { padding: 0; list-style: none; margin: 13px 0 0; display: flex; flex-direction: column; gap: 10px; }
+.installation-members li { padding: 13px; border: 1px solid #e2e8f0; border-radius: 9px; background: #f8fafc; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.installation-member-heading { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+.installation-members li p { color: #64748b; font-size: 10px; font-variant-numeric: tabular-nums; }
+.installation-side-panel { display: flex; flex-direction: column; gap: 18px; }
+.installation-side-panel > .card { padding: 18px; }
+.installation-side-panel .card-header h2 { font-size: 14px; }
+.installation-performance-list { display: flex; flex-direction: column; gap: 16px; }
+.installation-performance { background: #f1f5ff; border: 1px solid #e2e8f6; padding: 15px; border-radius: 10px; min-width: 0; }
+.installation-performance > .installation-person { margin-bottom: 18px; }
+.installation-performance-values { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin: 0; }
+.installation-performance-values > div { min-width: 0; display: flex; flex-direction: column-reverse; gap: 8px; }
+.installation-performance-values dt { color: #64748b; font-size: 10px; line-height: 1.4; }
+.installation-performance-values dd { margin: 0; font-family: 'Manrope',sans-serif; font-size: 23px; font-weight: 800; color: #12213a; font-variant-numeric: tabular-nums; }
+.installation-performance > p { font-size: 10px; line-height: 1.6; }
+.installation-progress { height: 6px; border-radius: 8px; background: #dce6f6; overflow: hidden; margin: 16px 0 9px; }
+.installation-progress > span { display: block; height: 100%; border-radius: inherit; background: #f97316; }
+.installation-personal-performance { max-width: 680px; }
+.installation-personal-performance .card-header { margin-bottom: 14px; }
+.installation-personal-performance .installation-performance { padding: 0; border: 0; background: transparent; }
+.installation-personal-performance .installation-performance-values dt { font-size: 11px; }
+.installation-personal-performance .installation-performance-values dd { font-size: 27px; }
+.installation-integrity { display: flex; align-items: flex-start; gap: 10px; padding: 16px; background: #eff6ff; border: 1px solid #dbeafe; border-radius: 12px; color: #1d4ed8; }
+.installation-integrity > svg { flex-shrink: 0; margin-top: 1px; }
+.installation-integrity strong { color: #1e3a5f; font-size: 12px; }
+.installation-integrity p { color: #58708c; font-size: 11px; margin-top: 5px; }
+.installation-loading { padding: 40px 16px; color: #64748b; text-align: center; }
+.installation-blocked { color: #b45309; font-size: 11px; line-height: 1.5; }
+.installation-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 5px; border-radius: 10px; background: #eff3f9; margin-bottom: 20px; }
+.installation-tabs button { flex: 1 1 auto; min-height: 42px; padding: 8px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #64748b; font-size: 11px; font-weight: 600; }
+.installation-tabs button.active { border-color: #dbe3ed; color: #172033; background: #fff; box-shadow: 0 1px 3px #0f172a08; }
+.installation-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.installation-job-card { display: flex; flex-direction: column; gap: 16px; position: relative; min-width: 0; }
+.installation-card-client h3 { font-size: 17px; line-height: 1.4; }
+.installation-card-client p { margin-top: 5px; color: #64748b; font-size: 12px; white-space: pre-wrap; }
+.installation-card-facts { padding: 12px; background: #f7f9fc; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; }
+.installation-card-facts p { display: flex; align-items: flex-start; gap: 8px; color: #526579; font-size: 12px; }
+.installation-card-facts svg { flex: 0 0 16px; margin-top: 2px; }
+.installation-detail { min-width: 0; gap: 20px; }
+.installation-detail .btn-primary,.installation-create-form .btn-primary { background: #f97316; border-color: #c2410c; color: #172033; }
+.installation-detail .btn-primary:hover,.installation-create-form .btn-primary:hover { background: #ea580c; color: #fff; }
+.installation-detail-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.installation-version { color: #64748b; font-size: 10px; font-variant-numeric: tabular-nums; }
+.installation-detail-client h3 { font-size: 21px; margin-bottom: 8px; }
+.installation-detail-client p { font-size: 13px; color: #526579; white-space: pre-wrap; }
+.installation-detail-client .link { margin-top: 10px; }
+.installation-detail-facts { margin: 0; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; padding: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 9px; }
+.installation-detail-facts > div { min-width: 0; }
+.installation-detail-facts dt { color: #64748b; font-size: 10px; margin-bottom: 6px; }
+.installation-detail-facts dd { margin: 0; color: #1e293b; font-size: 12px; line-height: 1.5; font-weight: 600; font-variant-numeric: tabular-nums; }
+.installation-address { display: flex; flex-direction: column; gap: 14px; padding: 15px; border-radius: 9px; background: #eff6ff; border: 1px solid #dbeafe; }
+.installation-address > div { display: flex; align-items: flex-start; gap: 9px; }
+.installation-address > div > svg { flex: 0 0 19px; margin-top: 2px; color: #2563eb; }
+.installation-address strong { font-size: 13px; line-height: 1.5; }
+.installation-address p { font-size: 12px; color: #526579; margin-top: 5px; }
+.installation-address > a { align-self: flex-start; }
+.installation-text-block h4,.installation-action-form h4,.installation-history h4,.installation-result h4 { font-size: 14px; line-height: 1.5; margin: 0 0 10px; display: flex; align-items: center; gap: 7px; }
+.installation-text-block p,.installation-result p { font-size: 12px; color: #526579; white-space: pre-wrap; }
+.installation-privacy { font-size: 11px; color: #64748b; padding: 12px; border: 1px dashed #cbd5e1; border-radius: 8px; }
+.installation-privacy svg { margin-right: 5px; }
+.installation-detail-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.installation-detail-actions > .notice { grid-column: 1/-1; }
+.installation-detail-actions > .installation-privacy { grid-column: 1/-1; }
+.installation-detail-actions > .btn { min-height: 46px; }
+.installation-action-form { background: #fafbfe; padding: 16px; border: 1px solid #dce3ed; border-radius: 10px; }
+.installation-schedule-fields { display: flex; flex-direction: column; gap: 12px; }
+.installation-schedule-fields > p { color: #64748b; font-size: 11px; }
+.installation-check { padding: 14px; background: #eff6ff; border: 1px solid #dbeafe; border-radius: 9px; display: flex; align-items: flex-start; gap: 11px; font-size: 13px; font-weight: 600; }
+.installation-check > input { width: 20px; height: 20px; flex: 0 0 20px; margin: 0; }
+.installation-detail input[type='file'] { height: auto; padding: 10px; font-size: 12px; }
+.installation-photo-preview { display: flex; flex-direction: column; gap: 10px; }
+.installation-photo-preview img,.installation-evidence-image { width: 100%; max-height: 330px; object-fit: contain; border-radius: 9px; background: #edf2f7; border: 1px solid #e2e8f0; }
+.installation-photo-preview > p { font-size: 11px; }
+.installation-photo-confirmed { display: flex; align-items: center; gap: 7px; color: #047857; font-size: 11px; }
+.installation-photo-section { display: flex; flex-direction: column; gap: 12px; }
+.installation-photo-label { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.installation-photo-label > span { color: #526579; font-size: 11px; }
+.installation-result { border: 1px solid #bbf7d0; background: #f0fdf4; border-radius: 9px; padding: 15px; }
+.installation-result h4 { color: #047857; }
+.installation-result > p + p { margin-top: 10px; font-size: 11px; }
+.installation-history { padding-top: 7px; }
+.installation-history ol { list-style: none; padding: 0 0 0 15px; margin: 16px 0 0; border-left: 2px solid #e2e8f0; }
+.installation-history li { position: relative; padding: 0 0 20px 13px; font-size: 11px; }
+.installation-history li:last-child { padding-bottom: 0; }
+.installation-history li::before { content: ''; position: absolute; width: 9px; height: 9px; background: #f97316; border: 2px solid white; box-shadow: 0 0 0 1px #fed7aa; border-radius: 50%; left: -21px; top: 3px; }
+.installation-event-heading { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: flex-start; gap: 6px 12px; margin-bottom: 5px; }
+.installation-event-heading strong { color: #1e293b; }
+.installation-event-heading time { font-size: 10px; color: #64748b; font-variant-numeric: tabular-nums; }
+.installation-history li > p { color: #64748b; font-size: 11px; line-height: 1.6; }
+.installation-event-note { white-space: pre-wrap; margin-top: 6px; }
+.installation-location-proof { background: #f8fafc; border: 1px solid #eef2f7; border-radius: 6px; padding: 7px; margin-top: 7px; font-variant-numeric: tabular-nums; }
+.installation-saving { color: #1d4ed8; font-size: 12px; }
+.installation-detail-footer { border-top: 1px solid #e2e8f0; padding-top: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+@media(min-width:1101px) and (max-width:1599px) { .installation-main-layout { grid-template-columns: minmax(0,1fr); }.installation-side-panel { display: grid; grid-template-columns: minmax(0,1fr) 260px; align-items: start; }.installation-performance-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width:1100px) { .installation-main-layout { grid-template-columns: minmax(0,1fr); }.installation-side-panel { display: grid; grid-template-columns: minmax(0,1fr); }.installation-performance-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width:767px) {
+  .installation-kpis { gap: 12px; }.installation-kpis .kpi-value { font-size: 28px; }.installation-main-layout { gap: 18px; }.installation-list-card { padding: 17px 12px; }.installation-filters { gap: 12px; }.installation-filters > .field { flex: 1 1 120px; max-width: none; }.installation-filters > .search-input { flex-basis: 100%; }.installation-tabs { gap: 4px; }.installation-tabs button { flex-basis: calc(33.333% - 4px); font-size: 10px; min-height: 42px; }.installation-personal-performance { max-width: none; }.installation-performance-list { grid-template-columns: minmax(0,1fr); }.installation-job-card > .btn { align-self: stretch; min-height: 46px; }.installation-list-card .mobile-record { border-top: 3px solid #93c5fd; padding: 16px; }.installation-list-card .mobile-record:has(.installation-job-completed) { border-top-color: #34d399; }.installation-list-card .mobile-record:has(.installation-job-postponed) { border-top-color: #fbbf24; }.installation-detail-facts { gap: 14px 12px; padding: 13px; }.installation-detail-facts dd { font-size: 11px; }.installation-detail-actions { grid-template-columns: minmax(0,1fr); }.installation-action-form { padding: 13px; }.installation-detail .modal-actions { flex-direction: column-reverse; align-items: stretch; }.installation-detail .modal-actions > .btn { width: 100%; min-height: 46px; }.installation-detail-client h3 { font-size: 20px; }.installation-connection { align-items: flex-start; line-height: 1.6; }.installation-connection svg { margin-top: 2px; }.installation-detail .form-grid { gap: 14px; }.installation-detail-footer .btn { flex: 1 1 auto; }.installation-create-form .modal-actions { flex-wrap: wrap; }.installation-create-form .modal-actions > .btn { flex: 1; }.installation-event-heading { flex-direction: column; }
+}
+@media(max-width:380px) { .installation-card-heading { align-items: flex-start; flex-direction: column; }.installation-detail-facts { grid-template-columns: minmax(0,1fr); }.installation-tabs button { flex-basis: calc(50% - 4px); }.installation-performance-values { gap: 8px; }.installation-performance-values dt { font-size: 9px; } }

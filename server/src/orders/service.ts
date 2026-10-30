@@ -5,6 +5,7 @@ import type { Database, SqlConnection } from '../db/types.js';
 import { ApiError } from '../errors.js';
 import { requireCurrentActor } from '../security/actor.js';
 import { createOrderProducts, reopenCompletedOrderProducts, replaceOrderProducts } from '../work/service.js';
+import { syncInstallationAfterOrderEdit } from '../installations/service.js';
 import { cents, dateOnly, financials, isAdmin, orderDto, type DraftPayload, type OrderInput, type OrderRow, type PaymentRow, type bulkPaymentSchema, type createSchema, type editSchema, type paymentSchema, type transitionSchema } from './domain.js';
 
 const admins: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL'];
@@ -55,7 +56,7 @@ export async function deleteOrderDraft(db: Database, auth: AuthSession): Promise
 }
 export function canRead(user: { role: Role; id: string }, row: OrderRow): boolean {
   if (isAdmin(user.role)) return true;
-  if (user.role === 'APOYO_COMERCIAL') return false;
+  if (user.role === 'APOYO_COMERCIAL' || user.role === 'INSTALADOR') return false;
   if (user.role === 'DISENO') return row.created_by === user.id || Boolean(row.has_visible_activity);
   if (row.closed_at) return false;
   if (row.has_visible_activity) return true;
@@ -64,7 +65,7 @@ export function canRead(user: { role: Role; id: string }, row: OrderRow): boolea
 }
 export function visibility(user: { role: Role; id: string }, params: unknown[]): string {
   if (isAdmin(user.role)) return 'true';
-  if (user.role === 'APOYO_COMERCIAL') return 'false';
+  if (user.role === 'APOYO_COMERCIAL' || user.role === 'INSTALADOR') return 'false';
   if (user.role === 'DISENO') {
     params.push(user.id);
     return `(o.created_by = $${params.length} OR EXISTS (
@@ -74,6 +75,7 @@ export function visibility(user: { role: Role; id: string }, params: unknown[]):
   if (user.role === 'IMPRESION') return `o.closed_at IS NULL AND
     ((o.route IN ('PRINT_ONLY','PRINT_WORKSHOP','IMPRENTA') AND o.status='IN_PRINTING')
       OR EXISTS (SELECT 1 FROM order_activities a WHERE a.order_id=o.id AND a.area='PRINTING'))`;
+  if (user.role !== 'TALLER') return 'false';
   return `o.closed_at IS NULL AND
     (((o.route IN ('IMPRENTA','PRINT_WORKSHOP','WORKSHOP_ONLY') AND o.status='IN_WORKSHOP')
       OR o.status='PENDING_INSTALLATION')
@@ -215,6 +217,10 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
     const actor = await requireCurrentActor(tx, auth, admins);
     const row = await lockedOrder(tx, id);
     checkVersion(row, input.expectedVersion);
+    if (!input.requiresInstallation && row.requires_installation && (await tx.query(
+      'SELECT id FROM installations WHERE order_id=$1', [id])).rows.length) {
+      throw conflict('La OT tiene una instalación vinculada. Conserva la instalación requerida para no perder su recorrido.');
+    }
     const completedOrderEdit = ['COMPLETED','INSTALLED'].includes(row.status);
     const existingComposite = (await tx.query<{ composite: boolean }>(
       'SELECT coalesce(bool_or(NOT is_legacy),false) AS composite FROM order_products WHERE order_id=$1', [id])).rows[0]?.composite;
@@ -272,6 +278,7 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
         }
       }
     }
+    await syncInstallationAfterOrderEdit(tx, actor, id, row.status, updated.status);
     await event(tx, updated, actor.id, 'edit', row.status, {
       summary: 'Editó la orden de trabajo.', changes: [...editChanges(row, updated),...workChanges],
     });
@@ -394,13 +401,11 @@ export async function transitionOrder(db: Database, auth: AuthSession, id: strin
         next.workshop_notes = input.workshopNotes?.trim() || null;
         next.status = row.requires_installation ? 'PENDING_INSTALLATION' : 'COMPLETED'; break;
       case 'install':
-        requireRole('TALLER'); requireStatus('PENDING_INSTALLATION');
-        if (!row.requires_installation || !row.ready_for_installation_at || !input.date || input.date < dateOnly(row.ready_for_installation_at) || input.date > dateOnly()) throw new ApiError(400, 'INSTALLATION_DATE', 'La fecha de instalación debe estar entre el fin de producción y hoy.', 'date');
-        next.status = 'INSTALLED'; next.installed_at = `${input.date}T12:00:00-05:00`; next.installation_note = input.note ?? ''; break;
+        throw new ApiError(409, 'INSTALLATION_MODULE_REQUIRED', 'La instalación debe registrarla el instalador asignado desde el módulo Instalaciones.');
       case 'close': requireRole(); requireStatus('COMPLETED','INSTALLED'); next.closed_at = now; break;
     }
     if (next.status === 'PENDING_INSTALLATION' && row.status !== 'PENDING_INSTALLATION') next.ready_for_installation_at = now;
-    if (input.action !== 'install' && (input.date || input.note)) throw new ApiError(400, 'INVALID_DETAILS', 'Fecha y nota solo corresponden a instalación.');
+    if (input.date || input.note) throw new ApiError(400, 'INVALID_DETAILS', 'Registra los datos de instalación en el módulo Instalaciones.');
     if (input.action !== 'finishPrinting' && input.receivedByWorkshop !== undefined) throw new ApiError(400, 'INVALID_DETAILS', 'Quien recibe en Taller solo corresponde al cierre de Impresión.');
     if (input.action !== 'finishWorkshop' && input.workshopNotes !== undefined) throw new ApiError(400, 'INVALID_DETAILS', 'Las observaciones de Taller solo corresponden al cierre de Taller.');
     const updated = (await tx.query<OrderRow>(`
@@ -413,7 +418,7 @@ export async function transitionOrder(db: Database, auth: AuthSession, id: strin
     const transitionSummary: Record<typeof input.action,string> = {
       send:'Envió la OT a producción.', finishPrinting:'Finalizó Impresión.', finishExternal:'Finalizó el servicio Externo.',
       startWorkshop:'Inició el trabajo de Taller.', finishWorkshop:'Finalizó el trabajo de Taller.',
-      install:'Registró la instalación.', close:'Cerró administrativamente la OT.',
+      close:'Cerró administrativamente la OT.',
     };
     const transitionChanges: AuditChange[] = row.status === updated.status ? [] : [{ label:'Estado', before:row.status, after:updated.status }];
     if (input.receivedByWorkshop) transitionChanges.push({ label:'Recibe en Taller', after:input.receivedByWorkshop.trim() });
@@ -427,7 +432,7 @@ export async function transitionOrder(db: Database, auth: AuthSession, id: strin
 
 export interface ListQuery { page: number; pageSize: number; q?: string; status?: string; documentType?: string; category?: string; paymentStatus?: string; from?: string; to?: string }
 export async function listOrders(db: Database, auth: AuthSession, input: ListQuery) {
-  if (auth.user.role === 'APOYO_COMERCIAL') throw new ApiError(403, 'FORBIDDEN', 'Apoyo Comercial solo puede crear órdenes.');
+  if (auth.user.role === 'APOYO_COMERCIAL' || auth.user.role === 'INSTALADOR') throw new ApiError(403, 'FORBIDDEN', 'Tu perfil no tiene acceso al historial general de órdenes.');
   if (input.paymentStatus && !isAdmin(auth.user.role)) throw new ApiError(403, 'FORBIDDEN', 'El filtro de cobros corresponde a Administración.');
   return db.transaction(async tx => {
     await tx.exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');

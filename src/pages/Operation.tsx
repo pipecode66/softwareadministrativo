@@ -14,7 +14,7 @@ const stages: { key: string; title: string; description: string; statuses: WorkS
   { key: 'production', title: 'Por producto / Externo', description: 'Actividades en varias áreas', statuses: ['IN_PRODUCTION', 'IN_EXTERNAL'], icon: Workflow, link: '/orders' },
   { key: 'printing', title: 'Impresión', description: 'Producción gráfica', statuses: ['IN_PRINTING'], icon: Printer, link: '/printing' },
   { key: 'workshop', title: 'Taller', description: 'Fabricación y ensamble', statuses: ['IN_WORKSHOP'], icon: Hammer, link: '/workshop' },
-  { key: 'installation', title: 'Instalación', description: 'Trabajos listos para instalar', statuses: ['PENDING_INSTALLATION'], icon: MapPin, link: '/workshop' },
+  { key: 'installation', title: 'Instalación', description: 'Trabajos listos para instalar', statuses: ['PENDING_INSTALLATION'], icon: MapPin, link: '/installations' },
 ];
 
 function DesignerLoadPanel() {
@@ -85,7 +85,7 @@ export function OperationPage() {
             })}
             {!orders.length && <div className="ops-lane-empty"><Icon size={25} /><p>{search || routeFilter !== 'all' ? 'Sin resultados en esta etapa' : 'Sin órdenes pendientes'}</p></div>}
           </div>
-          <Link className="ops-lane-footer" to={stage.link}>{stage.key === 'review' ? 'Ver órdenes' : `Abrir ${stage.key === 'installation' ? 'Taller' : stage.title}`}<ArrowRight size={14} /></Link>
+          <Link className="ops-lane-footer" to={stage.link}>{stage.key === 'review' ? 'Ver órdenes' : `Abrir ${stage.key === 'installation' ? 'Instalaciones' : stage.title}`}<ArrowRight size={14} /></Link>
         </section>;
       })}
     </div>

@@ -4,10 +4,26 @@ import { readConfig } from '../src/config.js';
 import { createPgliteDatabase } from '../src/db/database.js';
 import type { Database } from '../src/db/types.js';
 import { startServer } from '../src/main.js';
+import { localInstallationsConfig } from '../src/cli/installations-local.js';
 
 const config = { ...readConfig({ NODE_ENV: 'test' }), port: 0 };
 
 describe('HTTP lifecycle with isolated in-memory data', () => {
+  it('isolates the installer test environment from inherited production connections', () => {
+    const previous = { DATABASE_MODE: process.env.DATABASE_MODE, DATABASE_URL: process.env.DATABASE_URL, NODE_ENV: process.env.NODE_ENV };
+    try {
+      Object.assign(process.env, { DATABASE_MODE: 'postgres', DATABASE_URL: 'postgresql://invalid.example/never-opened', NODE_ENV: 'production' });
+      const local = localInstallationsConfig();
+      expect(local).toMatchObject({ databaseMode: 'pglite', production: false, host: '127.0.0.1', port: 3002 });
+      expect(local.databaseUrl).toBeUndefined();
+      expect(local.allowedOrigins).toEqual(['http://127.0.0.1:5175', 'http://localhost:5175']);
+      expect(local.dataDir.replace(/\\/g, '/')).toMatch(/\/server\/\.data\/installations-local$/);
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
+  });
   it('closes its owned database when startup migration fails', async () => {
     const close = vi.fn(async () => {});
     const broken: Database = {
