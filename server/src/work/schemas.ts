@@ -14,6 +14,7 @@ export const materialSchema = z.object({
 }).strict();
 
 export const activitySchema = z.object({
+  laserMinutes: z.number().int().min(1).max(999999999).optional(),
   area: z.enum(['DESIGN', 'PRINTING', 'WORKSHOP', 'EXTERNAL']),
   assignedUserId: z.uuid().optional(),
   printingType: z.enum(['PRINT', 'LASER']).optional(),
@@ -27,6 +28,7 @@ export const activitySchema = z.object({
 });
 
 export const productSchema = z.object({
+  id: z.uuid().optional(),
   description: z.string().trim().min(1).max(10000),
   quantity,
   unitValue,

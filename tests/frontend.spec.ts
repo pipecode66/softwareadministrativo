@@ -405,7 +405,7 @@ test('cantidad de producto usa unidades enteras y se muestra sin decimales', asy
   await expect(quantity).not.toContainText('1,000');
 });
 
-test('historial de órdenes restaura la página al volver y una entrada nueva inicia limpia', async ({ page }) => {
+test('historial de órdenes restaura la página al volver y conserva el punto desde el menú', async ({ page }) => {
   await login(page);
   await page.evaluate(key => {
     const data = JSON.parse(localStorage.getItem(key)!) as AppData;
@@ -438,7 +438,7 @@ test('historial de órdenes restaura la página al volver y una entrada nueva in
   const orderLink = page.locator('tbody .order-number').first();
   const openedOrder = await orderLink.textContent();
   await orderLink.click();
-  await expect(page.locator('main h1')).toContainText(openedOrder!);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(openedOrder!);
 
   await page.goBack();
   await expect(page).toHaveURL(/\/orders\?page=4$/);
@@ -446,8 +446,8 @@ test('historial de órdenes restaura la página al volver y una entrada nueva in
   await expect(page.getByRole('link', { name: openedOrder!, exact: true }).first()).toBeVisible();
 
   await page.locator('.app-sidebar').getByRole('link', { name: 'Órdenes', exact: true }).click();
-  await expect(page).toHaveURL(/\/orders$/);
-  await expect(pagination.locator('.page-current')).toHaveText('1');
+  await expect(page).toHaveURL(/\/orders\?page=4$/);
+  await expect(pagination.locator('.page-current')).toHaveText('4');
 });
 
 test('clientes: exige celular y conserva la condición Especial', async ({ page }) => {
@@ -494,20 +494,20 @@ test('reportes: filtros por categoría/documento y cuatro tipos de período', as
   await page.getByRole('button', { name: 'Día', exact: true }).click();
   await page.getByLabel('Fecha del reporte').fill(today());
   const source = makeSeed().orders.filter(order => order.category === 'SuperGiros' && order.documentType === 'FACT' && order.createdAt.slice(0, 10) === today());
-  const total = source.reduce((sum, order) => sum + order.value, 0);
-  await expect(page.locator('.kpi-card').filter({ hasText: 'Ventas · valor base' })).toContainText(formatCOP(total));
+  const total = source.reduce((sum, order) => { const money=financials(order); return sum+Math.round(money.gross*100)-Math.round(money.retentions*100); },0)/100;
+  await expect(page.locator('.kpi-card').filter({ hasText: 'Ventas totales' })).toContainText(formatCOP(total));
   await page.getByRole('button', { name: 'Mes', exact: true }).click();
   await page.getByLabel('Mes del reporte').fill('2000-01');
-  await expect(page.locator('.kpi-card').filter({ hasText: 'Ventas · valor base' })).toContainText(formatCOP(0));
+  await expect(page.locator('.kpi-card').filter({ hasText: 'Ventas totales' })).toContainText(formatCOP(0));
   await page.getByRole('button', { name: 'Rango de fechas', exact: true }).click();
   await page.getByLabel('Hasta', { exact: true }).fill(today());
   await page.getByLabel('Desde', { exact: true }).fill('2000-01-01');
-  await expect(page.locator('.kpi-card').filter({ hasText: 'Ventas · valor base' })).not.toContainText('0 órdenes');
+  await expect(page.locator('.kpi-card').filter({ hasText: 'Ventas totales' })).not.toContainText('0 órdenes');
   await page.getByRole('button', { name: 'Rango de meses', exact: true }).click();
   await expect(page.getByLabel('Desde', { exact: true })).toHaveAttribute('type', 'month');
   await page.getByLabel('Desde', { exact: true }).fill('2000-01');
   await page.getByLabel('Hasta', { exact: true }).fill('2000-02');
-  await expect(page.locator('.kpi-card').filter({ hasText: 'Ventas · valor base' })).toContainText(formatCOP(0));
+  await expect(page.locator('.kpi-card').filter({ hasText: 'Ventas totales' })).toContainText(formatCOP(0));
 });
 
 test('ficha imprimible: contenido financiero coherente y sin navegación al imprimir', async ({ page }) => {

@@ -1,8 +1,20 @@
 # Estado de continuidad
 
-Actualizado: 2026-10-21.
+Actualizado: 2026-10-29.
 
 ## Estado actual
+
+**Entrega de producción del29/10 — implementada y verificada.** El usuario pidió pausar Instalaciones y publicar por separado dos cambios: conservar progreso de cada sección al navegar y edición administrativa integral (materiales, productos, abonos) sin bloqueos por etapas, con recálculo de saldo/estadísticas y auditoría. Instalaciones se conserva sólo local en `feature/instalaciones-local`, commit `ffe9a06`; NO fusionar esa rama ni su migración015 en este push. Esta rama main parte de `712819a`, igual a origin/main al comenzar. El usuario confirmó **impedir pagos por encima del total**: se conserva esa validación y no se borran/compensan otros pagos automáticamente. No requiere SQL ni migración nueva.
+
+Implementación: `PageMemoryProvider`/`RememberedOutlet` usa Activity de React para conservar formularios, ventanas, filtros y contexto de URL por sección durante la sesión. Suspende efectos ocultos y separa memoria por cuenta/rol. No persiste estos formularios en disco ni sobrevive a recarga; los borradores de OT continúan con su guardado propio. Guardar una OT, cancelar una edición o eliminar un borrador descarta su copia de pantalla. Se evitan nuevas cargas de productos/borradores que sobrescriban los campos al volver. El menú también conserva página/filtros del historial, sustituyendo la regla anterior de entrada limpia.
+
+Administración corrige productos, áreas, diseñador, tipo de impresión, precios, retenciones y materiales/medidas sin bloqueos por producción/consumo/instalación/cierre. La reconciliación conserva IDs y avance de las actividades retenidas, permite agregar/retirar productos y áreas, y reabre producción/cierre si se agrega trabajo a una OT finalizada. El material consumido conserva la fecha original y sustituye su contribución al reporte (Panaflex8→0 y V.Impresión0→8, no16). Corte Láser finalizado admite corregir minutos desde Editar OT, recompone el cargo y preserva su actividad. Las validaciones de datos y permisos siguen vigentes. No se habilita eliminar/renumerar OT.
+
+El nuevo PATCH `/orders/:id/payments/:paymentId` y botón Corregir en pagos permiten ajustar fecha, importe y medio de un abono existente, incluso en una OT cerrada. Saldo/reportes se recalculan; se concilia el total de su lote multiabono sin redistribuirlo. Se mantiene el creador original y la auditoría de quien corrige, con antes/después financiero filtrado por rol. Se impiden sobrepagos, versiones obsoletas y pagos de otra OT; reenvío idéntico no duplica correcciones. La versión de los editores se captura al abrir para no sobreescribir cambios concurrentes.
+
+Archivos: `src/components/{PageMemory,PaymentCorrection,AppShell}.tsx`, `src/pages/{NewOrderEditor,OrderForm,OrderDetail,Orders}.tsx`, `src/data/{api.ts,AppContext.tsx}`, `src/domain/service.ts`, `server/src/{orders/{domain,router,service},work/{schemas,service}}.ts`, pruebas `tests/{progress,frontend,api-e2e}.spec.ts`, `server/tests/{orders,work}.test.ts`, configuración E2E y documentos. Guía para retomar el módulo pausado: `docs/CONTINUIDAD_INSTALACIONES_LOCAL.md`.
+
+Verificación final: typecheck y builds frontend/servidor aprobados; frontend173/173 y suite servidor309/309 aprobadas. E2E API real/PGlite2/2 (correcciones en OT cerrada y finanzas); E2E local33 casos aprobados en el recorrido completo, dos pruebas con selectores antiguos corregidas y aprobadas al repetir, y nuevo caso de borrador eliminado aprobado (36 casos distintos). Incluye320/390/768/1024/1440px y seguridad de roles. No hay SQL que aplicar. Se entrega por commit/push exclusivo de estos cambios a main; verificar hash en git log. No se ha accedido a datos productivos ni ejecutado limpiezas, y no se afirma despliegue posterior de Vercel comprobado.
 
 Confirmación final del 21/10: **Total FACT se muestra neto (base + IVA − retenciones) y Ventas totales es exactamente Total REM + Total FACT**, sin otra resta. La vista local calcula `factNet` a partir de las FACT del período y suma las dos partes; la remota deriva `factNet` en céntimos de los campos existentes `factGross − retentions`, conservando `salesNet` canónico del servidor. El descuento no depende de abonos ni certificados recibidos. El cuadro de retenciones pendientes queda independiente. Se mantienen período, filtros, carteras, Total IVA, pagos y ausencia de descripciones. No cambia SQL, contrato API ni cobros almacenados; no requiere migración. Sustituye únicamente la presentación bruta de FACT de los tramos anteriores. Archivos: `src/pages/Reports.tsx`, pruebas financieras/E2E y documentos. Sigue el contador 59/32: aclaración de las métricas ya entregadas.
 
@@ -249,7 +261,9 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Retiro de descripciones de cuadros salvo ventas del 21/10 | 1 | 0 |
 | Pagos del período restringidos a OT del mismo período del 21/10 | 1 | 0 |
 | Restauración de carteras acumuladas con y sin IVA del 21/10 | 1 | 0 |
-| **Acumulado** | **59** | **32** |
+| Conservación de progreso entre secciones del29/10 | 1 | 1 |
+| Corrección administrativa integral de OT, consumo y abonos del29/10 | 1 | 1 |
+| **Acumulado** | **61** | **34** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
 
@@ -312,6 +326,6 @@ npm test
 npm --prefix server run typecheck
 npm --prefix server test
 $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = Join-Path $env:LOCALAPPDATA 'ms-playwright\chromium-1217\chrome-win64\chrome.exe'
-npx playwright test tests/finance.spec.ts --output=test-results/netfact-local
-npx playwright test --config playwright.api.config.ts --grep 'reportes y desgloses' --output=test-results/netfact-api
+npx playwright test tests/frontend.spec.ts tests/progress.spec.ts --output=test-results/corrections-local
+npx playwright test --config playwright.api.config.ts --grep 'correcciones administrativas|reportes y desgloses' --output=test-results/corrections-api
 ```

@@ -19,12 +19,13 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'npm --prefix server run db:migrate && npm --prefix server run db:bootstrap && npm --prefix server run dev',
+      command: 'npm --prefix server run build && npm --prefix server run db:migrate && npm --prefix server run db:bootstrap && npm --prefix server start',
       url: 'http://127.0.0.1:3001/api/v1/health/ready',
       reuseExistingServer: false,
       timeout: 60_000,
       env: {
         ...process.env,
+        NODE_ENV: 'test',
         API_PORT: '3001',
         APP_ORIGINS: 'http://127.0.0.1:5174',
         DATABASE_MODE: 'pglite',

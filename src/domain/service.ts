@@ -24,7 +24,14 @@ export function validateInput(data: AppData, input: OrderInput, exceptId?: strin
   if (input.products) {
     assert(input.products.length > 0 && input.products.every(product => product.description.trim() && Number.isSafeInteger(product.quantity) && product.quantity > 0 && product.unitValue >= 0 && product.activities.length), 'Cada producto necesita descripción, cantidad entera, valor y actividades.');
     assert(input.products.every(product => product.activities.every(activity => activity.area !== 'DESIGN' || Boolean(activity.assignedUserId))), 'Cada actividad de Diseño debe tener un diseñador asignado.');
-    assert(Math.round(input.products.reduce((sum, product) => sum + roundMoney(product.quantity * product.unitValue), 0) * 100) === Math.round(input.value * 100), 'La suma de productos debe coincidir con el valor de la OT.');
+    const previous = exceptId ? data.orders.find(order => order.id === exceptId) : undefined;
+    const subtotal = input.products.reduce((sum, product, index) => {
+      const old = product.id ? previous?.products?.find(item => item.id === product.id) : previous?.products?.[index];
+      const laser = product.activities.find(activity => activity.area === 'PRINTING' && activity.printingType === 'LASER');
+      const oldLaser = old?.activities.find(activity => activity.area === 'PRINTING');
+      return sum + roundMoney(product.quantity * product.unitValue) + (laser && oldLaser?.status === 'COMPLETED' ? (laser.laserMinutes ?? oldLaser.laserMinutes ?? 0)*1000 : 0);
+    }, 0);
+    assert(Math.round(subtotal*100) === Math.round(input.value * 100), 'La suma de productos y Corte Láser debe coincidir con el valor de la OT.');
     assert(!input.printing, 'Las medidas de impresión se registran en cada producto.');
     assert(input.products.every(product => {
       const printing = product.activities.find(activity => activity.area === 'PRINTING');
@@ -75,41 +82,30 @@ export function editWorkOrder(data: AppData, user: User, order: WorkOrder, input
   const completedEdit = ['COMPLETED','INSTALLED'].includes(order.status);
   validateInput(data,input,order.id,isAdmin(user.role));
   let prepared = cleanInput(input);
-  const productionStarted = Boolean(order.products?.some(product =>
-    product.activities.some(activity => activity.status && activity.status !== 'PENDING')));
-  const preserveProduction = Boolean(input.products && order.products?.length &&
-    !['NEW','PENDING_ADMIN_REVIEW'].includes(order.status) &&
-    (order.status !== 'IN_PRODUCTION' || productionStarted));
+  const preserveProduction = Boolean(input.products && order.products?.length);
   if (preserveProduction) {
-    assert(order.products && input.products && order.products.length === input.products.length, 'No se pueden agregar ni eliminar productos después de iniciar producción.');
+    assert(order.products && input.products, 'Incluye los productos de la OT.');
+    const explicitIds = input.products.some(product => product.id);
     let added = false;
     const products = input.products.map((product, index) => {
-      const previous = order.products![index];
-      for (const activity of previous.activities) assert(product.activities.some(item => item.area === activity.area), 'No se puede retirar un área que ya inició su trabajo.');
+      const previous = product.id ? order.products!.find(item => item.id === product.id) : explicitIds ? undefined : order.products![index];
+      if (product.id) assert(previous, 'El producto no corresponde a esta OT.');
       const activities = product.activities.map(activity => {
-        const existing = previous.activities.find(item => item.area === activity.area);
+        const existing = previous?.activities.find(item => item.area === activity.area);
         if (!existing) {
-          assert(completedEdit && !order.closedAt, 'No se pueden agregar áreas nuevas después de iniciar producción.');
           added = true;
-          return activity;
+          return { ...activity, status:'PENDING' as const };
         }
-        if (activity.area === 'DESIGN') assert(existing.assignedUserId === activity.assignedUserId, 'No se puede cambiar el diseñador de un área ya iniciada.');
-        if (activity.area === 'PRINTING') assert((existing.printingType ?? 'PRINT') === (activity.printingType ?? 'PRINT'), 'No se puede cambiar el tipo de una impresión ya iniciada.');
-        return { ...activity, ...existing };
+        return { ...existing, ...activity,
+          ...(activity.area === 'PRINTING' ? { laserMinutes:activity.printingType === 'LASER' ? activity.laserMinutes ?? existing.laserMinutes : null } : {}) };
       });
-      const printingStarted = previous.activities.some(activity => activity.area === 'PRINTING' && activity.status !== 'PENDING')
-        || previous.materials.some(material => material.consumedAt);
-      if (printingStarted) {
-        const unchangedMaterials = previous.materials.length === product.materials.length && product.materials.every((material, materialIndex) => {
-          const stored = previous.materials[materialIndex];
-          return stored.material === material.material && stored.length === material.length && stored.width === material.width;
-        });
-        assert(unchangedMaterials, 'No se pueden cambiar materiales de una impresión ya iniciada.');
-      }
-      return { ...product, id:previous.id, position:previous.position, activities };
+      const consumedAt = previous?.materials.find(material => material.consumedAt)?.consumedAt
+        ?? previous?.activities.find(activity => activity.area === 'PRINTING')?.completedAt;
+      return { ...product, id:previous?.id ?? crypto.randomUUID(), position:index+1, activities,
+        materials:product.materials.map(material => ({ ...material, consumedAt })) };
     });
     prepared = { ...prepared, products };
-    if (added) prepared = { ...prepared, status:'IN_PRODUCTION', installedAt:undefined, installationNote:undefined, readyForInstallationAt:undefined } as OrderInput;
+    if (added && completedEdit) prepared = { ...prepared, status:'IN_PRODUCTION', closedAt:undefined, installedAt:undefined, installationNote:undefined, readyForInstallationAt:undefined } as OrderInput;
   }
   const updated = { ...order, ...prepared };
   if (updated.status === order.status && !order.closedAt && ['COMPLETED','PENDING_INSTALLATION','INSTALLED'].includes(order.status)) {

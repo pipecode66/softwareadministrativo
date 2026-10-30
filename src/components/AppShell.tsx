@@ -1,18 +1,24 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowUpRight, ChevronRight, ClipboardList, Hammer, History, KeyRound, LayoutDashboard, LogOut, Menu, PanelsTopLeft, PencilRuler, Plus, Printer, Search, Settings2, SquareStack, Users, Wallet, ChartNoAxesCombined, type LucideIcon } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import { canCreate, initials, isAdmin, ROLE_LABELS } from '../domain/utils';
 import { Modal } from './ui';
+import { PageMemoryProvider, RememberedOutlet, usePageMemory } from './PageMemory';
 
 interface NavItem { to: string; label: string; icon: LucideIcon; group: string }
 export function AppShell() {
+  const { user } = useApp();
+  return <PageMemoryProvider key={`${user?.id}:${user?.role}`}><AppShellContent /></PageMemoryProvider>;
+}
+function AppShellContent() {
   const { user, logout, usingApi, dataLoading, dataError, refreshData, toast } = useApp();
   const [signingOut, setSigningOut] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
+  const pageMemory = usePageMemory();
   const admin = isAdmin(user?.role);
   const nav: NavItem[] = admin ? [
     {to:'/',label:'Inicio',icon:LayoutDashboard,group:'Administración'},
@@ -43,7 +49,7 @@ export function AppShell() {
     window.scrollTo({ top:0, behavior:'instant' });
   }, [location.pathname, breadcrumb]);
   function search(event: FormEvent) { event.preventDefault(); navigate(`/orders?q=${encodeURIComponent(query.trim())}`); }
-  function navigation() { return <nav className="sidebar-navigation" aria-label="Navegación principal">{nav.map((item,index) => <div key={item.to}>{(index === 0 || nav[index - 1].group !== item.group) && <p className="nav-section">{item.group}</p>}<NavLink to={item.to} end={item.to === '/' || (user?.role === 'DISENO' && item.to === '/orders')} className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => setMenuOpen(false)}><item.icon size={18} strokeWidth={1.7} /><span>{item.label}</span>{item.to === '/orders' && <ChevronRight className="nav-chevron" size={15} />}</NavLink></div>)}</nav>; }
+  function navigation() { return <nav className="sidebar-navigation" aria-label="Navegación principal">{nav.map((item,index) => <div key={item.to}>{(index === 0 || nav[index - 1].group !== item.group) && <p className="nav-section">{item.group}</p>}<NavLink to={pageMemory.href(item.to)} end={item.to === '/' || (user?.role === 'DISENO' && item.to === '/orders')} className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => setMenuOpen(false)}><item.icon size={18} strokeWidth={1.7} /><span>{item.label}</span>{item.to === '/orders' && <ChevronRight className="nav-chevron" size={15} />}</NavLink></div>)}</nav>; }
   async function signOut() {
     if (signingOut) return;
     setSigningOut(true);
@@ -54,7 +60,7 @@ export function AppShell() {
   function profile() { return <div className="sidebar-profile"><span className="avatar">{initials(user?.name || '')}</span><div className="sidebar-profile-copy"><strong>{user?.name}</strong><span>{user && ROLE_LABELS[user.role]}</span></div><div className="sidebar-profile-actions">{usingApi && <Link to="/change-password" className="profile-action-button" aria-label="Cambiar contraseña" title="Cambiar contraseña" onClick={() => setMenuOpen(false)}><KeyRound size={18} /></Link>}<button className="profile-action-button" onClick={() => void signOut()} disabled={signingOut} aria-label="Cerrar sesión" title="Cerrar sesión"><LogOut size={18} /></button></div></div>; }
   return <div className="app-shell"><a href="#main-content" className="skip-link">Ir al contenido</a><aside className="app-sidebar"><Link to={admin ? '/' : nav[0].to} className="brand-link" aria-label="Intermedios Gestión, inicio"><img src="/logo.svg" alt="Intermedios Gestión · Pub & Arq" /></Link>{navigation()}{profile()}</aside>
     <header className="app-topbar"><div className="topbar-leading"><button className="icon-button menu-toggle" aria-label="Abrir menú" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Menu size={22} /></button><div className="breadcrumb"><span>Intermedios</span><ChevronRight size={14} /><strong>{breadcrumb}</strong></div><img className="mobile-brand" src="/logo.svg" alt="Intermedios Gestión" /></div><div className="topbar-actions">{canCreate(user?.role) && <>{user?.role !== 'APOYO_COMERCIAL' && <form className="global-search" onSubmit={search}><Search size={16} aria-hidden="true"/><label className="sr-only" htmlFor="global-search">Buscar una orden</label><input id="global-search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar OT, cliente o descripción…" /><button type="submit" className="icon-button" aria-label="Realizar búsqueda"><ArrowUpRight size={16}/></button></form>}<Link to="/orders/new" className="btn btn-primary topbar-new" aria-label="Crear nueva orden"><Plus size={17}/><span>Nueva OT</span></Link></>}<span className="topbar-avatar" aria-label={`${user?.name}, ${user ? ROLE_LABELS[user.role] : ''}`}>{initials(user?.name || '')}</span></div></header>
-    <main id="main-content" tabIndex={-1} className="app-content">{usingApi && <div className="data-refresh-strip"><button className="btn btn-ghost" disabled={dataLoading} onClick={() => void refreshData().catch(() => {})}>{dataLoading ? 'Actualizando…' : 'Actualizar datos'}</button></div>}{dataError && <p className="form-alert" role="alert">{dataError} Los datos visibles pueden estar desactualizados.</p>}<div key={location.pathname}><Outlet /></div><footer className="app-footer"><span>INTERMEDIOS GESTIÓN</span><span>Publicidad & Arquitectura</span></footer></main>
+    <main id="main-content" tabIndex={-1} className="app-content">{usingApi && <div className="data-refresh-strip"><button className="btn btn-ghost" disabled={dataLoading} onClick={() => void refreshData().catch(() => {})}>{dataLoading ? 'Actualizando…' : 'Actualizar datos'}</button></div>}{dataError && <p className="form-alert" role="alert">{dataError} Los datos visibles pueden estar desactualizados.</p>}<RememberedOutlet /><footer className="app-footer"><span>INTERMEDIOS GESTIÓN</span><span>Publicidad & Arquitectura</span></footer></main>
     <Modal open={menuOpen} onClose={() => setMenuOpen(false)} title="Intermedios Gestión"><div className="mobile-menu">{navigation()}{profile()}</div></Modal>
   </div>;
 }

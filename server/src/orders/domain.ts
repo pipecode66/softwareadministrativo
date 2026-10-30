@@ -71,6 +71,10 @@ export const editSchema = orderInputSchema.safeExtend({
   }
 });
 export const paymentSchema = z.object({ date: dateSchema, amount: positivePaymentSchema, method: paymentMethodSchema, requestId: z.uuid() }).strict();
+export const paymentCorrectionSchema = z.object({
+  expectedVersion: z.number().int().positive(), date: dateSchema,
+  amount: positivePaymentSchema, method: z.enum([...paymentMethods, 'LEGACY']),
+}).strict();
 export const bulkPaymentSchema = z.object({
   clientId: z.uuid(), selectedOrderIds: z.array(z.uuid()).min(1).max(100), date: dateSchema,
   amount: positivePaymentSchema, method: paymentMethodSchema, requestId: z.uuid(),

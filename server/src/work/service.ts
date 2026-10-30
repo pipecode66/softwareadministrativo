@@ -281,6 +281,76 @@ export async function reopenCompletedOrderProducts(
   return added;
 }
 
+/** Administrative correction: preserve matching work IDs and original consumption dates. */
+export async function correctOrderProducts(tx: SqlConnection, orderId: string, input: ProductInput[], expectedValue: number) {
+  const parsed = normalizeProducts(input, { id: '', role: 'ADMINMASTER' }, true);
+  const current = (await tx.query<ProductRow>('SELECT * FROM order_products WHERE order_id=$1 ORDER BY position', [orderId])).rows;
+  const activities = (await tx.query<ActivityRow>('SELECT * FROM order_activities WHERE order_id=$1 ORDER BY product_id,position', [orderId])).rows;
+  const explicit = parsed.some(product => product.id);
+  const used = new Set<string>();
+  for (const product of parsed) if (product.id) {
+    if (used.has(product.id) || !current.some(item => item.id === product.id)) throw new ApiError(400, 'PRODUCT_ID', 'Selecciona productos de esta OT sin repetir.');
+    used.add(product.id);
+  }
+  for (const id of [...new Set(parsed.flatMap(product => product.activities.map(activity => activity.assignedUserId).filter((id): id is string => !!id)))].sort()) {
+    if (!(await tx.query("SELECT id FROM users WHERE id=$1 AND role='DISENO' FOR SHARE", [id])).rows.length) {
+      throw new ApiError(400, 'DESIGNER_UNAVAILABLE', 'Selecciona un diseñador activo.');
+    }
+  }
+  await tx.query('UPDATE order_products SET position=position+100000 WHERE order_id=$1', [orderId]);
+  const retained: string[] = [];
+  let added = 0;
+  for (const [index, product] of parsed.entries()) {
+    const previous = product.id ? current.find(item => item.id === product.id) : explicit ? undefined : current[index];
+    const productId = previous?.id ?? randomUUID();
+    retained.push(productId);
+    if (previous) await tx.query('UPDATE order_products SET position=$2,description=$3,quantity=$4,unit_value=$5,is_legacy=false,updated_at=clock_timestamp() WHERE id=$1',
+      [productId,index+1,product.description,product.quantity,product.unitValue]);
+    else await tx.query('INSERT INTO order_products (id,order_id,position,description,quantity,unit_value) VALUES($1,$2,$3,$4,$5,$6)',
+      [productId,orderId,index+1,product.description,product.quantity,product.unitValue]);
+    const previousActivities = activities.filter(item => item.product_id === productId);
+    const previousMaterials = (await tx.query<MaterialRow>('SELECT * FROM order_product_materials WHERE product_id=$1 ORDER BY position', [productId])).rows;
+    const oldPrinting = previousActivities.find(item => item.area === 'PRINTING');
+    const consumed = previousMaterials.find(item => item.consumed_at)?.consumed_at ?? oldPrinting?.completed_at ?? null;
+    await tx.query('UPDATE order_activities SET position=position+1000 WHERE product_id=$1', [productId]);
+    const keptActivities: string[] = [];
+    const areas = new Set<string>();
+    for (const [position, activity] of product.activities.entries()) {
+      if (areas.has(activity.area)) throw new ApiError(400, 'DUPLICATE_AREA', 'Cada producto admite una actividad por área.');
+      areas.add(activity.area);
+      const old = previousActivities.find(item => item.area === activity.area);
+      const type = activity.area === 'PRINTING' ? activity.printingType ?? 'PRINT' : null;
+      const minutes = type === 'LASER' ? activity.laserMinutes ?? (old?.printing_type === 'LASER' ? old.laser_minutes : null) : null;
+      if (type === 'LASER' && old?.status === 'COMPLETED' && !minutes) throw new ApiError(400, 'LASER_MINUTES_REQUIRED', 'Indica los minutos del Corte Láser ya finalizado.');
+      const activityId = old?.id ?? randomUUID();
+      keptActivities.push(activityId);
+      if (old) await tx.query('UPDATE order_activities SET position=$2,assigned_user_id=$3,printing_type=$4,laser_minutes=$5,updated_at=clock_timestamp() WHERE id=$1',
+        [activityId,position+1,activity.assignedUserId??null,type,minutes]);
+      else {
+        await tx.query('INSERT INTO order_activities(id,order_id,product_id,position,area,assigned_user_id,printing_type,laser_minutes) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
+          [activityId,orderId,productId,position+1,activity.area,activity.assignedUserId??null,type,minutes]);
+        added++;
+      }
+    }
+    await tx.query('DELETE FROM order_activities WHERE product_id=$1 AND NOT(id=ANY($2::uuid[]))', [productId,keptActivities]);
+    await tx.query('DELETE FROM order_product_materials WHERE product_id=$1', [productId]);
+    for (const [position, material] of product.materials.entries()) await tx.query(`INSERT INTO order_product_materials
+      (id,order_id,product_id,position,material,length,width,consumed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [randomUUID(),orderId,productId,position+1,material.material,material.length,material.width,consumed]);
+  }
+  await tx.query('DELETE FROM order_product_materials WHERE order_id=$1 AND NOT(product_id=ANY($2::uuid[]))', [orderId,retained]);
+  await tx.query('DELETE FROM order_activities WHERE order_id=$1 AND NOT(product_id=ANY($2::uuid[]))', [orderId,retained]);
+  await tx.query('DELETE FROM order_products WHERE order_id=$1 AND NOT(id=ANY($2::uuid[]))', [orderId,retained]);
+  const sums = (await tx.query<{ laser: string; pending: string }>(`SELECT
+    coalesce(sum(laser_minutes) FILTER(WHERE printing_type='LASER' AND status='COMPLETED'),0) AS laser,
+    count(*) FILTER(WHERE status<>'COMPLETED') AS pending FROM order_activities WHERE order_id=$1`, [orderId])).rows[0];
+  const commercial = parsed.reduce((sum, product) => sum + lineCents(product.quantity, product.unitValue), 0);
+  if (commercial + Number(sums.laser)*LASER_RATE*100 !== Math.round(expectedValue*100)) {
+    throw new ApiError(400, 'PRODUCT_SUBTOTAL', 'La suma de productos y Corte Láser finalizado debe coincidir con el valor base de la OT.');
+  }
+  return { added, pending: Number(sums.pending) };
+}
+
 function visibleActivity(role: Role, userId: string, row: ActivityRow): boolean {
   if (admin(role)) return true;
   if (role === 'DISENO') return row.area === 'DESIGN' && (!row.assigned_user_id || row.assigned_user_id === userId);

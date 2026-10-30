@@ -4,8 +4,8 @@ import { ROLES, type AuthSession, type Role } from '../contracts.js';
 import type { Database, SqlConnection } from '../db/types.js';
 import { ApiError } from '../errors.js';
 import { requireCurrentActor } from '../security/actor.js';
-import { createOrderProducts, reopenCompletedOrderProducts, replaceOrderProducts } from '../work/service.js';
-import { cents, dateOnly, financials, isAdmin, orderDto, type DraftPayload, type OrderInput, type OrderRow, type PaymentRow, type bulkPaymentSchema, type createSchema, type editSchema, type paymentSchema, type transitionSchema } from './domain.js';
+import { correctOrderProducts, createOrderProducts } from '../work/service.js';
+import { cents, dateOnly, financials, isAdmin, orderDto, type DraftPayload, type OrderInput, type OrderRow, type PaymentRow, type bulkPaymentSchema, type createSchema, type editSchema, type paymentSchema, type paymentCorrectionSchema, type transitionSchema } from './domain.js';
 
 const admins: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL'];
 const creators: Role[] = [...admins, 'APOYO_COMERCIAL', 'DISENO'];
@@ -83,7 +83,9 @@ async function paymentsOf(tx: SqlConnection, id: string) {
   return (await tx.query<PaymentRow>('SELECT * FROM payments WHERE order_id = $1 ORDER BY date, recorded_at, id', [id])).rows;
 }
 async function lockedOrder(tx: SqlConnection, id: string): Promise<OrderRow> {
-  const row = (await tx.query<OrderRow>('SELECT o.*,c.special_payment FROM orders o JOIN clients c ON c.id=o.client_id WHERE o.id = $1 FOR UPDATE OF o', [id])).rows[0];
+  const row = (await tx.query<OrderRow>(`SELECT o.*,c.special_payment,
+    EXISTS(SELECT 1 FROM order_products p WHERE p.order_id=o.id AND NOT p.is_legacy) AS is_composite
+    FROM orders o JOIN clients c ON c.id=o.client_id WHERE o.id = $1 FOR UPDATE OF o`, [id])).rows[0];
   if (!row) throw missing();
   return row;
 }
@@ -103,6 +105,8 @@ function editChanges(before: OrderRow, after: OrderRow): AuditChange[] {
     ['category','Categoría'], ['route','Recorrido'], ['requires_installation','Requiere instalación'],
     ['rete_fuente','RETE FUENTE',true], ['rete_iva','RETE IVA',true], ['ica','ICA',true],
     ['invoice_reference','Referencia de facturación'],
+    ['material','Material de impresión'], ['length','Largo de impresión (m)'], ['width','Ancho de impresión (m)'],
+    ['status','Estado del trabajo'], ['closed_at','Cierre administrativo'],
   ];
   const changes: AuditChange[] = fields.flatMap(([key,label,sensitive]) => String(before[key] ?? '') === String(after[key] ?? '') ? [] : [{
     label, before: before[key] as string | number | boolean | null, after: after[key] as string | number | boolean | null, sensitive,
@@ -111,8 +115,9 @@ function editChanges(before: OrderRow, after: OrderRow): AuditChange[] {
   return changes;
 }
 async function productChanges(tx: SqlConnection, orderId: string, products: NonNullable<OrderInput['products']>): Promise<AuditChange[]> {
-  const current = (await tx.query<{ position:number; description:string; quantity:string; unit_value:string; materials:string; activities:string }>(`
-    SELECT p.position,p.description,p.quantity,p.unit_value,
+  const current = (await tx.query<{ id:string; position:number; description:string; quantity:string; unit_value:string; materials:string; activities:string; laser_minutes:number|null }>(`
+    SELECT p.id,p.position,p.description,p.quantity,p.unit_value,
+      (SELECT max(a.laser_minutes) FROM order_activities a WHERE a.product_id=p.id) AS laser_minutes,
       coalesce((SELECT string_agg(m.material || ' ' || m.length::float8::text || '×' || m.width::float8::text || ' m','; ' ORDER BY m.position)
         FROM order_product_materials m WHERE m.product_id=p.id),'') AS materials,
       coalesce((SELECT string_agg(a.area || coalesce(' (' || a.printing_type || ')','') || coalesce(' [' || a.assigned_user_id::text || ']',''),' → ' ORDER BY a.position)
@@ -122,8 +127,8 @@ async function productChanges(tx: SqlConnection, orderId: string, products: NonN
   const changes: AuditChange[]=[];
   if(current.length!==products.length) changes.push({label:'Cantidad de productos',before:current.length,after:products.length});
   products.forEach((product,index)=>{
-    const old=current[index],prefix=`Producto ${index+1}`;
-    if(!old){changes.push({label:prefix,after:'Producto agregado'});return;}
+    const old=product.id ? current.find(item=>item.id===product.id) : products.some(item=>item.id) ? undefined : current[index],prefix=`Producto ${index+1}`;
+    if(!old){changes.push({label:prefix,after:`Producto agregado: ${product.description}`});return;}
     if(old.description!==product.description) changes.push({label:`${prefix} · Descripción`,before:old.description,after:product.description});
     if(Number(old.quantity)!==product.quantity) changes.push({label:`${prefix} · Cantidad`,before:Number(old.quantity),after:product.quantity});
     if(Number(old.unit_value)!==product.unitValue) changes.push({label:`${prefix} · Valor unitario`,before:Number(old.unit_value),after:product.unitValue,sensitive:true});
@@ -131,6 +136,12 @@ async function productChanges(tx: SqlConnection, orderId: string, products: NonN
     if(old.materials!==materials) changes.push({label:`${prefix} · Materiales`,before:old.materials||'Sin materiales',after:materials||'Sin materiales'});
     const activities=product.activities.map(item=>`${item.area}${item.area==='PRINTING'?` (${item.printingType??'PRINT'})`:''}${item.assignedUserId?` [${item.assignedUserId}]`:''}`).join(' → ');
     if(old.activities!==activities) changes.push({label:`${prefix} · Áreas y responsables`,before:old.activities||'Sin actividades',after:activities||'Sin actividades'});
+    const laser=product.activities.find(item=>item.area==='PRINTING'&&item.printingType==='LASER');
+    if(laser?.laserMinutes!==undefined && laser.laserMinutes!==old.laser_minutes) changes.push({label:`${prefix} · Minutos Corte Láser`,before:old.laser_minutes,after:laser.laserMinutes});
+  });
+  current.forEach((old,index)=>{
+    const retained=products.some(product=>product.id) ? products.some(product=>product.id===old.id) : index<products.length;
+    if(!retained) changes.push({label:`Producto retirado · ${old.position}`,before:`${old.description}; ${old.materials||'Sin materiales'}; ${old.activities||'Sin actividades'}`,after:'Retirado de la OT'});
   });
   return changes;
 }
@@ -164,6 +175,9 @@ function normalizedInput(input: OrderInput, existing?: OrderRow): OrderInput {
 }
 
 export async function createOrder(db: Database, auth: AuthSession, input: z.infer<typeof createSchema>) {
+  if (input.products?.some(product => product.id || product.activities.some(activity => activity.laserMinutes !== undefined))) {
+    throw new ApiError(400, 'EDIT_ONLY_FIELDS', 'La identidad de productos y los minutos corregidos solo corresponden a Editar OT.');
+  }
   return db.transaction(async tx => {
     const actor = await requireCurrentActor(tx, auth, creators);
     const normalized = normalizedInput(input);
@@ -220,29 +234,19 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
       'SELECT coalesce(bool_or(NOT is_legacy),false) AS composite FROM order_products WHERE order_id=$1', [id])).rows[0]?.composite;
     if (existingComposite && !input.products) throw new ApiError(400, 'PRODUCTS_REQUIRED', 'Incluye los productos de esta orden en la edición.', 'products');
     if (row.status === 'IN_PRODUCTION' && !input.products) throw conflict('La orden compuesta requiere productos para editarse.');
-    if (!existingComposite && row.printing_completed_at &&
-      (input.printing?.material !== row.material || input.printing?.length !== Number(row.length) || input.printing?.width !== Number(row.width))) {
-      throw conflict('No se pueden cambiar los datos de impresión después de completar esa etapa.');
-    }
     if (input.initialPayment) throw new ApiError(400, 'INITIAL_PAYMENT_EDIT', 'Los abonos se registran en pagos, no en edición de OT.', 'initialPayment');
     const workChanges = input.products ? await productChanges(tx,id,input.products) : [];
     const client = await checkClient(tx, input.clientId, input.documentType);
     const payments = await paymentsOf(tx, id);
-    if (!client.special_payment && input.value > 0 && payments.length === 0) {
-      throw new ApiError(400, 'INITIAL_PAYMENT_REQUIRED', 'Registra primero un abono antes de asignar esta OT a un cliente no especial.', 'clientId');
-    }
     const normalized = normalizedInput(input, row);
     const money = financials({ value: String(normalized.value), document_type: normalized.documentType,
       rete_fuente: String(normalized.reteFuente), rete_iva: String(normalized.reteIva), ica: String(normalized.ica), financial_rule: row.financial_rule }, payments);
     if (money.collectible < 0) throw new ApiError(400, 'INVALID_COLLECTIBLE', 'El total a cobrar no puede ser negativo.', 'value');
     if (money.balance < 0) throw conflict('El total cobrable no puede ser inferior a los abonos registrados.');
-    const preserveProduction = Boolean(existingComposite && input.products &&
-      !['NEW','PENDING_ADMIN_REVIEW'].includes(row.status));
-    const addedActivities = preserveProduction && input.products
-      ? await reopenCompletedOrderProducts(tx, id, input.products, normalized.value, completedOrderEdit && !row.closed_at)
-      : 0;
-    const reopened = completedOrderEdit && !row.closed_at && addedActivities > 0;
-    let targetStatus = reopened ? 'IN_PRODUCTION' : input.products && !preserveProduction ? 'IN_PRODUCTION' : row.status;
+    const work = input.products ? await correctOrderProducts(tx, id, input.products, normalized.value) : null;
+    const reopened = completedOrderEdit && Boolean(work?.added);
+    let targetStatus = reopened ? 'IN_PRODUCTION' : input.products && ['NEW','PENDING_ADMIN_REVIEW'].includes(row.status) ? 'IN_PRODUCTION' : row.status;
+    if (work && targetStatus === 'IN_PRODUCTION' && work.pending === 0) targetStatus = normalized.requiresInstallation ? 'PENDING_INSTALLATION' : 'COMPLETED';
     if (!reopened && ['COMPLETED','PENDING_INSTALLATION','INSTALLED'].includes(row.status)) {
       if (normalized.requiresInstallation && row.status === 'COMPLETED' && !row.closed_at) targetStatus = 'PENDING_INSTALLATION';
       else if (!normalized.requiresInstallation && row.status !== 'COMPLETED') targetStatus = 'COMPLETED';
@@ -256,26 +260,53 @@ export async function editOrder(db: Database, auth: AuthSession, id: string, inp
         ready_for_installation_at=CASE WHEN $16 OR $15::varchar<>'PENDING_INSTALLATION' THEN NULL ELSE ready_for_installation_at END,
         installed_at=CASE WHEN $16 OR $15::varchar<>'INSTALLED' THEN NULL ELSE installed_at END, invoice_reference=$17,
         installation_note=CASE WHEN $16 OR $15::varchar<>'INSTALLED' THEN NULL ELSE installation_note END,
+        closed_at=CASE WHEN $16 THEN NULL ELSE closed_at END,
         updated_at=clock_timestamp(),version=version+1
       WHERE id=$14 RETURNING *`, [...inputParams(normalized), id, targetStatus, reopened, normalized.invoiceReference ?? null])).rows[0];
-    if (input.products && !preserveProduction) await replaceOrderProducts(tx, id, input.products, isAdmin(actor.role));
-    else {
+    if (!input.products) {
       const legacy = (await tx.query<{ id: string }>('SELECT id FROM order_products WHERE order_id=$1 AND is_legacy=true', [id])).rows[0];
       if (legacy) {
         await tx.query(`UPDATE order_products SET description=$2,unit_value=$3,updated_at=clock_timestamp()
           WHERE id=$1`, [legacy.id, normalized.description, normalized.value]);
-        if (!row.printing_completed_at) {
+        {
           await tx.query('DELETE FROM order_product_materials WHERE product_id=$1', [legacy.id]);
           if (normalized.printing) await tx.query(`INSERT INTO order_product_materials
-            (id,order_id,product_id,position,material,length,width) VALUES ($1,$2,$3,1,$4,$5,$6)`,
-          [randomUUID(),id,legacy.id,normalized.printing.material,normalized.printing.length,normalized.printing.width]);
+            (id,order_id,product_id,position,material,length,width,consumed_at) VALUES ($1,$2,$3,1,$4,$5,$6,$7)`,
+          [randomUUID(),id,legacy.id,normalized.printing.material,normalized.printing.length,normalized.printing.width,row.printing_completed_at]);
         }
       }
     }
     await event(tx, updated, actor.id, 'edit', row.status, {
       summary: 'Editó la orden de trabajo.', changes: [...editChanges(row, updated),...workChanges],
     });
-    return orderDto({ ...updated, special_payment: client.special_payment, is_composite: existingComposite }, payments, actor.role);
+    return orderDto({ ...updated, special_payment: client.special_payment, is_composite: Boolean(input.products) || existingComposite }, payments, actor.role);
+  });
+}
+
+export async function correctPayment(db: Database, auth: AuthSession, orderId: string, paymentId: string, input: z.infer<typeof paymentCorrectionSchema>) {
+  return db.transaction(async tx => {
+    const actor = await requireCurrentActor(tx, auth, admins);
+    const row = await lockedOrder(tx, orderId);
+    const payments = await paymentsOf(tx, orderId);
+    const before = payments.find(payment => payment.id === paymentId);
+    if (!before) throw new ApiError(404, 'PAYMENT_NOT_FOUND', 'No encontramos este pago dentro de la OT.');
+    const oldDate = typeof before.date === 'string' ? before.date.slice(0,10) : before.date.toISOString().slice(0,10);
+    if (oldDate === input.date && cents(before.amount) === cents(input.amount) && before.method === input.method) return orderDto(row, payments, actor.role);
+    checkVersion(row, input.expectedVersion);
+    if (input.date < dateOnly(row.created_at) || input.date > dateOnly()) throw new ApiError(400, 'PAYMENT_DATE', 'La fecha del pago debe estar entre la creación de la OT y hoy.', 'date');
+    const corrected = payments.map(payment => payment.id === paymentId ? { ...payment, date: input.date, amount: String(input.amount), method: input.method } : payment);
+    if (financials(row, corrected).balance < 0) throw conflict('La corrección haría que los pagos superen el total de la OT. Corrige el importe.');
+    await tx.query('UPDATE payments SET date=$2,amount=$3,method=$4 WHERE id=$1 AND order_id=$5', [paymentId,input.date,input.amount,input.method,orderId]);
+    if (before.bulk_batch_id) await tx.query(`UPDATE bulk_payment_batches SET amount=(
+      SELECT sum(amount) FROM payments WHERE bulk_batch_id=$1) WHERE id=$1`, [before.bulk_batch_id]);
+    const updated = (await tx.query<OrderRow>('UPDATE orders SET updated_at=clock_timestamp(),version=version+1 WHERE id=$1 RETURNING *', [orderId])).rows[0];
+    await event(tx, updated, actor.id, 'paymentCorrection', row.status, { summary: 'Corrigió un pago de la OT.', changes: [
+      { label:'Pago corregido', after:paymentId, sensitive:true },
+      ...(oldDate !== input.date ? [{ label:'Fecha del pago', before:oldDate, after:input.date, sensitive:true }] : []),
+      ...(cents(before.amount) !== cents(input.amount) ? [{ label:'Valor recibido', before:Number(before.amount), after:input.amount, sensitive:true }] : []),
+      ...(before.method !== input.method ? [{ label:'Medio de pago', before:before.method, after:input.method, sensitive:true }] : []),
+    ] });
+    return orderDto({ ...updated, special_payment:row.special_payment }, await paymentsOf(tx, orderId), actor.role);
   });
 }
 

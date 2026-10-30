@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Check, CheckCheck, ClipboardList, FilterX, Plus, Trash2, Wallet, X } from 'lucide-react';
 import { useApp } from '../data/AppContext';
+import { usePageMemory } from '../components/PageMemory';
 import type { WorkOrder } from '../domain/types';
 import { deleteOrderDraft, loadOrderDraft, ORDER_DRAFT_EVENT, type OrderFormDraft } from '../data/orderDraft';
 import type { OrderDraftRecord } from '../data/api';
@@ -15,6 +16,7 @@ const completed = (order: WorkOrder) => ['COMPLETED', 'INSTALLED'].includes(orde
 const awaitingReview = (order: WorkOrder) => ['NEW', 'PENDING_ADMIN_REVIEW'].includes(order.status);
 
 export function OrdersPage() {
+  const pageMemory = usePageMemory();
   const { data, user } = useApp();
   const [params, setParams] = useSearchParams();
   const query = params.get('q') || '';
@@ -113,7 +115,7 @@ export function OrdersPage() {
   async function removeDraft() {
     if (!user || draftBusy) return;
     setDraftBusy(true); setDraftError('');
-    try { await deleteOrderDraft(user.id); setDraft(null); }
+    try { await deleteOrderDraft(user.id); pageMemory.forget('/orders/new'); setDraft(null); }
     catch (reason) { setDraftError(reason instanceof Error ? reason.message : 'No fue posible eliminar el borrador.'); }
     finally { setDraftBusy(false); }
   }

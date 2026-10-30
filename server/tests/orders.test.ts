@@ -106,6 +106,12 @@ function transition(order: OrderView, action: string, session = admin, details: 
   return post(`/orders/${order.id}/transitions`, { action, expectedVersion: order.version, ...details }, session);
 }
 
+function correct(order: OrderView, paymentId: string, fields: Record<string, unknown>, session = admin) {
+  return request(app).patch(`${API}/orders/${order.id}/payments/${paymentId}`).set('Origin',ORIGIN)
+    .set('Cookie',session.cookie).set('X-CSRF-Token',session.csrf)
+    .send({expectedVersion:order.version,date:dateOnly(),amount:10000,method:'EFECTIVO',...fields});
+}
+
 async function move(order: OrderView, action: string, session = admin, details: Record<string, unknown> = {}): Promise<OrderView> {
   const actionDetails = action === 'finishPrinting' && details.receivedByWorkshop === undefined
     ? { ...details, receivedByWorkshop: 'Carlos Taller' } : details;
@@ -766,5 +772,56 @@ describe('Cambios financieros y ruta externa', () => {
     const failed = await post('/orders/bulk-payments',{clientId,selectedOrderIds:[order.id],date:dateOnly(),amount:101,method:'EFECTIVO',requestId:randomUUID()});
     expect(failed.status).toBe(409);
     expect((await db.query('SELECT id FROM bulk_payment_batches')).rows).toHaveLength(0);
+  });
+});
+
+describe('Corrección administrativa de pagos',()=>{
+  it.each(['ADMINMASTER','ADMIN_GENERAL'] as Role[])('%s corrige importe y medio incluso después del cierre',async role=>{
+    let order=await create({route:'WORKSHOP_ONLY',printing:undefined});
+    order=(await payment(order,20000)).body.order;
+    await db.query("UPDATE orders SET status='COMPLETED',closed_at=clock_timestamp() WHERE id=$1",[order.id]);
+    order=(await get(`/orders/${order.id}`)).body.order;
+    const target=(order.payments as Array<{id:string}>)[0];
+    const response=await correct(order,target.id,{amount:35000,method:'BANCOLOMBIA'},await actor(role));
+    expect(response.status,JSON.stringify(response.body)).toBe(200);
+    expect(response.body.order).toMatchObject({status:'COMPLETED',closedAt:order.closedAt,financials:{paid:35000,balance:65000}});
+    expect(response.body.order.payments[0]).toMatchObject({id:target.id,amount:35000,method:'BANCOLOMBIA'});
+    const history=(await get(`/history?orderId=${order.id}`)).body.items;
+    const audit=history.find((item:{action:string})=>item.action==='paymentCorrection');
+    expect(audit.actor.role).toBe(role);
+    expect(audit.details.changes).toEqual(expect.arrayContaining([expect.objectContaining({label:'Valor recibido',before:20000,after:35000,sensitive:true})]));
+    const reports=await get(`/reports/sales?from=${dateOnly()}&to=${dateOnly()}&groupBy=day`);
+    expect(reports.body.totals.received).toBe(35000);
+  });
+  it('rechaza sobrepago, versiones obsoletas y pagos ajenos sin modificar registros',async()=>{
+    const first=(await payment(await create(),20000)).body.order as OrderView;
+    const second=(await payment(await create(),10000)).body.order as OrderView;
+    const target=(first.payments as Array<{id:string}>)[0],foreign=(second.payments as Array<{id:string}>)[0];
+    expect((await correct(first,foreign.id,{amount:12000})).status).toBe(404);
+    expect((await correct(first,target.id,{amount:100001})).status).toBe(409);
+    const changed=await correct(first,target.id,{amount:30000});expect(changed.status).toBe(200);
+    expect((await correct(first,target.id,{amount:40000})).status).toBe(409);
+    expect((await correct(first,target.id,{amount:30000})).status).toBe(200);
+    expect((await db.query('SELECT amount FROM payments WHERE id=$1',[target.id])).rows[0].amount).toBe('30000.00');
+    expect((await db.query("SELECT id FROM order_events WHERE order_id=$1 AND action='paymentCorrection'",[first.id])).rows).toHaveLength(1);
+  });
+  it.each(['APOYO_COMERCIAL','DISENO','IMPRESION','TALLER'] as Role[])('%s no puede corregir pagos por petición directa',async role=>{
+    const order=(await payment(await create(),20000)).body.order as OrderView;
+    const target=(order.payments as Array<{id:string}>)[0];
+    expect((await correct(order,target.id,{amount:10000},await actor(role))).status).toBe(403);
+    expect((await db.query('SELECT amount FROM payments WHERE id=$1',[target.id])).rows[0].amount).toBe('20000.00');
+  });
+  it('reconcilia un abono proveniente de un multiabono sin reasignar ni duplicar pagos',async()=>{
+    const first=await create(),second=await create();
+    const payload={clientId,selectedOrderIds:[first.id,second.id],date:dateOnly(),amount:150000,method:'EFECTIVO',requestId:randomUUID()};
+    const batch=await post('/orders/bulk-payments',payload);expect(batch.status).toBe(201);
+    const order=(await get(`/orders/${second.id}`)).body.order as OrderView;
+    const target=(order.payments as Array<{id:string}>)[0];
+    const changed=await correct(order,target.id,{amount:40000});expect(changed.status).toBe(200);
+    expect(changed.body.order.financials.balance).toBe(60000);
+    const header=(await db.query('SELECT amount FROM bulk_payment_batches WHERE id=$1',[batch.body.batchId])).rows[0];
+    expect(Number(header.amount)).toBe(140000);
+    expect((await post('/orders/bulk-payments',payload)).status).toBe(200);
+    expect((await db.query('SELECT id FROM payments')).rows).toHaveLength(2);
   });
 });
