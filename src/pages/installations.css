@@ -135,6 +135,8 @@
 .installation-event-heading time { font-size: 10px; color: #64748b; font-variant-numeric: tabular-nums; }
 .installation-history li > p { color: #64748b; font-size: 11px; line-height: 1.6; }
 .installation-event-note { white-space: pre-wrap; margin-top: 6px; }
+.installation-event-photo { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; margin-top: 10px; }
+.installation-event-photo .btn { white-space: normal; text-align: left; }
 .installation-location-proof { background: #f8fafc; border: 1px solid #eef2f7; border-radius: 6px; padding: 7px; margin-top: 7px; font-variant-numeric: tabular-nums; }
 .installation-saving { color: #1d4ed8; font-size: 12px; }
 .installation-detail-footer { border-top: 1px solid #e2e8f0; padding-top: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }

@@ -114,6 +114,10 @@ export interface InstallationTeam {
   active: boolean; version: number; createdAt: string; updatedAt: string;
 }
 export interface InstallationTeamInput { name: string; memberIds: string[]; leaderId: string; active: boolean }
+export interface InstallationProduct {
+  id: string; description: string; quantity: number;
+  materials: { id: string; material: string; length: number; width: number; areaM2: number }[];
+}
 export interface Installation {
   id: string; orderId: string; orderNumber: number; clientName: string;
   description: string; status: InstallationStatus; personalStatus: InstallationPersonalStatus | null; installerId: string | null;
@@ -124,6 +128,7 @@ export interface Installation {
   locationException: boolean; locationExceptionReason: string | null;
   evidence: InstallationEvidence | null; createdAt: string; updatedAt: string;
   netWorkMinutes: number; productionReady: boolean; members: InstallationMember[];
+  products: InstallationProduct[];
   teamId?: string | null; teamName?: string | null;
 }
 export interface InstallationEvent {
@@ -144,6 +149,7 @@ export interface NewInstallation {
 }
 export type InstallationAction =
   | { action: 'assign'; installerId?: string; installerIds?: string[]; teamId?: string; reason: string }
+  | { action: 'edit-details'; address: string; contactName: string; contactPhone: string; instructions: string; reason: string }
   | { action: 'reschedule'; scheduledStartAt: string; scheduledEndAt: string; reason: string }
   | { action: 'arrive' | 'checkout'; location?: InstallationLocation }
   | { action: 'pause'; kind: 'REST' | 'LUNCH'; note?: string }

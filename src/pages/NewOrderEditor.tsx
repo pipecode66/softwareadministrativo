@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { usePageMemory } from '../components/PageMemory';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, FileText, Info, Plus, Save, Trash2 } from 'lucide-react';
 import { useApp } from '../data/AppContext';
@@ -12,7 +13,8 @@ import './orders.css';
 type Area = 'DESIGN' | 'PRINTING' | 'WORKSHOP' | 'EXTERNAL';
 type MaterialDraft = { key: string; material: Material; length: string; width: string };
 type ProductDraft = {
-  key: string; description: string; quantity: string; unitValue: string;
+  key: string; id?: string; description: string; quantity: string; unitValue: string;
+  printingCompleted?: boolean; laserMinutes?: string;
   design: boolean; printing: boolean; printingType: PrintingType; workshop: boolean; external: boolean;
   designerId: string; materials: MaterialDraft[];
 };
@@ -41,11 +43,12 @@ function routeFor(products: ProductDraft[]): ProductionRoute {
   if (printing) return 'PRINT_ONLY';
   return 'WORKSHOP_ONLY';
 }
-function orderedActivities(product: ProductDraft, creatorDesignerId?: string): { area: Area; assignedUserId?: string; printingType?: PrintingType }[] {
-  const activities: { area: Area; assignedUserId?: string; printingType?: PrintingType }[] = [];
+function orderedActivities(product: ProductDraft, creatorDesignerId?: string): { area: Area; assignedUserId?: string; printingType?: PrintingType; laserMinutes?: number }[] {
+  const activities: { area: Area; assignedUserId?: string; printingType?: PrintingType; laserMinutes?: number }[] = [];
   if (creatorDesignerId) activities.push({ area: 'DESIGN', assignedUserId: creatorDesignerId });
   else if (product.design) activities.push({ area: 'DESIGN', ...(product.designerId ? { assignedUserId: product.designerId } : {}) });
-  if (product.printing) activities.push({ area: 'PRINTING', printingType: product.printingType });
+  if (product.printing) activities.push({ area: 'PRINTING', printingType: product.printingType,
+    ...(product.printingType === 'LASER' && product.laserMinutes ? { laserMinutes: Number(product.laserMinutes) } : {}) });
   if (product.workshop) activities.push({ area: 'WORKSHOP' });
   if (product.external) activities.push({ area: 'EXTERNAL' });
   return activities;
@@ -53,6 +56,7 @@ function orderedActivities(product: ProductDraft, creatorDesignerId?: string): {
 
 /** New orders have one commercial parent and independent production activities. */
 export function NewOrderEditor({ initialClientId, existing }: { initialClientId: string; existing?: WorkOrder }) {
+  const pageMemory = usePageMemory();
   const { data, user, createOrder, updateOrder, saveClient, toast } = useApp();
   const navigate = useNavigate();
   const [clientId, setClientId] = useState(existing?.clientId || initialClientId);
@@ -84,10 +88,14 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   const [draftReady, setDraftReady] = useState(Boolean(existing));
   const errorRef = useRef<HTMLDivElement>(null);
   const draftEnabledRef = useRef(true);
+  const draftLoadedRef = useRef(false);
+  const productsLoadedRef = useRef(false);
+  const editVersion = useRef(existing?.version);
   const draftPayloadRef = useRef<OrderFormDraft | null>(null);
   const pendingDraftSaveRef = useRef<Promise<unknown>>(Promise.resolve());
   const client = data.clients.find(item => item.id === clientId);
-  const base = roundMoney(products.reduce((sum, product) => sum + lineValue(product), 0));
+  const base = roundMoney(products.reduce((sum, product) => sum + lineValue(product) +
+    (product.printing && product.printingType === 'LASER' && product.printingCompleted ? (Number(product.laserMinutes) || 0)*1000 : 0), 0));
   const laserOnlyDeferred = documentType === 'FACT' && base === 0 && products.every(product =>
     product.printing && product.printingType === 'LASER' && !product.workshop && !product.external);
   const autoRetentions = documentType === 'FACT' && base > 524000 ? {
@@ -129,10 +137,11 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   }, [clientId, clientQuery, data.clients]);
 
   useEffect(() => {
-    if (existing || !user) return;
+    if (existing || !user || draftLoadedRef.current) return;
     let active = true;
     void loadOrderDraft<OrderFormDraft>(user.id).then(draft => {
       if (!active) return;
+      draftLoadedRef.current = true;
       if (draft) {
         const payload = draft.payload;
         setClientId(payload.clientId || initialClientId);
@@ -177,10 +186,12 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
   }, [existing?.id, user?.id, draftReady]);
 
   useEffect(() => {
-    if (!existing) return;
+    if (!existing || productsLoadedRef.current) return;
     let active = true;
     const toDraft = (items: OrderProduct[]) => items.map(product => ({
-      key: product.id || crypto.randomUUID(), description: product.description, quantity: String(product.quantity),
+      key: product.id || crypto.randomUUID(), id: product.id, description: product.description, quantity: String(product.quantity),
+      printingCompleted: product.activities.some(activity => activity.area === 'PRINTING' && activity.status === 'COMPLETED'),
+      laserMinutes: String(product.activities.find(activity => activity.area === 'PRINTING')?.laserMinutes ?? ''),
       unitValue: formatPesosInput(product.unitValue ?? 0),
       design: product.activities.some(activity => activity.area === 'DESIGN'),
       printing: product.activities.some(activity => activity.area === 'PRINTING'),
@@ -191,9 +202,9 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
       materials: product.materials.map(material => ({ key: material.id || crypto.randomUUID(), material: material.material,
         length: String(material.length), width: String(material.width) })),
     }));
-    if (!usingApi) { setProducts(toDraft(existing.products || [])); setLoadingProducts(false); return; }
+    if (!usingApi) { setProducts(toDraft(existing.products || [])); setLoadingProducts(false); productsLoadedRef.current = true; return; }
     void apiWorkOrder(existing.id).then(result => {
-      if (active) { setProducts(toDraft(result.products)); setLoadingProducts(false); }
+      if (active) { setProducts(toDraft(result.products)); setLoadingProducts(false); productsLoadedRef.current = true; }
     }).catch(reason => {
       if (active) { setError(reason instanceof Error ? reason.message : 'No fue posible cargar los productos de la OT.'); setLoadingProducts(false); }
     });
@@ -261,6 +272,8 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
       if (!product.description.trim()) return `${label}: escribe una descripción.`;
       if (!Number.isSafeInteger(Number(product.quantity)) || Number(product.quantity) < 1) return `${label}: indica una cantidad entera mayor que cero.`;
       if (!Number.isSafeInteger(moneyInput(product.unitValue)) || moneyInput(product.unitValue) < 0) return `${label}: indica un valor unitario válido.`;
+      if (product.printing && product.printingType === 'LASER' && product.printingCompleted &&
+        (!Number.isSafeInteger(Number(product.laserMinutes)) || Number(product.laserMinutes) < 1)) return `${label}: indica los minutos del Corte Láser finalizado.`;
       if (!orderedActivities(product, designerCreatorId).length) return `${label}: selecciona al menos un área de trabajo.`;
       if (!designerCreatorId && product.design && !product.designerId) return `${label}: selecciona el diseñador responsable.`;
       if (product.printing && product.printingType === 'PRINT' && !product.materials.length
@@ -282,6 +295,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
     const issue = validate();
     if (issue) { setError(issue); requestAnimationFrame(() => errorRef.current?.focus()); return; }
     const orderProducts = products.map(product => ({
+      ...(product.id ? { id: product.id } : {}),
       description: product.description.trim(), quantity: Number(product.quantity), unitValue: moneyInput(product.unitValue),
       materials: product.printing && product.printingType === 'PRINT' ? product.materials.map(item => ({ material: item.material, length: Number(item.length), width: Number(item.width) })) : [],
       activities: orderedActivities(product, designerCreatorId),
@@ -299,11 +313,13 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
     setSaving(true); setError('');
     try {
       if (existing) {
-        await updateOrder(existing.id, input);
+        await updateOrder(existing.id, input, editVersion.current);
         toast('Los cambios de la OT fueron guardados.');
+        pageMemory.forget(`/orders/${existing.id}/edit`);
         navigate(`/orders/${existing.id}`);
       } else {
         const created = await createOrder(input);
+        pageMemory.forget('/orders/new');
         draftEnabledRef.current = false;
         if (user) {
           try { await pendingDraftSaveRef.current.catch(() => undefined); await deleteOrderDraft(user.id); }
@@ -356,6 +372,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
             {!designerCreatorId && product.design && <Field label="Asignar diseñador *" htmlFor={`product-designer-${product.key}`} hint="Selecciona quién será responsable de esta actividad."><select id={`product-designer-${product.key}`} className="select" value={product.designerId} onChange={event => updateProduct(product.key, { designerId: event.target.value })} required><option value="">Selecciona un diseñador</option>{designers.map(designer => <option key={designer.id} value={designer.id}>{designer.name}</option>)}</select></Field>}
             {product.printing && <fieldset className="order-choice-fieldset order-printing-type"><legend>Trabajo del área de Impresión *</legend><div className="order-document-options"><label className={`order-choice-card ${product.printingType === 'PRINT' ? 'is-selected' : ''}`}><input type="radio" name={`printing-type-${product.key}`} checked={product.printingType === 'PRINT'} onChange={() => updateProduct(product.key, { printingType: 'PRINT' })} /> Impresión</label><label className={`order-choice-card ${product.printingType === 'LASER' ? 'is-selected' : ''}`}><input type="radio" name={`printing-type-${product.key}`} checked={product.printingType === 'LASER'} onChange={() => updateProduct(product.key, { printingType: 'LASER', materials: [] })} /> Corte láser</label></div></fieldset>}
             {product.printing && product.printingType === 'LASER' && <p className="order-help-text"><Info size={14} /> El corte láser se cobrará a $1.000 COP por minuto cuando Impresión registre el tiempo utilizado.</p>}
+            {existing && product.printing && product.printingType === 'LASER' && product.printingCompleted && <Field label="Minutos de Corte Láser finalizado" htmlFor={`product-laser-${product.key}`} hint="La corrección actualiza el cargo de $1.000 COP por minuto y el total de la OT."><input id={`product-laser-${product.key}`} className="input" type="number" min="1" step="1" value={product.laserMinutes || ''} onChange={event => updateProduct(product.key, { laserMinutes: event.target.value })} /></Field>}
             {product.printing && product.printingType === 'PRINT' && <div className="order-product-materials"><div className="order-product-heading"><div><h4>Materiales de impresión</h4><p className="order-help-text">Obligatorio: agrega al menos un material para guardar la OT.</p></div><Button type="button" variant="secondary" onClick={() => updateProduct(product.key, { materials: [...product.materials, draftMaterial()] })}><Plus size={15} /> Agregar material</Button></div>{product.materials.map((material, materialIndex) => <div className="order-material-row" key={material.key}><Field label={`Material ${materialIndex + 1}`} htmlFor={`material-${material.key}`}><select id={`material-${material.key}`} className="select" value={material.material} onChange={event => updateMaterial(product, material.key, { material: event.target.value as Material })}>{MATERIALS.map(item => <option key={item} value={item}>{item}</option>)}</select></Field><Field label="Largo (m)" htmlFor={`material-length-${material.key}`}><input id={`material-length-${material.key}`} className="input" type="number" min="0.001" step="0.001" value={material.length} onChange={event => updateMaterial(product, material.key, { length: event.target.value })} /></Field><Field label="Ancho (m)" htmlFor={`material-width-${material.key}`}><input id={`material-width-${material.key}`} className="input" type="number" min="0.001" step="0.001" value={material.width} onChange={event => updateMaterial(product, material.key, { width: event.target.value })} /></Field><span className="order-material-area">{formatMeasure((Number(material.length) || 0) * (Number(material.width) || 0))} m²</span><button type="button" className="order-material-remove" aria-label={`Quitar material ${materialIndex + 1}`} onClick={() => updateProduct(product.key, { materials: product.materials.filter(item => item.key !== material.key) })}><Trash2 size={16} /></button></div>)}</div>}
           </section>)}</div>
           <Button type="button" variant="secondary" onClick={() => setProducts(current => [...current, draftProduct()])}><Plus size={17} /> Agregar otro producto</Button>
@@ -392,7 +409,7 @@ export function NewOrderEditor({ initialClientId, existing }: { initialClientId:
           <div className="form-grid"><Field label={`Valor recibido (COP)${initialPaymentRequired ? ' *' : ''}`} htmlFor="initial-payment"><input id="initial-payment" className="input" inputMode="numeric" value={paymentAmount} onChange={event => setPaymentAmount(formatPesosInput(event.target.value))} placeholder={initialPaymentRequired ? 'Obligatorio' : 'Opcional'} /></Field><Field label="Medio de pago" htmlFor="initial-payment-method"><select id="initial-payment-method" className="select" value={paymentMethod} onChange={event => setPaymentMethod(event.target.value as Exclude<PaymentMethod, 'LEGACY'>)} disabled={!paymentAmount}>{paymentMethods.map(method => <option key={method.value} value={method.value}>{method.label}</option>)}</select></Field></div>
         </Card>}
       </div>
-      <aside className="order-preview-column"><Card className="order-preview-card"><div className="order-preview-cover"><FileText size={32} /><span>INTERMEDIOS PRECISION</span><h2>Resumen de la OT</h2><p>{products.length} {products.length === 1 ? 'producto' : 'productos'} · {client?.name || 'Cliente por seleccionar'}</p></div><div className="order-preview-body"><dl className="order-summary-list"><div><dt>Número OT</dt><dd>{existing ? `#${existing.number}` : 'Automático'}</dd></div><div><dt>Documento</dt><dd>{documentType}</dd></div><div><dt>Valor antes de IVA</dt><dd>{formatCOP(base)}</dd></div>{documentType === 'FACT' && <><div><dt>IVA 19 %</dt><dd>+ {formatCOP(preview.iva)}</dd></div><div><dt>Retenciones</dt><dd>{existing?.financialRule === 'LEGACY' ? '+' : '−'} {formatCOP(preview.retentions)}</dd></div></>}<div><dt>{existing ? 'Pagos registrados' : 'Abono inicial'}</dt><dd>− {formatCOP(existing ? preview.paid : moneyInput(paymentAmount))}</dd></div></dl><div className="order-preview-total"><span>Total por cobrar</span><strong>{formatCOP(preview.collectible)}</strong><small>Saldo {existing ? 'pendiente' : 'tras abono'}: {formatCOP(preview.balance)}</small></div><Button type="submit" disabled={saving || loadingProducts} className="order-save-button"><Save size={17} /> {saving ? 'Guardando…' : existing ? 'Guardar cambios' : 'Guardar orden de trabajo'}</Button><Link className="btn btn-ghost order-cancel-button" to={existing ? `/orders/${existing.id}` : '/orders'}>Cancelar</Link></div></Card><div className="order-form-note"><Info size={18} /><p>{existing ? 'Solo Administración puede modificar la OT. Los productos se pueden cambiar mientras ninguna actividad haya iniciado.' : 'La OT se crea directamente. Las actividades de cada producto se enviarán a sus áreas; Diseño precede a Impresión cuando ambas aplican.'}</p></div></aside>
+      <aside className="order-preview-column"><Card className="order-preview-card"><div className="order-preview-cover"><FileText size={32} /><span>INTERMEDIOS PRECISION</span><h2>Resumen de la OT</h2><p>{products.length} {products.length === 1 ? 'producto' : 'productos'} · {client?.name || 'Cliente por seleccionar'}</p></div><div className="order-preview-body"><dl className="order-summary-list"><div><dt>Número OT</dt><dd>{existing ? `#${existing.number}` : 'Automático'}</dd></div><div><dt>Documento</dt><dd>{documentType}</dd></div><div><dt>Valor antes de IVA</dt><dd>{formatCOP(base)}</dd></div>{documentType === 'FACT' && <><div><dt>IVA 19 %</dt><dd>+ {formatCOP(preview.iva)}</dd></div><div><dt>Retenciones</dt><dd>{existing?.financialRule === 'LEGACY' ? '+' : '−'} {formatCOP(preview.retentions)}</dd></div></>}<div><dt>{existing ? 'Pagos registrados' : 'Abono inicial'}</dt><dd>− {formatCOP(existing ? preview.paid : moneyInput(paymentAmount))}</dd></div></dl><div className="order-preview-total"><span>Total por cobrar</span><strong>{formatCOP(preview.collectible)}</strong><small>Saldo {existing ? 'pendiente' : 'tras abono'}: {formatCOP(preview.balance)}</small></div><Button type="submit" disabled={saving || loadingProducts} className="order-save-button"><Save size={17} /> {saving ? 'Guardando…' : existing ? 'Guardar cambios' : 'Guardar orden de trabajo'}</Button><Link className="btn btn-ghost order-cancel-button" onClick={() => { if (existing) pageMemory.forget(`/orders/${existing.id}/edit`); }} to={existing ? `/orders/${existing.id}` : '/orders'}>Cancelar</Link></div></Card><div className="order-form-note"><Info size={18} /><p>{existing ? 'Administración puede corregir productos, materiales, responsables e importes en cualquier etapa. Se conservan el trabajo registrado y la trazabilidad.' : 'La OT se crea directamente. Las actividades de cada producto se enviarán a sus áreas; Diseño precede a Impresión cuando ambas aplican.'}</p></div></aside>
     </form>
   </div>;
 }

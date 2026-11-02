@@ -30,6 +30,11 @@ export const createInstallationSchema = z.object({
 });
 export const installationActionSchema = z.discriminatedUnion('action', [
   z.object({ ...common, action: z.literal('assign'), ...assignment, reason }).strict(),
+  z.object({ ...common, action: z.literal('edit-details'),
+    address: z.string().trim().min(1, 'Escribe la dirección de instalación.').max(1000),
+    contactName: z.string().trim().max(120), contactPhone: z.string().trim().max(80),
+    instructions: z.string().trim().max(4000), reason,
+  }).strict(),
   z.object({ ...common, action: z.literal('reschedule'), scheduledStartAt: instant, scheduledEndAt: instant, reason }).strict(),
   z.object({ ...common, action: z.literal('arrive'), location: locationSchema.optional() }).strict(),
   z.object({ ...common, action: z.literal('pause'), kind: z.enum(['REST','LUNCH']), note: z.string().trim().max(2000).optional() }).strict(),

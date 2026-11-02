@@ -390,7 +390,7 @@ describe('Productos y trabajo interno', () => {
     });
   });
 
-  it('edita una OT compuesta activa sin reiniciar actividades ni alterar materiales consumidos', async () => {
+  it('edita una OT compuesta activa y permite corregir también materiales consumidos', async () => {
     const order = await create();
     await db.query(`UPDATE order_activities SET status='COMPLETED',completed_at=now()
       WHERE order_id=$1 AND area='DESIGN'`, [order.id]);
@@ -424,8 +424,8 @@ describe('Productos y trabajo interno', () => {
     const rejected = await patch(`/orders/${order.id}`, {
       ...payload, expectedVersion:pendingMaterialEdit.body.order.version, products:changedMaterials,
     });
-    expect(rejected.status).toBe(409);
-    expect(rejected.body.error.message).toContain('materiales');
+    expect(rejected.status).toBe(200);
+    expect((await get(`/work/orders/${order.id}`)).body.products[0].materials[0]).toMatchObject({ length:4, consumedAt:expect.any(String) });
   });
 
   it('permite editar una OT IN_PRODUCTION con Impresión iniciada sin borrar su avance ni materiales', async () => {
@@ -463,6 +463,78 @@ describe('Productos y trabajo interno', () => {
       expect.objectContaining({ material:'Banner', consumedAt:expect.any(String) }),
       expect.objectContaining({ material:'Panaflex', consumedAt:expect.any(String) }),
     ]));
+  });
+});
+
+describe('Corrección administrativa integral de materiales', () => {
+  it('corrige minutos de Corte Láser finalizado y recompone el valor sin reiniciar el trabajo',async()=>{
+    const order=await create({route:'PRINT_ONLY',products:[{description:'Corte',quantity:1,unitValue:100000,
+      materials:[],activities:[{area:'PRINTING',printingType:'LASER'}]}]});
+    const activity=(await get(`/work/activities?orderId=${order.id}`)).body.items[0];
+    expect((await post(`/work/activities/${activity.id}/start`,{})).status).toBe(200);
+    expect((await patch(`/work/activities/${activity.id}/laser`,{minutes:10})).status).toBe(200);
+    expect((await post(`/work/activities/${activity.id}/complete`,{receivedByWorkshop:'Recepción'})).status).toBe(200);
+    const completed=(await get(`/orders/${order.id}`)).body.order;
+    expect(completed.value).toBe(110000);
+    const product=(await get(`/work/orders/${order.id}`)).body.products[0];
+    const result=await patch(`/orders/${order.id}`,{clientId,description:'Corte corregido',value:120000,documentType:'REM',category:'Proyecto',
+      route:'PRINT_ONLY',requiresInstallation:false,expectedVersion:completed.version,products:[{id:product.id,description:'Corte',quantity:1,unitValue:100000,
+        materials:[],activities:[{area:'PRINTING',printingType:'LASER',laserMinutes:20}]}]});
+    expect(result.status,JSON.stringify(result.body)).toBe(200);
+    expect(result.body.order).toMatchObject({status:'COMPLETED',value:120000});
+    const saved=(await get(`/work/activities?orderId=${order.id}`)).body.items[0];
+    expect(saved).toMatchObject({id:activity.id,status:'COMPLETED',laserMinutes:20});
+  });
+  it.each([
+    ['ADMINMASTER','IN_PRODUCTION'],['ADMIN_GENERAL','IN_PRODUCTION'],
+    ['ADMINMASTER','COMPLETED'],['ADMIN_GENERAL','COMPLETED'],
+    ['ADMINMASTER','INSTALLED'],['ADMIN_GENERAL','INSTALLED'],
+  ] as const)('%s corrige consumo en OT %s sin duplicar m² ni cambiar su fecha',async(role,status)=>{
+    const order=await create({route:'PRINT_WORKSHOP',products:[{description:'Aviso',quantity:1,unitValue:100000,
+      materials:[{material:'Panaflex',length:2,width:4}],activities:[{area:'PRINTING'},{area:'WORKSHOP'}]}]});
+    const stamp=new Date().toISOString();
+    await db.query("UPDATE order_activities SET status='COMPLETED',completed_at=$2 WHERE order_id=$1 AND area='PRINTING'",[order.id,stamp]);
+    if(status!=='IN_PRODUCTION') await db.query("UPDATE order_activities SET status='COMPLETED',completed_at=$2 WHERE order_id=$1",[order.id,stamp]);
+    await db.query('UPDATE order_product_materials SET consumed_at=$2 WHERE order_id=$1',[order.id,stamp]);
+    await db.query(`UPDATE orders SET status=$2::varchar,requires_installation=($2::varchar='INSTALLED'),
+      installed_at=CASE WHEN $2::varchar='INSTALLED' THEN $3::timestamptz ELSE NULL END,
+      closed_at=CASE WHEN $2::varchar='IN_PRODUCTION' THEN NULL ELSE $3::timestamptz END WHERE id=$1`,[order.id,status,stamp]);
+    const before=(await get(`/orders/${order.id}`)).body.order;
+    const items=(await get(`/work/orders/${order.id}`)).body.products;
+    const activitiesBefore=(await get(`/work/activities?orderId=${order.id}`)).body.items;
+    const updated=await patch(`/orders/${order.id}`,{clientId,description:'Material corregido',value:100000,documentType:'REM',
+      category:'Proyecto',route:'PRINT_WORKSHOP',requiresInstallation:status==='INSTALLED',expectedVersion:before.version,
+      products:items.map((product:{id:string;description:string;quantity:number;unitValue:number})=>({id:product.id,description:product.description,
+        quantity:product.quantity,unitValue:product.unitValue,materials:[{material:'V. Impresión',length:2,width:4}],
+        activities:[{area:'PRINTING',printingType:'PRINT'},{area:'WORKSHOP'}]}))},role==='ADMINMASTER'?admin:await actor(role));
+    expect(updated.status,JSON.stringify(updated.body)).toBe(200);
+    expect(updated.body.order).toMatchObject({status,isComposite:true});
+    if(status!=='IN_PRODUCTION') expect(updated.body.order.closedAt).toBe(before.closedAt);
+    const consumed=(await db.query<{material:string;consumed_at:string}>('SELECT material,consumed_at FROM order_product_materials WHERE order_id=$1',[order.id])).rows;
+    expect(consumed).toHaveLength(1);expect(consumed[0].material).toBe('V. Impresión');
+    expect(new Date(consumed[0].consumed_at).toISOString()).toBe(stamp);
+    const report=await get(`/reports/materials?from=${dateOnly()}&to=${dateOnly()}`);
+    expect(report.status).toBe(200);expect(report.body.totalM2).toBe(8);
+    expect(report.body.materials.find((item:{material:string})=>item.material==='Panaflex').m2).toBe(0);
+    expect(report.body.materials.find((item:{material:string})=>item.material==='V. Impresión').m2).toBe(8);
+    const after=(await get(`/work/activities?orderId=${order.id}`)).body.items;
+    expect(after.map((item:Activity)=>({id:item.id,status:item.status}))).toEqual(activitiesBefore.map((item:Activity)=>({id:item.id,status:item.status})));
+    const history=(await get(`/history?orderId=${order.id}`)).body.items;
+    expect(history[0].details.changes).toEqual(expect.arrayContaining([expect.objectContaining({label:'Producto 1 · Materiales',before:expect.stringContaining('Panaflex'),after:expect.stringContaining('V. Impresión')})]));
+  });
+  it('permite retirar productos y agregar otros sin trasladar identidades entre trabajos',async()=>{
+    const order=await create();
+    const original=(await get(`/work/orders/${order.id}`)).body.products;
+    const second=original[1];
+    const response=await patch(`/orders/${order.id}`,{clientId,description:'Proveedor corregido',value:60000,documentType:'REM',category:'Proyecto',
+      route:'MULTI_AREA',requiresInstallation:false,expectedVersion:order.version,products:[
+        {id:second.id,description:second.description,quantity:1,unitValue:40000,materials:[],activities:[{area:'EXTERNAL'}]},
+        {description:'Trabajo nuevo',quantity:1,unitValue:20000,materials:[],activities:[{area:'WORKSHOP'}]},
+      ]});
+    expect(response.status,JSON.stringify(response.body)).toBe(200);
+    const saved=(await get(`/work/orders/${order.id}`)).body.products;
+    expect(saved[0].id).toBe(second.id);expect(saved[1].id).not.toBe(original[0].id);
+    expect((await db.query('SELECT id FROM order_products WHERE id=$1',[original[0].id])).rows).toHaveLength(0);
   });
 });
 

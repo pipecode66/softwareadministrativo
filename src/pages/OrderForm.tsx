@@ -6,6 +6,7 @@ import type { Category, DocumentType, Material, OrderInput, ProductionRoute, Wor
 import { areaOf, canCreate, canEditOrder, CATEGORIES, financials, formatCOP, formatMeasure, formatNumber, formatPesosInput, isAdmin, MATERIALS, ROUTE_LABELS } from '../domain/utils';
 import { Button, Card, EmptyState, Field, PageHeader } from '../components/ui';
 import { NewOrderEditor } from './NewOrderEditor';
+import { usePageMemory } from '../components/PageMemory';
 import './orders.css';
 
 interface FormValues {
@@ -37,7 +38,7 @@ export function OrderFormPage() {
   const canEdit = order && canEditOrder(user, order);
   if (order && !canEdit) return <EmptyState title="Esta orden no está disponible para edición" description="La edición de órdenes corresponde exclusivamente a Administración." action={<Link className="btn btn-secondary" to={`/orders/${order.id}`}>Volver a la orden</Link>} />;
   const initialClientId = params.get('client') || params.get('clientId') || '';
-  if (!order) return <NewOrderEditor key={location.key} initialClientId={initialClientId} />;
+  if (!order) return <NewOrderEditor key="new-order" initialClientId={initialClientId} />;
   if (order.isComposite || order.products?.some(product => product.activities.length > 0) || order.status === 'IN_PRODUCTION') {
     return <NewOrderEditor key={order.id} existing={order} initialClientId={initialClientId} />;
   }
@@ -45,6 +46,8 @@ export function OrderFormPage() {
 }
 
 function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; initialClientId: string }) {
+  const pageMemory = usePageMemory();
+  const editVersion = useRef(existing?.version);
   const { data, user, createOrder, saveClient, updateOrder, toast } = useApp();
   const navigate = useNavigate();
   const [values, setValues] = useState<FormValues>(() => initialValues(existing, initialClientId));
@@ -125,11 +128,13 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
     setSaving(true);
     try {
       if (existing) {
-        await updateOrder(existing.id, input);
+        await updateOrder(existing.id, input, editVersion.current);
         toast('Los cambios de la orden fueron guardados.');
+        pageMemory.forget(`/orders/${existing.id}/edit`);
         navigate(`/orders/${existing.id}`);
       } else {
         const order = await createOrder(input);
+        pageMemory.forget('/orders/new');
         toast(user?.role === 'DISENO' ? 'Orden creada y enviada a revisión administrativa.' : 'Orden creada. Ya puedes enviarla a producción.');
         navigate(`/orders/${order.id}`);
       }
@@ -203,7 +208,7 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
             <Field label="Largo (m) *" htmlFor="ot-length"><input className="input" id="ot-length" type="number" min="0.001" step="0.001" inputMode="decimal" value={values.length} onChange={event => change('length', event.target.value)} placeholder="Ej. 2.5" required {...attrs('length')} />{errorFor('length')}</Field>
             <Field label="Ancho (m) *" htmlFor="ot-width"><input className="input" id="ot-width" type="number" min="0.001" step="0.001" inputMode="decimal" value={values.width} onChange={event => change('width', event.target.value)} placeholder="Ej. 1.2" required {...attrs('width')} />{errorFor('width')}</Field>
           </div><div className="order-area-result" aria-live="polite"><Ruler size={21} /><div><small>Superficie requerida</small><strong>{formatMeasure(Number(values.length) || 0)} m × {formatMeasure(Number(values.width) || 0)} m = <em>{formatMeasure(area)} m²</em></strong></div></div></div>}
-          <label className="order-install-toggle"><input type="checkbox" checked={values.requiresInstallation} onChange={event => change('requiresInstallation', event.target.checked)} /><span><strong>Este trabajo requiere instalación</strong><small>Administración o Taller registrarán su realización.</small></span></label>
+          <label className="order-install-toggle"><input type="checkbox" checked={values.requiresInstallation} onChange={event => change('requiresInstallation', event.target.checked)} /><span><strong>Este trabajo requiere instalación</strong><small>Administración lo programará en Instalaciones para el equipo asignado.</small></span></label>
         </Card>
       </div>
       <aside className="order-preview-column">
@@ -212,7 +217,7 @@ function OrderEditor({ existing, initialClientId }: { existing?: WorkOrder; init
             <div className="order-preview-total" aria-live="polite"><span>{admin ? 'Total por cobrar' : 'Valor con impuestos'}</span><strong>{formatCOP(total)}</strong><small>COP {fact ? '· IVA incluido' : ''}</small></div>
             {admin && fact && retentions > 0 && <p className="order-help-text">Retenciones registradas: {formatCOP(retentions)}</p>}
             <Button type="submit" disabled={saving} className="order-save-button"><Save size={17} /> {saving ? 'Guardando…' : existing ? 'Guardar cambios' : 'Guardar orden de trabajo'}</Button>
-            <Link className="btn btn-ghost order-cancel-button" to={backPath}>Cancelar</Link>
+            <Link className="btn btn-ghost order-cancel-button" onClick={() => { if (existing) pageMemory.forget(`/orders/${existing.id}/edit`); }} to={backPath}>Cancelar</Link>
           </div>
         </Card>
         <div className="order-form-note"><Info size={18} /><p>{user?.role === 'DISENO' ? 'Al guardar, la orden llegará a Administración para revisión antes de pasar a producción.' : 'Al guardar, podrás revisar la orden y enviarla al primer departamento de su recorrido.'}</p></div>

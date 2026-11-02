@@ -2,6 +2,8 @@
 
 Estado: desarrollo y validación local. No ejecutar015 en Supabase ni publicar esta rama hasta aprobar las pruebas. La rama de trabajo es `feature/instalaciones-local`; no se hace push.
 
+Verificado el02/11:204 pruebas frontend,340 servidor,12 recorridos API distintos y4 locales. Incluye asignaciones, equipos, privacidad, GPS emulado, fotos, cierre móvil, correcciones y reapertura de producción; escritorio/móvil entre320 y1440px. Falta confirmar el comportamiento en el celular real y la aceptación del flujo. No hay servidores de prueba persistentes abiertos al terminar esta revisión.
+
 ## Abrir el entorno separado
 
 Desde la raíz del proyecto, abre dos terminales:
@@ -31,8 +33,9 @@ Si el puerto está ocupado o aparece un archivo de bloqueo, revisa primero si ya
 5. Ingresa como instalador: solo debe aparecer lo asignado a esa persona, sin cartera, reportes financieros, valores comerciales ni directorio de clientes. Cada integrante registra su propia llegada, descanso/almuerzo, regreso y salida. El avance de un compañero no debe cambiar las pestañas personales de los demás.
 6. Para aplazar o reemplazar integrantes durante la ejecución, Administración aplaza con motivo. Después puede reasignar y reprogramar; el historial conserva responsables, acciones y tiempos anteriores. Una persona retirada pierde acceso al trabajo, sin transferir sus tiempos a otra.
 7. El responsable principal guarda una fotografía del resultado, verifica el montaje y señala prueba eléctrica realizada o no aplicable, describe el resultado y finaliza. Quienes llegaron deben registrar su salida antes del cierre; los asignados que nunca llegaron requieren una justificación del responsable y no reciben rendimiento por trabajo no realizado.
-8. Al finalizar, la OT debe quedar Instalada sin modificar sus pagos, valores, saldos o consecutivo. Administración consulta historial y evidencia. Si agrega nuevas actividades productivas a una OT instalada no cerrada, el nuevo ciclo queda bloqueado hasta completar producción nuevamente y exige evidencia nueva, conservando la anterior.
-9. Prueba dos sesiones haciendo cambios a la misma instalación: el segundo guardado desactualizado debe pedir recargar. Desconecta el navegador: no debe informar éxito ni enviar cambios automáticamente al reconectar; los formularios pendientes permanecen abiertos para reintentar.
+8. Al finalizar, la OT debe quedar Instalada sin modificar sus pagos, valores, saldos o consecutivo. Administración consulta historial y evidencia. Si agrega nuevas actividades productivas a una OT ya disponible para instalar o instalada (incluso cerrada), la producción se reabre, la instalación se aplaza y los relojes se detienen; exige reprogramar y guardar evidencia nueva al terminar producción. Retirar la opción de instalación requerida también aplaza la existente sin eliminar su historial; volver a marcarla recupera ese mismo registro.
+9. Desde el detalle, Administración puede corregir dirección, contacto, teléfono e indicaciones con motivo registrado. El instalador ve los productos, cantidades y medidas de materiales de la OT sin valores comerciales. El responsable principal puede registrar su salida antes de cerrar el trabajo, igual que los demás integrantes.
+10. Prueba dos sesiones haciendo cambios a la misma instalación: el segundo guardado desactualizado debe pedir recargar. Desconecta el navegador: no debe informar éxito ni enviar cambios automáticamente al reconectar; los formularios pendientes permanecen abiertos para reintentar. Salir de Instalaciones desde el menú y volver debe conservar la programación o el equipo que estabas diligenciando.
 
 ## Ubicación y fotos
 
@@ -43,6 +46,8 @@ El usuario confirmó que Administración puede autorizar una excepción si el pe
 En el computador, localhost permite probar el permiso y el flujo. Las pruebas automatizadas simulan coordenadas explícitamente y no demuestran funcionamiento del GPS físico. La comprobación en un celular real requiere un acceso HTTPS seguro; abrir la IP local del computador por HTTP no basta para validar geolocalización. Ese acceso físico debe prepararse y aprobarse aparte; este entorno se limita intencionalmente al computador local. Referencia: [documentación de geolocalización de MDN](https://developer.mozilla.org/en-US/docs/Web/API/Geolocation/getCurrentPosition).
 
 Las fotos se optimizan a JPEG de hasta160KiB antes de enviarse y se guardan privadamente en la base, no en disco efímero ni en enlaces públicos. Solo Administración y los integrantes actuales autorizados pueden consultarlas. Cada nueva fotografía conserva la anterior como evidencia histórica; el cierre exige la vigente. Son datos que ocupan espacio de base y deben incluirse en la planificación de respaldo, capacidad y conservación antes de producción. No se han definido borrados automáticos.
+
+Dentro del historial del trabajo, cada registro con fotografía permite abrirla con «Ver fotografía de este registro». Una reapertura conserva resultado, verificaciones y foto de la visita anterior; las acciones sin coordenadas se identifican expresamente como realizadas con excepción autorizada, sin aparentar una captura GPS.
 
 ## Comprobaciones automáticas
 

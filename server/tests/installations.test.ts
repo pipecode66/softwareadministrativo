@@ -87,6 +87,58 @@ beforeEach(async()=>{
 });
 afterAll(async()=>{await db?.close();});
 
+describe('Instalaciones: correcciones administrativas de la OT',()=>{
+  async function editParent(row:Installation,addWork=false,requiresInstallation=true) {
+    const parent=(await get(`/orders/${row.orderId}`)).body.order;
+    const work=(await get(`/work/orders/${row.orderId}`)).body.products;
+    return request(app).patch(`${API}/orders/${row.orderId}`).set('Origin',ORIGIN).set('Cookie',admin.cookie)
+      .set('X-CSRF-Token',admin.csrf).send({expectedVersion:parent.version,clientId,
+        description:parent.description,value:100000,documentType:'REM',category:'Proyecto',route:addWork?'MULTI_AREA':'WORKSHOP_ONLY',requiresInstallation,
+        products:work.map((product:{id:string;description:string;activities:{area:string}[]})=>({
+          id:product.id,description:product.description,quantity:1,unitValue:100000,materials:[],
+          activities:[...product.activities.map(activity=>({area:activity.area})),...(addWork?[{area:'EXTERNAL'}]:[])],
+        }))});
+  }
+  it.each([false,true])('agregar producción reabre una OT lista para instalar; instalación iniciada=%s',async began=>{
+    let row=await create();let oldPhoto:string|undefined;
+    if(began) {
+      row=await start(row);const saved=await photo(row);row=saved.body.installation;oldPhoto=saved.body.evidence.id;
+      await db.query("UPDATE installation_members SET active_since=clock_timestamp()-interval '5 minutes' WHERE installation_id=$1 AND user_id=$2",[row.id,installer.user.id]);
+    }
+    const changed=await editParent(row,true);
+    expect(changed.status,JSON.stringify(changed.body)).toBe(200);expect(changed.body.order.status).toBe('IN_PRODUCTION');
+    row=(await get(`/installations/${row.id}`)).body.installation;
+    expect(row.status).toBe('POSTPONED');expect(row.productionReady).toBe(false);expect(row.evidence).toBeNull();
+    if(began) expect(row.netWorkMinutes).toBeGreaterThanOrEqual(5);
+    expect((await db.query('SELECT user_id FROM installation_members WHERE installation_id=$1 AND active_since IS NOT NULL',[row.id])).rows).toHaveLength(0);
+    expect((await action(row,'arrive',{location:location()})).status).toBe(409);
+    const extra=(await get(`/work/activities?orderId=${row.orderId}`)).body.items.find((item:{area:string})=>item.area==='EXTERNAL');
+    expect((await post(`/work/activities/${extra.id}/start`,{})).status).toBe(200);
+    expect((await post(`/work/activities/${extra.id}/complete`,{})).status).toBe(200);
+    row=(await get(`/installations/${row.id}`)).body.installation;expect(row.productionReady).toBe(true);
+    const scheduled=await action(row,'reschedule',{reason:'Producción corregida y liberada',
+      scheduledStartAt:new Date().toISOString(),scheduledEndAt:new Date(Date.now()+3600000).toISOString()},admin);
+    expect(scheduled.status).toBe(200);row=await start(scheduled.body.installation);expect(row.evidence).toBeNull();
+    if(oldPhoto) expect((await action(row,'complete',{location:location(),result:'Cierre nueva visita',
+      checklist:{mounted:true,electrical:'NOT_APPLICABLE'},photoId:oldPhoto})).body.error.code).toBe('EVIDENCE_REQUIRED');
+  });
+  it('permite retirar y restaurar instalación requerida sin perder asistencia, foto ni historial',async()=>{
+    let row=await start(await create());const saved=await photo(row);row=saved.body.installation;
+    const removed=await editParent(row,false,false);expect(removed.status).toBe(200);expect(removed.body.order.status).toBe('COMPLETED');
+    const detail=await get(`/installations/${row.id}`);row=detail.body.installation;
+    expect(row.status).toBe('POSTPONED');expect(row.productionReady).toBe(false);
+    expect(detail.body.events[0].details.reason).toContain('corrección administrativa');
+    expect((await get(saved.body.evidence.url.replace(API,''))).status).toBe(200);
+    expect((await action(row,'arrive',{location:location()})).status).toBe(409);
+    const closed=await post(`/orders/${row.orderId}/transitions`,{expectedVersion:removed.body.order.version,action:'close'});
+    expect(closed.status).toBe(200);
+    const restored=await editParent(row,false,true);expect(restored.status).toBe(200);expect(restored.body.order.status).toBe('PENDING_INSTALLATION');
+    expect(restored.body.order.closedAt).toBeUndefined();
+    row=(await get(`/installations/${row.id}`)).body.installation;expect(row.status).toBe('POSTPONED');expect(row.productionReady).toBe(true);
+    expect((await db.query('SELECT id FROM installations WHERE order_id=$1',[row.orderId])).rows).toHaveLength(1);
+  });
+});
+
 describe('Instalaciones: integridad y privacidad',()=>{
   it('sólo ofrece producción liberada y crea exactamente una instalación por OT',async()=>{
     const pending=await readyOrder(false),ready=await readyOrder();
@@ -405,5 +457,87 @@ describe('Instalaciones: integridad y privacidad',()=>{
     expect((await patch({requestId:randomUUID(),version:renamed.body.team.version,
       leaderId:designer.user.id,memberIds:[designer.user.id]})).status).toBe(400);
     expect((await get('/installations/teams')).body.items[0].memberIds).toEqual([installer.user.id]);
+  });
+  it.each(['ADMINMASTER','ADMIN_GENERAL'] as const)('%s corrige el lugar sin cambiar asistencia y audita antes/después',async role=>{
+    const editor=role==='ADMINMASTER'?admin:await actor(role,'Administración general');
+    const row=await start(await create());
+    const before=(await db.query('SELECT * FROM installation_members WHERE installation_id=$1',[row.id])).rows;
+    const payload={requestId:randomUUID(),version:row.version,action:'edit-details',
+      address:'Carrera 15 # 30-22, Bucaramanga',contactName:'Nuevo contacto',contactPhone:'3107654321',
+      instructions:'Montaje en la segunda entrada.',reason:'El cliente confirmó el lugar correcto.'};
+    const corrected=await post(`/installations/${row.id}/actions`,payload,editor);
+    expect(corrected.status).toBe(200);expect(corrected.body.installation).toMatchObject({
+      address:payload.address,contactName:payload.contactName,contactPhone:payload.contactPhone,
+      instructions:payload.instructions,status:'IN_PROGRESS',version:row.version+1});
+    expect((await db.query('SELECT * FROM installation_members WHERE installation_id=$1',[row.id])).rows).toEqual(before);
+    const event=(await get(`/installations/${row.id}`)).body.events[0];
+    expect(event).toMatchObject({action:'edit-details',actor:{id:editor.user.id},details:{reason:payload.reason}});
+    expect(event.details.changes).toEqual([
+      {label:'Dirección',before:'Calle 20 # 10-30',after:payload.address},
+      {label:'Contacto',before:'Persona de contacto',after:payload.contactName},
+      {label:'Teléfono de contacto',before:'3001234567',after:payload.contactPhone},
+      {label:'Indicaciones',before:'Instalar el letrero.',after:payload.instructions},
+    ]);
+    const global=(await db.query<{details:unknown}>("SELECT details FROM order_events WHERE order_id=$1 AND action='installation'",[row.orderId])).rows;
+    expect(JSON.stringify(global)).not.toContain(payload.address);
+    const replay=await post(`/installations/${row.id}/actions`,payload,editor);
+    expect(replay.status).toBe(200);expect(replay.body.replayed).toBe(true);
+    expect((await db.query("SELECT id FROM installation_events WHERE installation_id=$1 AND action='edit-details'",[row.id])).rows).toHaveLength(1);
+    expect((await post(`/installations/${row.id}/actions`,{...payload,address:'Otro lugar'},editor)).body.error.code).toBe('IDEMPOTENCY_CONFLICT');
+    expect((await post(`/installations/${row.id}/actions`,{...payload,requestId:randomUUID()},editor)).body.error.code).toBe('INSTALLATION_CONFLICT');
+  });
+  it('editar datos exige administración, dirección y motivo, y permite corregir una aplazada con producción pendiente',async()=>{
+    let row=await create();
+    const correction={address:'Calle nueva',contactName:'',contactPhone:'',instructions:'',reason:'Corrección solicitada.'};
+    expect((await action(row,'edit-details',correction,installer)).status).toBe(403);
+    expect((await action(row,'edit-details',{...correction,reason:'   '},admin)).status).toBe(400);
+    expect((await action(row,'edit-details',{...correction,address:'   '},admin)).status).toBe(400);
+    const postponed=await action(row,'postpone',{reason:'Esperar nueva producción'},admin);
+    expect(postponed.status).toBe(200);row=postponed.body.installation;
+    await db.query("UPDATE orders SET status='IN_PRODUCTION' WHERE id=$1",[row.orderId]);
+    const before=(await db.query('SELECT * FROM installation_members WHERE installation_id=$1',[row.id])).rows;
+    const changed=await action(row,'edit-details',correction,admin);
+    expect(changed.status).toBe(200);expect(changed.body.installation).toMatchObject({
+      status:'POSTPONED',productionReady:false,address:correction.address,contactName:'',contactPhone:'',instructions:''});
+    expect((await db.query('SELECT * FROM installation_members WHERE installation_id=$1',[row.id])).rows).toEqual(before);
+    const detail=(await get(`/installations/${row.id}`,installer)).body.installation;
+    expect(detail).toMatchObject({address:'Calle nueva',contactName:'',contactPhone:'',instructions:''});
+  });
+  it('los datos técnicos incluyen productos, cantidades y materiales sin valores comerciales',async()=>{
+    const created=await post('/orders',{clientId,description:'Dos productos por instalar',value:200000,
+      documentType:'REM',category:'Proyecto',route:'PRINT_WORKSHOP',requiresInstallation:true,requestId:randomUUID(),
+      products:[{description:'Avisos de fachada',quantity:2,unitValue:50000,
+        materials:[{material:'Panaflex',length:2.5,width:3.2},{material:'Banner',length:1,width:1}],
+        activities:[{area:'PRINTING',printingType:'PRINT'}]},
+      {description:'Estructura metálica',quantity:1,unitValue:100000,materials:[],activities:[{area:'WORKSHOP'}]}]});
+    expect(created.status,JSON.stringify(created.body)).toBe(201);
+    const orderId=created.body.order.id;
+    const activities=(await get(`/work/activities?orderId=${orderId}`)).body.items;
+    for(const activity of activities) {
+      expect((await post(`/work/activities/${activity.id}/start`,{})).status).toBe(200);
+      expect((await post(`/work/activities/${activity.id}/complete`,activity.area==='PRINTING'?{receivedByWorkshop:'Taller'}:{})).status).toBe(200);
+    }
+    const scheduled=await post('/installations',schedule(orderId));expect(scheduled.status).toBe(201);
+    const id=scheduled.body.installation.id;
+    const adminDetail=(await get(`/installations/${id}`)).body.installation;
+    const ownDetail=(await get(`/installations/${id}`,installer)).body.installation;
+    expect(ownDetail.products).toEqual(adminDetail.products);
+    expect(ownDetail.products).toHaveLength(2);
+    expect(ownDetail.products[0]).toMatchObject({description:'Avisos de fachada',quantity:2,
+      materials:[{material:'Panaflex',length:2.5,width:3.2,areaM2:8},{material:'Banner',length:1,width:1,areaM2:1}]});
+    expect(ownDetail.products[1]).toMatchObject({description:'Estructura metálica',quantity:1,materials:[]});
+    expect(JSON.stringify(ownDetail)).not.toMatch(/unitValue|lineTotal|reteFuente|reteIva|collectible|balance|unit_value|line_total/);
+    expect((await get('/installations',installer)).body.items[0].products).toEqual(ownDetail.products);
+    expect((await get(`/installations/${id}`,other)).status).toBe(404);
+  });
+  it('los datos del lugar no se pueden cambiar después de finalizar',async()=>{
+    let row=await start(await create());const saved=await photo(row);row=saved.body.installation;
+    const complete=await action(row,'complete',{location:location(),result:'Instalación concluida',
+      checklist:{mounted:true,electrical:'NOT_APPLICABLE'},photoId:saved.body.evidence.id});
+    expect(complete.status).toBe(200);row=complete.body.installation;
+    const correction=await action(row,'edit-details',{address:'Otro lugar',contactName:'',contactPhone:'',
+      instructions:'',reason:'Intento de cambio'},admin);
+    expect(correction.status).toBe(409);
+    expect((await get(`/installations/${row.id}`)).body.installation.address).toBe('Calle 20 # 10-30');
   });
 });

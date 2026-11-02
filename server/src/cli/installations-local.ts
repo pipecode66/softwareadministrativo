@@ -14,7 +14,7 @@ export function localInstallationsConfig() {
     NODE_ENV: 'development', API_HOST: '127.0.0.1', API_PORT: '3002',
     APP_ORIGINS: 'http://127.0.0.1:5175,http://localhost:5175',
     DATABASE_MODE: 'pglite',
-    PGLITE_DATA_DIR: fileURLToPath(new URL('../../../.data/installations-local', import.meta.url)),
+    PGLITE_DATA_DIR: fileURLToPath(new URL('../../.data/installations-local', import.meta.url)),
   });
 }
 

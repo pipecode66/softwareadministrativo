@@ -37,6 +37,8 @@ interface Installation {
   evidence:{id:string;url:string;createdAt:string}|null;
   createdAt:string; updatedAt:string; netWorkMinutes:number;
   productionReady:boolean;
+  products:{id:string;description:string;quantity:number;
+    materials:{id:string;material:string;length:number;width:number;areaM2:number}[]}[];
 }
 ```
 
@@ -61,6 +63,7 @@ Todas las acciones: `POST /:id/actions` → `{installation,replayed}`. Cuerpo co
 | postpone | `reason:string` | Solo Administración; no finalizada |
 | complete | `location?:Location,result:string,checklist:{mounted:true,electrical:'VERIFIED'|'NOT_APPLICABLE'},photoId:uuid,absentMembersReason?:string` | Solo principal, desde su estado IN_PROGRESS/CHECKED_OUT |
 | note | `note:string` | Administración o instalador asignado; no finalizada |
+| edit-details | `address:string,contactName:string,contactPhone:string,instructions:string,reason:string` | Administración; no finalizada, también aplazada/no disponible |
 | authorize-location-exception | `reason:string` | Administración; no finalizada |
 
 `Location = {latitude:number,longitude:number,accuracy:number,capturedAt:ISO}`. Captura reciente (máximo 5 minutos), sin fecha futura >60s y precisión <=250m. Es obligatorio capturar ubicación en llegada y cierre salvo excepción expresa por instalación autorizada por Administración con motivo. El reloj de los eventos siempre es el del servidor. La ubicación del navegador no demuestra por sí sola que el dispositivo sea imposible de manipular.
@@ -74,6 +77,12 @@ Cada miembro registra su propia llegada, pausa, reanudación y salida; nunca en 
 Solo Administración: `GET /teams` → `{items:Team[]}`; `POST /teams` → `{team,replayed}`, cuerpo `{requestId,name,leaderId,memberIds,active?:boolean}` (activo por defecto). `PATCH /teams/:id` → `{team,replayed}`, cuerpo `{requestId,version,name?,leaderId?,memberIds?,active?}`. `Team={id,name,leaderId,memberIds,active,version,createdAt,updatedAt}`. Nombre único sin distinguir mayúsculas; responsable dentro del equipo; como máximo15miembros activos y sin duplicados. Desactivar no elimina el historial. Mutaciones idempotentes, control de versión y auditoría antes/después. Editar/desactivar un equipo no cambia instalaciones previamente asignadas: su snapshot permanece independiente; la reasignación explícita de una instalación exige motivo administrativo.
 
 Conflicto de versión:409 `INSTALLATION_CONFLICT`, recargar antes de reintentar. Reutilizar requestId únicamente para reenviar exactamente la misma operación tras fallo de conexión; contenido distinto con la misma clave devuelve409. Todas las escrituras revalidan cuenta, responsable y producción en servidor. La interfaz no debe informar éxito ni sincronización hasta recibir confirmación.
+
+## Correcciones y recorrido
+
+Las respuestas incluyen los productos de la OT, su descripción, cantidad y materiales con largo, ancho y m². Esa proyección técnica excluye precios, valores unitarios, pagos e importes fiscales. Dirección, contacto e indicaciones se corrigen mediante `edit-details`, con motivo, control de versión y auditoría de antes/después; no se modifica el tiempo de asistencia. No se permite esa corrección cuando la instalación ya está finalizada.
+
+Una corrección administrativa de OT puede retirar la instalación requerida o añadir producción aun cuando ya se hubiera programado/iniciado/terminado la instalación. Si deja de estar disponible se aplaza automáticamente, se detienen los relojes y se preservan tiempos, responsables, eventos y fotos. Una OT pendiente de instalación también vuelve a producción al agregar trabajo. Al terminar producción, Administración debe reprogramar antes de otra llegada y guardar una foto de la nueva visita. Una instalación finalizada que se reabre conserva el ciclo anterior e inicia otro; no se crea una segunda instalación para la misma OT.
 
 ## Métricas
 

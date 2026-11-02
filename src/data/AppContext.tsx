@@ -4,11 +4,11 @@ import type { AppData, Client, OrderAction, OrderInput, User, WorkOrder } from '
 import { createWorkOrder, editWorkOrder, recordPayment, transitionWorkOrder, validateClient } from '../domain/service';
 import { financials, isAdmin, ROLE_LABELS } from '../domain/utils';
 import {
-  apiAddPayment, apiBulkPayment, apiCertificateReport, apiSetCertificates, apiChangePassword, apiCreateOrder, apiCreateUser, apiDeleteClient, apiListClients, apiListOrders, apiListUsers, apiLogin, apiLogout, apiResetPassword,
+  apiAddPayment, apiCorrectPayment, apiBulkPayment, apiCertificateReport, apiSetCertificates, apiChangePassword, apiCreateOrder, apiCreateUser, apiDeleteClient, apiListClients, apiListOrders, apiListUsers, apiLogin, apiLogout, apiResetPassword,
   apiMaterialReport, apiPortfolioReport, apiSalesReport, apiSaveClient, apiSession, apiTransitionOrder, apiUpdateOrder, apiUpdateUser,
   ApiRequestError, forgetApiSession, usingApi,
 } from './api';
-import type { BulkPaymentResult, CertificateReport, MaterialReport, NewPayment, PortfolioReport, SalesReport } from './api';
+import type { BulkPaymentResult, CertificateReport, MaterialReport, NewPayment, PaymentCorrection, PortfolioReport, SalesReport } from './api';
 import { orderArrivalMessages } from './orderNotifications';
 import { LOCAL_REVIEW_PASSWORD } from './seed';
 import { parseData, readData, SESSION_KEY, STORAGE_KEY, writeData } from './repository';
@@ -30,7 +30,8 @@ interface AppContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
-  createOrder: (input: OrderInput) => Promise<WorkOrder>; updateOrder: (id: string, input: OrderInput) => Promise<void>;
+  createOrder: (input: OrderInput) => Promise<WorkOrder>; updateOrder: (id: string, input: OrderInput, expectedVersion?: number) => Promise<void>;
+  correctPayment: (orderId: string, paymentId: string, payment: PaymentCorrection, expectedVersion: number) => Promise<void>;
   addPayment: (id: string, payment: NewPayment) => Promise<void>;
   bulkPayment: (input: { clientId: string; selectedOrderIds: string[] } & NewPayment, requestId: string) => Promise<BulkPaymentResult>;
   transitionOrder: (id: string, action: OrderAction, details?: { date?: string; note?: string; receivedByWorkshop?: string; workshopNotes?: string }) => Promise<void>;
@@ -243,15 +244,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       commit({ ...current, orders: [...current.orders, order] });
       return order;
     },
-    async updateOrder(id, input) {
+    async updateOrder(id, input, expectedVersion) {
       if (usingApi) {
         const order = dataRef.current.orders.find(item => item.id === id);
         if (!order) throw new Error('No encontramos esta orden.');
-        const updated = await remote(() => apiUpdateOrder(id, input, order.version ?? 1));
+        const updated = await remote(() => apiUpdateOrder(id, input, expectedVersion ?? order.version ?? 1));
         replaceData({ ...dataRef.current, orders: dataRef.current.orders.map(item => item.id === id ? preserveCreator(item, updated) : item) });
         return;
       }
       modifyOrder(id, (order, current, account) => editWorkOrder(current, account, order, input));
+    },
+    async correctPayment(orderId, paymentId, payment, expectedVersion) {
+      if (usingApi) {
+        const updated = await remote(() => apiCorrectPayment(orderId, paymentId, payment, expectedVersion));
+        replaceData({ ...dataRef.current, orders:dataRef.current.orders.map(order => order.id === orderId ? preserveCreator(order, updated) : order) });
+        return;
+      }
+      modifyOrder(orderId, (order, _current, account) => {
+        if (!isAdmin(account.role)) throw new Error('Solo Administración puede corregir pagos.');
+        if (!order.payments.some(item => item.id === paymentId)) throw new Error('No encontramos el pago.');
+        if (!Number.isFinite(payment.amount) || payment.amount <= 0 || Math.round(payment.amount*100)/100 !== payment.amount) throw new Error('Ingresa un importe positivo con máximo dos decimales.');
+        const updated = { ...order, payments:order.payments.map(item => item.id === paymentId ? { ...item, ...payment } : item) };
+        if (financials(updated).balance < 0) throw new Error('Los pagos no pueden superar el total de la OT.');
+        return updated;
+      });
     },
     async addPayment(id, payment) {
       if (usingApi) {

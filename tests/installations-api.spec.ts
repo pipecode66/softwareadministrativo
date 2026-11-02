@@ -338,6 +338,12 @@ test('interfaz real: Administración asigna y el instalador registra llegada, pa
     const evidence = await json(await evidenceResponse, 201);
     expect(evidence.evidence.id).toBeTruthy();
     await expect(dialog.getByText('La instalación tiene una fotografía guardada.', { exact: true })).toBeVisible();
+    // The lead may record their own departure before coordinating final closure.
+    const departedResponse = mobile.waitForResponse(response => response.url().endsWith(`/installations/${installation.id}/actions`) && response.request().method() === 'POST');
+    await dialog.getByRole('button', { name: 'Registrar salida', exact: true }).click();
+    const departed = await json(await departedResponse);
+    expect(departed.installation.members.find((person: { userId: string }) => person.userId === owner.id).status).toBe('CHECKED_OUT');
+    await dialog.getByRole('button', { name: 'Finalizar instalación', exact: true }).click();
     await noHorizontalOverflow(mobile);
     await mobile.screenshot({ path: testInfo.outputPath('instalador-mobile-cierre.png'), fullPage: false });
 
@@ -368,6 +374,17 @@ test('interfaz real: Administración asigna y el instalador registra llegada, pa
     expect(privatePhoto.status()).toBe(200);
     expect(privatePhoto.headers()['content-type']).toMatch(/^image\/jpeg/);
     expect(privatePhoto.headers()['cache-control']).toContain('no-store');
+    // A photo already opened by Administration remains valid after page memory
+    // suspends the section and revokes its temporary browser URL.
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(`/installations?installation=${installation.id}`);
+    await adminDialog.getByRole('button', { name: 'Ver fotografía', exact: true }).click();
+    const adminImage = adminDialog.getByAltText(`Evidencia de instalación de ${code}`, { exact: true });
+    await expect.poll(() => adminImage.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    await adminDialog.getByRole('link', { name: 'Abrir OT completa', exact: true }).click();
+    await page.getByRole('link', { name: 'Instalaciones', exact: true }).click();
+    await expect(adminImage).toBeVisible();
+    await expect.poll(() => adminImage.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   } finally { await own.context.close(); }
 });
 
@@ -480,6 +497,103 @@ test('equipos: dos instaladores comparten el trabajo y registran su jornada sin 
     await colleague.context.close();
     await foreign.context.close();
   }
+});
+
+test('progreso: programación sin guardar y corrección administrativa conservan campos al navegar sin ocultar conflictos', async ({ page }) => {
+  test.setTimeout(120_000);
+  const admin = await adminSession(page);
+  const owner = await newInstaller(admin);
+  const order = await newOrder(admin);
+  const code = `OT #${String(order.number).padStart(4, '0')}`;
+  await page.goto('/orders');
+  await page.getByRole('link', { name: 'Instalaciones', exact: true }).click();
+  await page.getByRole('button', { name: 'Nueva instalación', exact: true }).click();
+  const programming = page.getByRole('dialog', { name: 'Nueva instalación', exact: true });
+  await programming.getByLabel('OT lista para instalar', { exact: true }).selectOption(order.id);
+  await programming.getByLabel('Instalador responsable', { exact: true }).selectOption(owner.id);
+  await programming.getByLabel('Inicio programado', { exact: true }).fill('2026-11-03T09:00');
+  await programming.getByLabel('Finalización programada', { exact: true }).fill('2026-11-03T11:00');
+  await programming.getByLabel('Dirección de instalación', { exact: true }).fill('Carrera 20 # 30-40, Bucaramanga');
+  await programming.getByLabel('Persona de contacto', { exact: true }).fill('Contacto conservado al navegar');
+  await page.goBack();
+  await expect(page).toHaveURL(/\/orders$/);
+  await expect(programming).not.toBeVisible();
+  await page.getByRole('link', { name: 'Instalaciones', exact: true }).click();
+  await expect(programming.getByLabel('Dirección de instalación', { exact: true })).toHaveValue('Carrera 20 # 30-40, Bucaramanga');
+  await expect(programming.getByLabel('Persona de contacto', { exact: true })).toHaveValue('Contacto conservado al navegar');
+  await expect(programming.getByLabel('Inicio programado', { exact: true })).toHaveValue('2026-11-03T09:00');
+  const creationResponse = page.waitForResponse(response => response.url().endsWith('/installations') && response.request().method() === 'POST');
+  await programming.getByRole('button', { name: 'Programar instalación', exact: true }).click();
+  const created = await json(await creationResponse, 201);
+  const detail = page.getByRole('dialog', { name: `${code} · Instalación`, exact: true });
+  await expect(detail.getByRole('heading', { name: 'Trabajos de la OT', exact: true })).toBeVisible();
+  await expect(detail.getByText('Aviso terminado para fachada', { exact: true })).toBeVisible();
+  await detail.getByRole('button', { name: 'Corregir datos de instalación', exact: true }).click();
+  await detail.getByLabel('Dirección de instalación', { exact: true }).fill('Calle 45 # 12-18, Bucaramanga');
+  await detail.getByLabel('Indicaciones de instalación', { exact: true }).fill('Usar acceso lateral al establecimiento.');
+  await detail.getByLabel('Motivo del cambio', { exact: true }).fill('El cliente confirmó otra dirección para el montaje.');
+  await detail.getByRole('link', { name: 'Abrir OT completa', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/orders/${order.id}$`));
+  await json(await action(admin, created.installation.id, { action: 'note', note: 'Otra sesión administrativa actualizó esta instalación.' }));
+  await page.getByRole('link', { name: 'Instalaciones', exact: true }).click();
+  await expect(detail.getByLabel('Dirección de instalación', { exact: true })).toHaveValue('Calle 45 # 12-18, Bucaramanga');
+  await expect(detail.getByText('Otra persona actualizó esta instalación.', { exact: false })).toBeVisible();
+  await expect(detail.getByRole('button', { name: 'Guardar cambio', exact: true })).toBeDisabled();
+  await detail.getByRole('button', { name: 'Actualizar instalación', exact: true }).click();
+  await expect(detail.getByRole('button', { name: 'Guardar cambio', exact: true })).toBeEnabled();
+  const correctedResponse = page.waitForResponse(response => response.url().endsWith(`/installations/${created.installation.id}/actions`) && response.request().method() === 'POST');
+  await detail.getByRole('button', { name: 'Guardar cambio', exact: true }).click();
+  const corrected = await json(await correctedResponse);
+  expect(corrected.installation).toMatchObject({ address: 'Calle 45 # 12-18, Bucaramanga', instructions: 'Usar acceso lateral al establecimiento.' });
+  const addressChange = detail.locator('.installation-history li p').filter({ hasText: /^Dirección:/ });
+  await expect(addressChange).toContainText('Carrera 20 # 30-40, Bucaramanga → Calle 45 # 12-18, Bucaramanga');
+  noFinancialFields(corrected);
+});
+
+test('trazabilidad: una reapertura conserva resultado, excepción GPS y fotografías consultables de la visita anterior', async ({ page, browser }) => {
+  test.setTimeout(120_000);
+  const admin = await adminSession(page);
+  const owner = await newInstaller(admin);
+  const order = await newOrder(admin);
+  const installation = await newInstallation(admin, order.id, owner.id);
+  const own = await installerSession(browser, owner.email);
+  try {
+    await json(await action(admin, installation.id, { action: 'authorize-location-exception', reason: 'Equipo sin cobertura GPS; Administración confirmó la visita.' }));
+    await json(await action(own.session, installation.id, { action: 'arrive' }));
+    const current = await json(await own.session.request.get(`${API}/installations/${installation.id}`));
+    const evidence = await json(await own.session.request.post(`${API}/installations/${installation.id}/evidence`, {
+      headers: own.session.headers, data: { requestId: randomUUID(), version: current.installation.version, imageBase64: await photoBase64(page) },
+    }), 201);
+    await json(await action(own.session, installation.id, {
+      action: 'complete', result: 'Resultado original de visita conservada.', checklist: { mounted: true, electrical: 'NOT_APPLICABLE' }, photoId: evidence.evidence.id,
+    }));
+    const currentOrder = (await json(await admin.request.get(`${API}/orders/${order.id}`))).order;
+    const work = await json(await admin.request.get(`${API}/work/orders/${order.id}`));
+    await json(await admin.request.patch(`${API}/orders/${order.id}`, {
+      headers: admin.headers, data: {
+        expectedVersion: currentOrder.version, clientId: currentOrder.clientId, description: currentOrder.description,
+        value: 125000, documentType: 'REM', category: 'Proyecto', route: 'MULTI_AREA', requiresInstallation: true,
+        products: [{ id: work.products[0].id, description: 'Aviso terminado para fachada', quantity: 1, unitValue: 125000, materials: [], activities: [{ area: 'WORKSHOP' }, { area: 'EXTERNAL' }] }],
+      },
+    }));
+    const reopened = await json(await admin.request.get(`${API}/installations/${installation.id}`));
+    expect(reopened.installation).toMatchObject({ status: 'POSTPONED', evidence: null });
+    await page.goto(`/installations?installation=${installation.id}`);
+    const code = `OT #${String(order.number).padStart(4, '0')}`;
+    const detail = page.getByRole('dialog', { name: `${code} · Instalación`, exact: true });
+    const historical = detail.locator('.installation-history li').filter({ hasText: 'Resultado de la visita anterior: Resultado original de visita conservada.' });
+    await expect(historical).toHaveCount(1);
+    await expect(historical.getByText('Montaje verificado · Conexión eléctrica: no aplica', { exact: true })).toBeVisible();
+    await expect(detail.getByText('Registro sin coordenadas mediante excepción autorizada por Administración.', { exact: false })).toHaveCount(2);
+    await historical.getByRole('button', { name: 'Ver fotografía de este registro', exact: true }).click();
+    const photo = historical.getByAltText('Fotografía histórica de este registro de instalación', { exact: true });
+    await expect.poll(() => photo.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    await detail.getByRole('link', { name: 'Abrir OT completa', exact: true }).click();
+    await page.getByRole('link', { name: 'Instalaciones', exact: true }).click();
+    await expect(photo).toBeVisible();
+    await expect.poll(() => photo.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    noFinancialFields(reopened);
+  } finally { await own.context.close(); }
 });
 
 // All data belongs to the ephemeral PGlite server configured by playwright.api.config.ts.

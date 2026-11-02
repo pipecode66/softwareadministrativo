@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
+import { dateOnly, formatCOP } from '../src/domain/utils';
 
 async function login(page: Page) {
   await page.goto('/login');
@@ -68,6 +69,16 @@ test('perfil muestra acciones de contraseña y salida, y permite revisar lo digi
 
 test('sesión real crea cliente y OT compuesta con abono y cálculo FACT', async ({ page }) => {
   await login(page);
+  const sessionResponse = await page.request.get('/api/v1/auth/session');
+  expect(sessionResponse.status()).toBe(200);
+  const session = await sessionResponse.json();
+  const designerResponse = await page.request.post('/api/v1/users', {
+    headers: { Origin: 'http://127.0.0.1:5174', 'X-CSRF-Token': session.csrfToken },
+    data: { name: 'Diseñador OT compuesta E2E', email: `design-order-${randomUUID()}@example.test`,
+      role: 'DISENO', active: true, password: 'Clave temporal diseño E2E 2026!' },
+  });
+  expect(designerResponse.status(), await designerResponse.text()).toBe(201);
+  const { user: designer } = await designerResponse.json();
   await createClient(page, 'Cliente integración API', 'NIT-E2E-2026');
 
   await page.goto('/orders/new');
@@ -77,6 +88,7 @@ test('sesión real crea cliente y OT compuesta con abono y cálculo FACT', async
   await product.getByLabel('Descripción del producto *').fill('Aviso compuesto de integración');
   await product.getByLabel('Valor unitario antes de IVA (COP) *').fill('600000');
   await product.getByRole('checkbox', { name: 'Diseño' }).check();
+  await product.getByLabel('Asignar diseñador *', { exact: true }).selectOption(designer.id);
   await product.getByRole('checkbox', { name: 'Impresión' }).check();
   await product.getByRole('button', { name: 'Agregar material' }).click();
   await product.getByLabel('Largo (m)').fill('2');
@@ -97,6 +109,11 @@ test('sesión real crea cliente y OT compuesta con abono y cálculo FACT', async
   await expect(page.getByRole('heading', { name: 'Productos y actividades' })).toBeVisible();
   await expect(page.getByText('Bancolombia', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: '1. Aviso compuesto de integración' })).toBeVisible();
+  const workResponse = await page.request.get(`/api/v1/work/orders/${payload.order.id}`);
+  expect(workResponse.status()).toBe(200);
+  const work = await workResponse.json();
+  expect(work.products[0].activities.find((activity: { area: string }) => activity.area === 'DESIGN'))
+    .toMatchObject({ assignedUserId: designer.id, status: 'PENDING' });
 
   await page.getByRole('link', { name: 'Editar OT' }).click();
   await page.getByRole('radio', { name: 'REM', exact: true }).check();
@@ -129,6 +146,7 @@ test('corte láser registra minutos, exige el tiempo y actualiza base e IVA', as
   await expect(page).toHaveURL(/\/orders\/[\w-]+$/);
   const activity = page.locator('.order-activity-row', { hasText: 'Corte láser' });
   await activity.getByRole('button', { name: 'Iniciar', exact: true }).click();
+  await expect(activity.getByRole('button', { name: 'Finalizar', exact: true })).toBeDisabled();
   await activity.getByLabel('Minutos de corte láser').fill('5');
   await activity.getByRole('button', { name: 'Guardar minutos', exact: true }).click();
   await expect(activity.getByRole('button', { name: 'Finalizar', exact: true })).toBeEnabled();
@@ -203,7 +221,7 @@ test('carga de Diseño separa responsables y métricas sin desbordarse', async (
   await page.getByRole('button', { name: 'Guardar nueva contraseña' }).click();
   await expect(page).toHaveURL(/\/design$/);
   const assigned = page.locator('.ops-activity-card', { hasText: 'Actividad de diseño responsive' });
-  await assigned.getByRole('button', { name: 'Editar trabajo' }).click();
+  await assigned.getByRole('button', { name: 'Completar información técnica' }).click();
   const editDialog = page.getByRole('dialog', { name: 'Editar información del trabajo' });
   await editDialog.getByLabel('Descripción del trabajo *').fill('Actividad de diseño corregida');
   await editDialog.getByRole('button', { name: 'Agregar material' }).click();
@@ -393,4 +411,69 @@ test('reportes y desgloses consultan las OT reales aunque el listado local esté
   await expect(card('Cartera al corte con IVA').locator('.kpi-value')).toHaveText(money(730000));
   await expect(card('Cartera al corte sin IVA').locator('.kpi-value')).toHaveText(money(616000));
   expect(emptyOrderLists).toBeGreaterThan(0);
+});
+
+test('correcciones administrativas conservan progreso y actualizan consumo y saldo en una OT cerrada',async({page})=>{
+  await login(page);
+  const suffix=randomUUID().slice(0,8),name=`Cliente correcciones ${suffix}`,identification=`CORR-${suffix}`;
+  await createClient(page,name,identification);
+  await page.goto('/orders/new');
+  await selectOrderClient(page,identification,name);
+  const product=page.locator('[data-page-path="/orders/new"] .order-product-card');
+  await product.getByLabel('Descripción del producto *').fill('Aviso con consumo corregible');
+  await product.getByLabel('Valor unitario antes de IVA (COP) *').fill('100000');
+  await product.getByRole('checkbox',{name:'Impresión',exact:true}).check();
+  await product.getByRole('checkbox',{name:'Taller',exact:true}).check();
+  await product.getByRole('button',{name:'Agregar material',exact:true}).click();
+  await product.getByLabel('Material 1',{exact:true}).selectOption('Panaflex');
+  await product.getByLabel('Largo (m)').fill('2');
+  await product.getByLabel('Ancho (m)').fill('4');
+  await page.getByLabel('Valor recibido (COP) *').fill('20000');
+  const createdResponse=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/api/v1/orders'));
+  await page.getByRole('button',{name:'Guardar orden de trabajo',exact:true}).click();
+  const created=await createdResponse;expect(created.status(),await created.text()).toBe(201);
+  const order=(await created.json()).order;
+  await expect(page).toHaveURL(new RegExp(`/orders/${order.id}$`));
+  const session=await (await page.request.get('/api/v1/auth/session')).json();
+  const headers={'Origin':'http://127.0.0.1:5174','X-CSRF-Token':session.csrfToken};
+  const activities=(await (await page.request.get(`/api/v1/work/activities?orderId=${order.id}`)).json()).items;
+  for(const activity of activities){
+    const started=await page.request.post(`/api/v1/work/activities/${activity.id}/start`,{headers,data:{}});
+    expect(started.status(),await started.text()).toBe(200);
+    const finished=await page.request.post(`/api/v1/work/activities/${activity.id}/complete`,{headers,data:activity.area==='PRINTING'?{receivedByWorkshop:'Recepción de prueba'}:{}});
+    expect(finished.status(),await finished.text()).toBe(200);
+  }
+  const completed=(await (await page.request.get(`/api/v1/orders/${order.id}`)).json()).order;
+  const closedResponse=await page.request.post(`/api/v1/orders/${order.id}/transitions`,{headers,data:{action:'close',expectedVersion:completed.version}});
+  expect(closedResponse.status()).toBe(200);const closed=(await closedResponse.json()).order;
+  const day=dateOnly();
+  const reportPath=`/api/v1/reports/materials?from=${day}&to=${day}`;
+  const before=await (await page.request.get(reportPath)).json();
+  const m2=(report:{materials:Array<{material:string;m2:number}>},material:string)=>report.materials.find(item=>item.material===material)!.m2;
+  await page.reload();
+  await page.getByRole('link',{name:'Editar OT',exact:true}).click();
+  const editor=page.locator(`[data-page-path="/orders/${order.id}/edit"]`);
+  await editor.getByLabel('Material 1',{exact:true}).selectOption('V. Impresión');
+  await page.locator('.app-sidebar').getByRole('link',{name:'Reportes',exact:true}).click();
+  await page.locator('.app-sidebar').getByRole('link',{name:'Órdenes',exact:true}).click();
+  await page.getByRole('link',{name:`Ver orden ${order.number}`,exact:true}).click();
+  await page.getByRole('link',{name:'Editar OT',exact:true}).click();
+  await expect(editor.getByLabel('Material 1',{exact:true})).toHaveValue('V. Impresión');
+  const savedResponse=page.waitForResponse(response=>response.request().method()==='PATCH'&&response.url().endsWith(`/api/v1/orders/${order.id}`));
+  await editor.getByRole('button',{name:'Guardar cambios',exact:true}).click();
+  const saved=await savedResponse;expect(saved.status(),await saved.text()).toBe(200);
+  const after=await (await page.request.get(reportPath)).json();
+  expect(m2(after,'Panaflex')).toBe(m2(before,'Panaflex')-8);
+  expect(m2(after,'V. Impresión')).toBe(m2(before,'V. Impresión')+8);
+  await page.getByRole('button',{name:`Corregir pago de ${formatCOP(20000)}`,exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await dialog.getByLabel('Valor corregido (COP)').fill('35000');
+  await dialog.getByLabel('Medio de pago corregido').selectOption('DAVIVIENDA');
+  await dialog.getByRole('button',{name:'Guardar corrección',exact:true}).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.order-balance-highlight')).toContainText(formatCOP(65000));
+  const actual=(await (await page.request.get(`/api/v1/orders/${order.id}`)).json()).order;
+  expect(actual).toMatchObject({status:'COMPLETED',closedAt:closed.closedAt,isComposite:true,financials:{balance:65000,paid:35000}});
+  await page.getByRole('link',{name:'Editar OT',exact:true}).click();
+  await expect(editor.getByLabel('Descripción del producto *')).toBeVisible();
 });

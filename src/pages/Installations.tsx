@@ -19,6 +19,7 @@ const statuses = Object.keys(INSTALLATION_STATUS_LABELS) as InstallationStatus[]
 const otCode = (number: number) => `OT #${String(number).padStart(4, '0')}`;
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'No fue posible guardar. Inténtalo nuevamente.';
 const durationText = installationDurationText;
+const measureText = (value: number) => new Intl.NumberFormat('es-CO', { maximumFractionDigits: 3 }).format(value);
 type InstallerOption = { id: string; name: string };
 type AssignmentDraft = { mode: 'INDIVIDUAL' | 'MULTIPLE' | 'TEAM'; installerId: string; installerIds: string[]; teamId: string };
 const emptyAssignment = (): AssignmentDraft => ({ mode: 'INDIVIDUAL', installerId: '', installerIds: [], teamId: '' });
@@ -51,6 +52,7 @@ function InstallationState({ installation, admin }: { installation: Installation
 function useConnectivity() {
   const [online, setOnline] = useState(() => navigator.onLine);
   useEffect(() => {
+    setOnline(navigator.onLine);
     const connected = () => setOnline(true), disconnected = () => setOnline(false);
     window.addEventListener('online', connected); window.addEventListener('offline', disconnected);
     return () => { window.removeEventListener('online', connected); window.removeEventListener('offline', disconnected); };
@@ -103,11 +105,17 @@ function ConnectedInstallations() {
   const [managingTeams, setManagingTeams] = useState(false);
   const [teams, setTeams] = useState<InstallationTeam[]>([]);
   const [teamError, setTeamError] = useState('');
+  const queryKeyRef = useRef('');
   const pageSize = 10;
   useEffect(() => {
     let active = true;
     let fetching = false;
-    setResult(null); setLoading(true); setError('');
+    const queryKey = JSON.stringify({ query, status, installerId, page, userId: user?.id });
+    // Activity suspends effects on navigation; retaining the same query keeps
+    // unfinished programming forms mounted when the section resumes.
+    if (queryKeyRef.current !== queryKey) setResult(null);
+    queryKeyRef.current = queryKey;
+    setLoading(true); setError('');
     async function load() {
       if (fetching) return;
       fetching = true;
@@ -287,7 +295,7 @@ function ScheduleFields({ start, end, setStart, setEnd, disabled, prefix }: { st
   return <div className="installation-schedule-fields"><p>Fecha y hora de Colombia (Bogotá)</p><div className="form-grid"><Field label="Inicio programado" htmlFor={`${prefix}-start`}><input id={`${prefix}-start`} className="input" type="datetime-local" required value={start} onChange={event => setStart(event.target.value)} disabled={disabled} /></Field><Field label="Finalización programada" htmlFor={`${prefix}-end`}><input id={`${prefix}-end`} className="input" type="datetime-local" required min={start || undefined} value={end} onChange={event => setEnd(event.target.value)} disabled={disabled} /></Field></div></div>;
 }
 
-type DetailMode = 'assign' | 'reschedule' | 'postpone' | 'exception' | 'note' | 'complete' | null;
+type DetailMode = 'assign' | 'reschedule' | 'postpone' | 'exception' | 'note' | 'complete' | 'edit-details' | null;
 function InstallationDetails({ id, admin, installers, teams, onClose, onChanged }: { id: string; admin: boolean; installers: NonNullable<InstallationList['installers']>; teams: InstallationTeam[]; onClose: () => void; onChanged: () => void }) {
   const { toast, user } = useApp();
   const online = useConnectivity();
@@ -307,23 +315,38 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
   const [mounted, setMounted] = useState(false);
   const [electrical, setElectrical] = useState<'' | 'VERIFIED' | 'NOT_APPLICABLE'>('');
   const [absentMembersReason, setAbsentMembersReason] = useState('');
+  const [address, setAddress] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [instructions, setInstructions] = useState('');
   const [preparedPhoto, setPreparedPhoto] = useState<Awaited<ReturnType<typeof prepareInstallationPhoto>> | null>(null);
   const [photoUrl, setPhotoUrl] = useState('');
-  const photoUrlRef = useRef('');
+  const [photo, setPhoto] = useState<{ evidenceId: string; blob: Blob } | null>(null);
+  const formVersionRef = useRef<number | null>(null);
   const requestRef = useRef<{ fingerprint: string; id: string } | null>(null);
   const locationRetryRef = useRef<{ action: 'arrive' | 'checkout' | 'complete'; version: number; location?: InstallationLocation } | null>(null);
   const ambiguousWriteRef = useRef(false);
   useEffect(() => {
     let active = true;
     void apiInstallation(id).then(response => {
-      if (active) { setInstallation(response.installation); setEvents(response.events); }
+      if (active) {
+        if (formVersionRef.current !== null && formVersionRef.current !== response.installation.version) setConflict(true);
+        setInstallation(response.installation); setEvents(response.events);
+      }
     }).catch(cause => { if (active) setError(errorText(cause)); }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current); };
+    return () => { active = false; };
   }, [id]);
+  useEffect(() => {
+    if (!photo || photo.evidenceId !== installation?.evidence?.id) { setPhotoUrl(''); return; }
+    // A Blob survives page memory; its URL must be recreated after resuming.
+    const url = URL.createObjectURL(photo.blob);
+    setPhotoUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photo, installation?.evidence?.id]);
   async function refreshDetail() {
     if (busy) return;
     setBusy('refresh'); setError('');
-    try { const response = await apiInstallation(id); setInstallation(response.installation); setEvents(response.events); setConflict(false); locationRetryRef.current = null; requestRef.current = null; ambiguousWriteRef.current = false; }
+    try { const response = await apiInstallation(id); setInstallation(response.installation); setEvents(response.events); if (formVersionRef.current !== null) formVersionRef.current = response.installation.version; setConflict(false); locationRetryRef.current = null; requestRef.current = null; ambiguousWriteRef.current = false; }
     catch (cause) { setError(errorText(cause)); }
     finally { setBusy(''); }
   }
@@ -339,7 +362,7 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
     return requestRef.current.id;
   }
   async function acceptSaved(saved: Installation, message: string) {
-    setInstallation(saved); setMode(null); setReason(''); setNote(''); setConflict(false); requestRef.current = null; locationRetryRef.current = null; ambiguousWriteRef.current = false;
+    setInstallation(saved); setMode(null); formVersionRef.current = null; setReason(''); setNote(''); setConflict(false); requestRef.current = null; locationRetryRef.current = null; ambiguousWriteRef.current = false;
     toast(message); onChanged();
     try { const next = await apiInstallation(id); setInstallation(next.installation); setEvents(next.events); }
     catch { setError('El cambio quedó guardado, pero no pudimos actualizar el historial. Vuelve a consultar la instalación.'); }
@@ -348,7 +371,8 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
     if (!installation || busy || conflict) return;
     setBusy(input.action); setError('');
     try {
-      const saved = await apiInstallationAction(id, installation.version, input, stableRequest({ id, version: installation.version, ...input }));
+      const version = formVersionRef.current ?? installation.version;
+      const saved = await apiInstallationAction(id, version, input, stableRequest({ id, version, ...input }));
       await acceptSaved(saved.installation, message);
     } catch (cause) { reportError(cause); }
     finally { setBusy(''); }
@@ -369,9 +393,10 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
     if (!installation || busy || conflict) return;
     setBusy(action); setError('');
     try {
-      const location = await captureFor(action, installation);
+      const version = formVersionRef.current ?? installation.version;
+      const location = await captureFor(action, { ...installation, version });
       const input: InstallationAction = { action, ...(location ? { location } : {}) };
-      const saved = await apiInstallationAction(id, installation.version, input, stableRequest({ id, version: installation.version, ...input }));
+      const saved = await apiInstallationAction(id, version, input, stableRequest({ id, version, ...input }));
       await acceptSaved(saved.installation, action === 'arrive' ? 'Tu llegada quedó registrada. Tu tiempo de trabajo está en curso.' : 'Tu salida quedó registrada. La instalación conserva el avance de los demás integrantes.');
     } catch (cause) { reportError(cause); }
     finally { setBusy(''); }
@@ -388,9 +413,11 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
     setBusy('upload-photo'); setError('');
     try {
       const imageBase64 = preparedPhoto.dataUrl.slice(preparedPhoto.dataUrl.indexOf(',') + 1);
-      const response = await apiInstallationEvidence(id, installation.version, imageBase64, stableRequest({ id, version: installation.version, imageBase64 }));
+      const version = formVersionRef.current ?? installation.version;
+      const response = await apiInstallationEvidence(id, version, imageBase64, stableRequest({ id, version, imageBase64 }));
       setInstallation(response.installation); setPreparedPhoto(null); requestRef.current = null; ambiguousWriteRef.current = false; onChanged();
-      if (photoUrlRef.current) { URL.revokeObjectURL(photoUrlRef.current); photoUrlRef.current = ''; setPhotoUrl(''); }
+      if (formVersionRef.current !== null) formVersionRef.current = response.installation.version;
+      setPhoto(null); setPhotoUrl('');
       toast('Fotografía guardada de forma privada en el servidor.');
       try { const next = await apiInstallation(id); setInstallation(next.installation); setEvents(next.events); }
       catch { setError('La fotografía quedó guardada, pero no pudimos actualizar el historial. Vuelve a consultar la instalación.'); }
@@ -401,9 +428,8 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
     if (!installation?.evidence || busy) return;
     setBusy('view-photo'); setError('');
     try {
-      const photo = await apiInstallationPhoto(id, installation.evidence.id);
-      if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
-      photoUrlRef.current = URL.createObjectURL(photo); setPhotoUrl(photoUrlRef.current);
+      const blob = await apiInstallationPhoto(id, installation.evidence.id);
+      setPhoto({ evidenceId: installation.evidence.id, blob });
     } catch (cause) { reportError(cause); }
     finally { setBusy(''); }
   }
@@ -420,9 +446,10 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
       if (absent.length && !absentMembersReason.trim()) { setError('Explica por qué se finaliza sin los integrantes que no registraron llegada.'); return; }
       setBusy('complete'); setError('');
       try {
-        const location = await captureFor('complete', installation);
+        const version = formVersionRef.current ?? installation.version;
+        const location = await captureFor('complete', { ...installation, version });
         const input: InstallationAction = { action: 'complete', result: result.trim(), checklist: { mounted: true, electrical }, photoId: installation.evidence.id, ...(location ? { location } : {}), ...(absent.length ? { absentMembersReason: absentMembersReason.trim() } : {}) };
-        const saved = await apiInstallationAction(id, installation.version, input, stableRequest({ id, version: installation.version, ...input }));
+        const saved = await apiInstallationAction(id, version, input, stableRequest({ id, version, ...input }));
         await acceptSaved(saved.installation, 'Instalación finalizada. La OT quedó marcada como instalada.');
       } catch (cause) { reportError(cause); }
       finally { setBusy(''); }
@@ -435,6 +462,7 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
       catch (cause) { reportError(cause); }
     } else if (mode === 'postpone') await sendAction({ action: 'postpone', reason: reason.trim() }, 'Instalación aplazada. Se detuvo el tiempo activo.');
     else if (mode === 'exception') await sendAction({ action: 'authorize-location-exception', reason: reason.trim() }, 'Excepción de ubicación autorizada y registrada.');
+    else if (mode === 'edit-details') await sendAction({ action: 'edit-details', address: address.trim(), contactName: contactName.trim(), contactPhone: contactPhone.trim(), instructions: instructions.trim(), reason: reason.trim() }, 'Datos de instalación actualizados. El cambio quedó en el historial.');
     else if (mode === 'reschedule') {
       try {
         const scheduledStartAt = installationScheduleIso(start), scheduledEndAt = installationScheduleIso(end);
@@ -445,6 +473,9 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
   }
   function openMode(next: DetailMode) {
     setMode(next); setError('');
+    formVersionRef.current = installation?.version ?? null;
+    requestRef.current = null; locationRetryRef.current = null; ambiguousWriteRef.current = false;
+    if (next === 'edit-details' && installation) { setAddress(installation.address); setContactName(installation.contactName); setContactPhone(installation.contactPhone); setInstructions(installation.instructions); }
     if (next === 'reschedule' && installation) { setStart(installationDateTimeInput(installation.scheduledStartAt)); setEnd(installationDateTimeInput(installation.scheduledEndAt)); }
     if (next === 'assign' && installation) {
       const installerIds = installation.members?.map(member => member.userId) || (installation.installerId ? [installation.installerId] : []);
@@ -460,12 +491,13 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
   const ownStatus = myMembership?.status;
   const activeOthers = installation?.members?.filter(member => member.userId !== user?.id && ['IN_PROGRESS', 'PAUSED'].includes(member.status)) || [];
   const absentMembers = installation?.members?.filter(member => !member.arrivedAt) || [];
-  const modeTitle = { assign: 'Asignar responsable', reschedule: 'Reprogramar instalación', postpone: 'Aplazar instalación', exception: 'Autorizar excepción de ubicación', note: 'Añadir observación', complete: 'Protocolo de cierre' };
+  const modeTitle = { assign: 'Asignar responsable', reschedule: 'Reprogramar instalación', postpone: 'Aplazar instalación', exception: 'Autorizar excepción de ubicación', note: 'Añadir observación', complete: 'Protocolo de cierre', 'edit-details': 'Corregir datos de instalación' };
   return <Modal open onClose={() => { if (!busy) onClose(); }} title={installation ? `${otCode(installation.orderNumber)} · Instalación` : 'Detalle de instalación'}>
     <div className="stack installation-detail" data-testid="installation-detail" aria-busy={Boolean(busy) || loading}>
       {loading ? <p role="status">Consultando la instalación…</p> : installation && <>
         <div className="installation-detail-heading"><InstallationState installation={installation} admin={admin} /><span className="installation-version">Versión {installation.version} · Actualizada {formatDate(installation.updatedAt, true)}</span></div>
         <div className="installation-detail-client"><h3>{installation.clientName}</h3><p>{installation.description}</p>{admin && <Link className="link" to={`/orders/${installation.orderId}`}>Abrir OT completa<ArrowRight size={14} /></Link>}</div>
+        {Boolean(installation.products?.length) && <section className="installation-members"><h4><ClipboardCheck size={18} />Trabajos de la OT</h4><ul>{installation.products.map(product => <li key={product.id}><strong>{product.description}</strong><p>Cantidad: {formatNumber(product.quantity)}</p>{product.materials.map(material => <p key={material.id}>{material.material}: {measureText(material.length)} m × {measureText(material.width)} m · {measureText(material.areaM2)} m²</p>)}</li>)}</ul></section>}
         {!installation.productionReady && !finished && <p className="form-alert" role="alert">La OT tiene producción pendiente. No se puede avanzar la instalación hasta que termine.</p>}
         <dl className="installation-detail-facts"><div><dt>Responsable principal</dt><dd>{installation.installerName || 'Sin asignar'}</dd></div><div><dt>Inicio programado</dt><dd>{formatDate(installation.scheduledStartAt, true)}</dd></div><div><dt>Finalización programada</dt><dd>{formatDate(installation.scheduledEndAt, true)}</dd></div><div><dt>Tiempo activo registrado</dt><dd>{durationText(installation.netWorkMinutes)}</dd></div>{installation.startedAt && <div><dt>Primera llegada</dt><dd>{formatDate(installation.startedAt, true)}</dd></div>}{installation.completedAt && <div><dt>Finalización</dt><dd>{formatDate(installation.completedAt, true)}</dd></div>}</dl>
         {Boolean(installation.members?.length) && <section className="installation-members"><h4><UsersRound size={18} />{installation.teamName || 'Integrantes de la instalación'}</h4><p className="muted">Cada persona registra su llegada, pausas y salida. El responsable principal coordina y completa el cierre.</p><ul>{installation.members.map(member => <li key={member.userId}><div className="installation-member-heading"><strong>{member.name}{member.userId === user?.id ? ' (tú)' : ''}</strong>{member.isLead && <span className="badge badge-blue">Responsable principal</span>}</div><span className={`badge badge-${member.status === 'CHECKED_OUT' ? 'green' : member.status === 'PAUSED' ? 'amber' : 'slate'}`}>{({ ASSIGNED: 'Sin llegada', IN_PROGRESS: 'Trabajando', PAUSED: 'En pausa', CHECKED_OUT: 'Salida registrada' })[member.status]}</span><p>Llegada: {formatDate(member.arrivedAt || undefined, true)} · Salida: {formatDate(member.checkedOutAt || undefined, true)}</p><p>Tiempo activo: {durationText(member.netWorkMinutes)}</p></li>)}</ul></section>}
@@ -474,12 +506,13 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
         {installation.locationException ? <p className="notice notice-warning"><ShieldCheck size={16} />Excepción de ubicación autorizada por Administración: {installation.locationExceptionReason}</p> : !admin && !finished && <p className="installation-privacy"><MapPin size={16} />Al registrar llegada, salida y finalización se solicita tu ubicación y precisión. No hay seguimiento continuo. La hora queda registrada por el servidor.</p>}
         {finished && <section className="installation-result"><h4><CheckCircle2 size={18} />Resultado de la instalación</h4><p>{installation.result}</p><p className="muted">Montaje verificado · {installation.checklist?.electrical === 'NOT_APPLICABLE' ? 'Conexión eléctrica: no aplica' : 'Conexión eléctrica verificada'}</p></section>}
         {installation.evidence && <section className="installation-photo-section"><div className="installation-photo-label"><span><Camera size={17} />Evidencia guardada · {formatDate(installation.evidence.createdAt, true)}</span><Button variant="secondary" disabled={Boolean(busy)} onClick={() => void viewPhoto()}>{busy === 'view-photo' ? 'Cargando…' : photoUrl ? 'Volver a cargar fotografía' : 'Ver fotografía'}</Button></div>{photoUrl && <img className="installation-evidence-image" src={photoUrl} alt={`Evidencia de instalación de ${otCode(installation.orderNumber)}`} />}</section>}
+        {admin && !finished && <Button variant="secondary" disabled={disabled} onClick={() => openMode('edit-details')}><MapPin size={16} />Corregir datos de instalación</Button>}
         {availableForChange && <div className="installation-detail-actions">
           {admin ? <>{canPlan && <><Button variant="secondary" disabled={disabled || !installers.length} onClick={() => openMode('assign')}><UserRound size={16} />{installation.installerId ? 'Reasignar responsable' : 'Asignar responsable'}</Button><Button variant="secondary" disabled={disabled} onClick={() => openMode('reschedule')}><CalendarClock size={16} />Reprogramar</Button></>}{installation.status !== 'POSTPONED' && <Button variant="secondary" disabled={disabled} onClick={() => openMode('postpone')}><Pause size={16} />Aplazar instalación</Button>}{!installation.locationException && <Button variant="secondary" disabled={disabled} onClick={() => openMode('exception')}><ShieldCheck size={16} />Autorizar excepción GPS</Button>}</> : <>
             {installation.status !== 'POSTPONED' && ownStatus === 'ASSIGNED' && <Button disabled={disabled} onClick={() => void recordLocationAction('arrive')}><MapPin size={17} />{busy === 'arrive' ? 'Registrando llegada…' : 'Registrar llegada'}</Button>}
             {installation.status !== 'POSTPONED' && ownStatus === 'IN_PROGRESS' && <><Button variant="secondary" disabled={disabled} onClick={() => void sendAction({ action: 'pause', kind: 'REST' }, 'Inicio de tu descanso registrado.')}><Coffee size={16} />Iniciar descanso</Button><Button variant="secondary" disabled={disabled} onClick={() => void sendAction({ action: 'pause', kind: 'LUNCH' }, 'Inicio de tu almuerzo registrado.')}><Pause size={16} />Iniciar almuerzo</Button></>}
             {installation.status !== 'POSTPONED' && ownStatus === 'PAUSED' && <Button disabled={disabled} onClick={() => void sendAction({ action: 'resume' }, 'Tu trabajo se reanudó.')}><Play size={17} />Reanudar trabajo</Button>}
-            {installation.status !== 'POSTPONED' && ownStatus && ['IN_PROGRESS', 'PAUSED'].includes(ownStatus) && !lead && <Button disabled={disabled} onClick={() => void recordLocationAction('checkout')}><MapPin size={17} />{busy === 'checkout' ? 'Registrando salida…' : 'Registrar salida'}</Button>}
+            {installation.status !== 'POSTPONED' && ownStatus && ['IN_PROGRESS', 'PAUSED'].includes(ownStatus) && <Button disabled={disabled} onClick={() => void recordLocationAction('checkout')}><MapPin size={17} />{busy === 'checkout' ? 'Registrando salida…' : 'Registrar salida'}</Button>}
             {installation.status !== 'POSTPONED' && lead && ownStatus && ['IN_PROGRESS', 'CHECKED_OUT'].includes(ownStatus) && <Button disabled={disabled || activeOthers.length > 0} onClick={() => openMode('complete')}><CheckCircle2 size={17} />Finalizar instalación</Button>}
             {lead && activeOthers.length > 0 && <p className="notice">Antes de finalizar, deben registrar su salida: {activeOthers.map(member => member.name).join(', ')}.</p>}
             {lead && ownStatus === 'IN_PROGRESS' && <p className="installation-privacy">Al confirmar la finalización también se registra tu salida con ubicación.</p>}
@@ -492,6 +525,11 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
           <h4>{modeTitle[mode]}</h4>
           {mode === 'assign' && <AssignmentFields value={assignment} onChange={setAssignment} installers={installers} teams={teams} disabled={disabled} prefix="installation-assign" />}
           {mode === 'reschedule' && <ScheduleFields start={start} end={end} setStart={setStart} setEnd={setEnd} disabled={disabled} prefix="installation-reschedule" />}
+          {mode === 'edit-details' && <>
+            <Field label="Dirección de instalación" htmlFor="installation-edit-address"><input id="installation-edit-address" className="input" required maxLength={1000} value={address} onChange={event => setAddress(event.target.value)} disabled={disabled} /></Field>
+            <div className="form-grid"><Field label="Persona de contacto" htmlFor="installation-edit-contact"><input id="installation-edit-contact" className="input" maxLength={120} value={contactName} onChange={event => setContactName(event.target.value)} disabled={disabled} /></Field><Field label="Teléfono de contacto" htmlFor="installation-edit-phone"><input id="installation-edit-phone" className="input" type="tel" maxLength={80} value={contactPhone} onChange={event => setContactPhone(event.target.value)} disabled={disabled} /></Field></div>
+            <Field label="Indicaciones de instalación" htmlFor="installation-edit-instructions"><textarea id="installation-edit-instructions" className="textarea" rows={3} maxLength={4000} value={instructions} onChange={event => setInstructions(event.target.value)} disabled={disabled} /></Field>
+          </>}
           {mode === 'exception' && <p className="notice notice-warning">Esta autorización permite llegada y cierre sin GPS únicamente en esta instalación. El motivo y tu usuario quedarán registrados.</p>}
           {mode === 'note' ? <Field label="Observación" htmlFor="installation-detail-note"><textarea id="installation-detail-note" className="textarea" rows={3} required maxLength={4000} value={note} onChange={event => setNote(event.target.value)} disabled={disabled} /></Field> : mode !== 'complete' && <Field label="Motivo del cambio" htmlFor="installation-change-reason"><textarea id="installation-change-reason" className="textarea" rows={3} required maxLength={2000} value={reason} onChange={event => setReason(event.target.value)} disabled={disabled} /></Field>}
           {mode === 'complete' && <>
@@ -503,9 +541,9 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
             <Field label="Resultado de la instalación" htmlFor="installation-result"><textarea id="installation-result" className="textarea" rows={4} required maxLength={4000} value={result} onChange={event => setResult(event.target.value)} disabled={disabled} placeholder="Describe el resultado, las comprobaciones y las observaciones de terreno." /></Field>
             {absentMembers.length > 0 && <Field label="Motivo de cierre sin integrantes que no llegaron" htmlFor="installation-absent-reason" hint={`Sin llegada: ${absentMembers.map(member => member.name).join(', ')}. No se les registra tiempo trabajado ni una instalación finalizada.`}><textarea id="installation-absent-reason" className="textarea" rows={3} required maxLength={2000} value={absentMembersReason} onChange={event => setAbsentMembersReason(event.target.value)} disabled={disabled} /></Field>}
           </>}
-          <div className="modal-actions"><Button variant="secondary" onClick={() => setMode(null)} disabled={Boolean(busy)}>Volver al detalle</Button><Button type="submit" disabled={disabled || !installation.productionReady}>{busy && busy !== 'view-photo' ? 'Guardando…' : mode === 'complete' ? 'Confirmar finalización' : 'Guardar cambio'}</Button></div>
+          <div className="modal-actions"><Button variant="secondary" onClick={() => { setMode(null); formVersionRef.current = null; }} disabled={Boolean(busy)}>Volver al detalle</Button><Button type="submit" disabled={disabled || (mode !== 'edit-details' && !installation.productionReady)}>{busy && busy !== 'view-photo' ? 'Guardando…' : mode === 'complete' ? 'Confirmar finalización' : 'Guardar cambio'}</Button></div>
         </form>}
-        <section className="installation-history"><h4><History size={18} />Historial de la instalación</h4>{events.length ? <ol>{events.map(event => <InstallationEventRow key={event.id} event={event} />)}</ol> : <p className="muted">No hay eventos registrados.</p>}</section>
+        <section className="installation-history"><h4><History size={18} />Historial de la instalación</h4>{events.length ? <ol>{events.map(event => <InstallationEventRow key={event.id} installationId={id} event={event} />)}</ol> : <p className="muted">No hay eventos registrados.</p>}</section>
       </>}
       {busy && <p className="installation-saving" role="status">{busy === 'arrive' || busy === 'checkout' || busy === 'complete' ? 'Obteniendo ubicación y guardando en el servidor…' : busy === 'prepare-photo' ? 'Preparando fotografía…' : busy === 'view-photo' ? 'Consultando fotografía…' : 'Guardando en el servidor…'}</p>}
       {!online && <p className="form-alert" role="alert">No hay conexión. Lo que escribas aquí no se envía automáticamente; no cierres este formulario y vuelve a intentar al reconectar.</p>}
@@ -516,10 +554,57 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
   </Modal>;
 }
 
-function InstallationEventRow({ event }: { event: InstallationEvent }) {
-  const actionLabels: Record<string, string> = { create: 'Instalación programada', assign: 'Responsables asignados', reschedule: 'Instalación reprogramada', arrive: 'Llegada registrada', pause: 'Pausa iniciada', resume: 'Trabajo reanudado', checkout: 'Salida registrada', postpone: 'Instalación aplazada', complete: 'Instalación finalizada', note: 'Observación registrada', 'authorize-location-exception': 'Excepción de ubicación autorizada', evidence: 'Fotografía guardada' };
+function InstallationEventRow({ installationId, event }: { installationId: string; event: InstallationEvent }) {
+  const actionLabels: Record<string, string> = { create: 'Instalación programada', assign: 'Responsables asignados', reschedule: 'Instalación reprogramada', arrive: 'Llegada registrada', pause: 'Pausa iniciada', resume: 'Trabajo reanudado', checkout: 'Salida registrada', postpone: 'Instalación aplazada', complete: 'Instalación finalizada', note: 'Observación registrada', 'authorize-location-exception': 'Excepción de ubicación autorizada', evidence: 'Fotografía guardada', 'edit-details': 'Datos de instalación corregidos', 'production-reopened': 'Disponibilidad de instalación actualizada' };
   const details = event.details || {};
   const names = (members: unknown) => Array.isArray(members) ? members.flatMap(member => member && typeof member === 'object' && typeof member.name === 'string' ? [member.name] : []).join(', ') : '';
   const memberNames = names(details.members), previousMembers = names(details.previousMembers), absentNames = names(details.absentMembers);
-  return <li><div className="installation-event-heading"><strong>{details.summary || actionLabels[event.action] || 'Registro de instalación'}</strong><time dateTime={event.occurredAt}>{formatDate(event.occurredAt, true)}</time></div><p>{event.actor.name} · {ROLE_LABELS[event.actor.role as Role] || 'Usuario'}</p>{details.reason && <p><strong>Motivo: </strong>{details.reason}</p>}{details.note && <p className="installation-event-note">{details.note}</p>}{typeof details.previousInstallerName === 'string' && <p>Responsable anterior: {details.previousInstallerName}</p>}{typeof details.installerName === 'string' && <p>Responsable principal: {details.installerName}</p>}{previousMembers && <p>Integrantes anteriores: {previousMembers}</p>}{memberNames && <p>Integrantes: {memberNames}</p>}{typeof details.teamName === 'string' && <p>Equipo: {details.teamName}</p>}{typeof details.previousStartAt === 'string' && typeof details.previousEndAt === 'string' && <p>Horario anterior: {formatDate(details.previousStartAt, true)} a {formatDate(details.previousEndAt, true)}</p>}{typeof details.scheduledStartAt === 'string' && typeof details.scheduledEndAt === 'string' && <p>Programación: {formatDate(details.scheduledStartAt, true)} a {formatDate(details.scheduledEndAt, true)}</p>}{details.kind === 'REST' && <p>Descanso</p>}{details.kind === 'LUNCH' && <p>Almuerzo</p>}{absentNames && <p>Integrantes sin llegada: {absentNames}</p>}{typeof details.absentMembersReason === 'string' && <p>Motivo de cierre sin su participación: {details.absentMembersReason}</p>}{details.location && <p className="installation-location-proof"><MapPin size={13} />Ubicación: {details.location.latitude.toFixed(5)}, {details.location.longitude.toFixed(5)} · Precisión {Math.round(details.location.accuracy)} m · Captura {formatDate(details.location.capturedAt, true)}</p>}</li>;
+  const changes = Array.isArray(details.changes) ? details.changes.flatMap(change => change && typeof change === 'object' && typeof change.label === 'string' && typeof change.before === 'string' && typeof change.after === 'string' ? [change as { label: string; before: string; after: string }] : []) : [];
+  const result = typeof details.result === 'string' ? details.result : typeof details.previousResult === 'string' ? details.previousResult : '';
+  const rawChecklist = details.checklist || details.previousChecklist;
+  const checklist = rawChecklist && typeof rawChecklist === 'object' ? rawChecklist as { mounted?: boolean; electrical?: string } : null;
+  const photoIds = [...new Set([details.photoId, details.previousPhotoId].filter((value): value is string => typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value)))];
+  return <li>
+    <div className="installation-event-heading"><strong>{details.summary || actionLabels[event.action] || 'Registro de instalación'}</strong><time dateTime={event.occurredAt}>{formatDate(event.occurredAt, true)}</time></div>
+    <p>{event.actor.name} · {ROLE_LABELS[event.actor.role as Role] || 'Usuario'}</p>
+    {details.reason && <p><strong>Motivo: </strong>{details.reason}</p>}{details.note && <p className="installation-event-note">{details.note}</p>}
+    {changes.map((change, index) => <p key={`${change.label}:${index}`}><strong>{change.label}: </strong>{change.before || 'Sin información'} → {change.after || 'Sin información'}</p>)}
+    {typeof details.previousInstallerName === 'string' && <p>Responsable anterior: {details.previousInstallerName}</p>}{typeof details.installerName === 'string' && <p>Responsable principal: {details.installerName}</p>}{previousMembers && <p>Integrantes anteriores: {previousMembers}</p>}{memberNames && <p>Integrantes: {memberNames}</p>}{typeof details.teamName === 'string' && <p>Equipo: {details.teamName}</p>}
+    {typeof details.previousStartAt === 'string' && typeof details.previousEndAt === 'string' && <p>Horario anterior: {formatDate(details.previousStartAt, true)} a {formatDate(details.previousEndAt, true)}</p>}{typeof details.scheduledStartAt === 'string' && typeof details.scheduledEndAt === 'string' && <p>Programación: {formatDate(details.scheduledStartAt, true)} a {formatDate(details.scheduledEndAt, true)}</p>}
+    {details.kind === 'REST' && <p>Descanso</p>}{details.kind === 'LUNCH' && <p>Almuerzo</p>}{absentNames && <p>Integrantes sin llegada: {absentNames}</p>}{typeof details.absentMembersReason === 'string' && <p>Motivo de cierre sin su participación: {details.absentMembersReason}</p>}
+    {typeof details.previousCompletedAt === 'string' && <p>Finalización de la visita anterior: {formatDate(details.previousCompletedAt, true)}</p>}
+    {result && <p className="installation-event-note"><strong>{typeof details.previousResult === 'string' ? 'Resultado de la visita anterior: ' : 'Resultado: '}</strong>{result}</p>}
+    {checklist && <p>{checklist.mounted ? 'Montaje verificado' : 'Montaje sin verificar'} · {checklist.electrical === 'VERIFIED' ? 'Conexión eléctrica verificada' : checklist.electrical === 'NOT_APPLICABLE' ? 'Conexión eléctrica: no aplica' : 'Sin registro de prueba eléctrica'}</p>}
+    {details.location && <p className="installation-location-proof"><MapPin size={13} />Ubicación: {details.location.latitude.toFixed(5)}, {details.location.longitude.toFixed(5)} · Precisión {Math.round(details.location.accuracy)} m · Captura {formatDate(details.location.capturedAt, true)}</p>}
+    {details.locationException === true && <p className="installation-location-proof"><ShieldCheck size={13} />Registro sin coordenadas mediante excepción autorizada por Administración.{typeof details.reason === 'string' ? ` Motivo: ${details.reason}` : ''}</p>}
+    {photoIds.map(photoId => <InstallationHistoryPhoto key={photoId} installationId={installationId} evidenceId={photoId} />)}
+  </li>;
+}
+
+function InstallationHistoryPhoto({ installationId, evidenceId }: { installationId: string; evidenceId: string }) {
+  const [blob, setBlob] = useState<Blob | null>(null);
+  const [url, setUrl] = useState('');
+  const [visible, setVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!visible || !blob) { setUrl(''); return; }
+    const objectUrl = URL.createObjectURL(blob);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [blob, visible]);
+  async function togglePhoto() {
+    if (loading) return;
+    if (visible) { setVisible(false); return; }
+    if (blob) { setVisible(true); return; }
+    setLoading(true); setError('');
+    try { setBlob(await apiInstallationPhoto(installationId, evidenceId)); setVisible(true); }
+    catch (cause) { setError(errorText(cause)); }
+    finally { setLoading(false); }
+  }
+  return <div className="installation-event-photo">
+    <Button variant="secondary" disabled={loading} onClick={() => void togglePhoto()}><Camera size={15} />{loading ? 'Consultando fotografía del registro…' : visible ? 'Ocultar fotografía del registro' : 'Ver fotografía de este registro'}</Button>
+    {url && <img className="installation-evidence-image" src={url} alt="Fotografía histórica de este registro de instalación" />}
+    {error && <p className="form-alert" role="alert">{error}</p>}
+  </div>;
 }

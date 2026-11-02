@@ -19,7 +19,11 @@ interface InstallationRow {
   created_at:Date|string; updated_at:Date|string;
   order_number:number; client_name:string; description:string; installer_name:string|null;
   order_status:string; production_ready:boolean; evidence_id:string|null; evidence_created_at:Date|string|null;
-  team_id:string|null;team_name:string|null;members:MemberRow[];
+  team_id:string|null;team_name:string|null;members:MemberRow[];products:TechnicalProductRow[];
+}
+interface TechnicalProductRow {
+  id:string;description:string;quantity:number|string;
+  materials:{id:string;material:string;length:number|string;width:number|string}[];
 }
 interface MemberRow {
   user_id:string;name:string;status:'ASSIGNED'|'IN_PROGRESS'|'PAUSED'|'CHECKED_OUT';
@@ -44,7 +48,12 @@ const selectInstallation = `SELECT i.*,o.number AS order_number,o.description,o.
   coalesce((SELECT jsonb_agg(jsonb_build_object('user_id',m.user_id,'name',mu.name,'status',m.status,
     'arrived_at',m.arrived_at,'checked_out_at',m.checked_out_at,'active_since',m.active_since,'work_seconds',m.work_seconds)
     ORDER BY mu.name,m.user_id) FROM installation_members m JOIN users mu ON mu.id=m.user_id
-    WHERE m.installation_id=i.id AND m.cycle=i.cycle AND m.is_current),'[]'::jsonb) AS members
+    WHERE m.installation_id=i.id AND m.cycle=i.cycle AND m.is_current),'[]'::jsonb) AS members,
+  coalesce((SELECT jsonb_agg(jsonb_build_object('id',p.id,'description',p.description,'quantity',p.quantity,
+    'materials',coalesce((SELECT jsonb_agg(jsonb_build_object('id',pm.id,'material',pm.material,
+      'length',pm.length,'width',pm.width) ORDER BY pm.position,pm.id)
+      FROM order_product_materials pm WHERE pm.product_id=p.id),'[]'::jsonb)) ORDER BY p.position,p.id)
+    FROM order_products p WHERE p.order_id=o.id),'[]'::jsonb) AS products
   FROM installations i JOIN orders o ON o.id=i.order_id JOIN clients c ON c.id=o.client_id
   LEFT JOIN users u ON u.id=i.installer_id
   LEFT JOIN installation_evidence e ON e.id=(SELECT latest.id FROM installation_evidence latest
@@ -70,6 +79,10 @@ function personalStatus(row:InstallationRow,userId:string) {
 function dto(row:InstallationRow,actor?:{id:string;role:Role}) {
   return {id:row.id,orderId:row.order_id,orderNumber:Number(row.order_number),clientName:row.client_name,
     description:row.description,status:row.status,personalStatus:actor?.role==='INSTALADOR'?personalStatus(row,actor.id):null,
+    products:row.products.map(product=>({id:product.id,description:product.description,quantity:Number(product.quantity),
+      materials:product.materials.map(material=>({id:material.id,material:material.material,
+        length:Number(material.length),width:Number(material.width),
+        areaM2:Math.round(Number(material.length)*Number(material.width)*1000)/1000}))})),
     installerId:row.installer_id,installerName:row.installer_name,
     version:row.version,scheduledStartAt:iso(row.scheduled_start_at)!,scheduledEndAt:iso(row.scheduled_end_at)!,
     teamId:row.team_id,teamName:row.team_name,members:row.members.map(member=>({
@@ -299,6 +312,23 @@ export async function changeInstallation(db:Database,auth:AuthSession,id:string,
     if(await requestReplay(tx,actor.id,parsed.requestId,hash)) return {installation:dto(row,actor),replayed:true};
     if(row.version!==parsed.version) throw conflict('Otra persona actualizó esta instalación. Recarga sus datos antes de continuar.');
     if(row.status==='COMPLETED') throw conflict('La instalación ya está finalizada.');
+    if(parsed.action==='edit-details') {
+      requireAdmin(actor);
+      const fields=[['address','address','Dirección'],['contact_name','contactName','Contacto'],
+        ['contact_phone','contactPhone','Teléfono de contacto'],['instructions','instructions','Indicaciones']] as const;
+      const changes=fields.flatMap(([column,field,label])=>row[column]===parsed[field]?[]:
+        [{label,before:row[column],after:parsed[field]}]);
+      // Correcting logistics must not restart, pause or replace anyone's attendance.
+      // It remains available while production is being corrected or the visit is postponed.
+      await tx.query(`UPDATE installations SET address=$2,contact_name=$3,contact_phone=$4,instructions=$5,
+        updated_at=clock_timestamp(),version=version+1 WHERE id=$1`,
+      [id,parsed.address,parsed.contactName,parsed.contactPhone,parsed.instructions]);
+      const updated=await rowOf(tx,id);
+      await writeEvent(tx,updated,actor.id,parsed.action,row.status,'Corrigió los datos del lugar de instalación.',
+        {reason:parsed.reason,changes});
+      await saveRequest(tx,actor.id,parsed.requestId,id,hash);
+      return {installation:dto(updated,actor),replayed:false};
+    }
     if(!row.production_ready) throw conflict('La OT todavía no está disponible para instalación o su recorrido cambió. Administración debe revisar la producción.');
     const now=await serverNow(tx);
     let status:Status=row.status;
@@ -562,20 +592,33 @@ export async function saveInstallationTeam(db:Database,auth:AuthSession,id:strin
   }
 }
 
-/** Caller already holds actor and OT locks. Preserve previous execution history on reopening production. */
+/** Caller already holds actor and OT locks. OT corrections must not leave field clocks running on unavailable work. */
 export async function syncInstallationAfterOrderEdit(tx:SqlConnection,actor:{id:string},orderId:string,previousStatus:string,nextStatus:string) {
-  if(previousStatus!=='INSTALLED' || nextStatus!=='IN_PRODUCTION') return;
   const existing=(await tx.query<{id:string}>(
-    "SELECT id FROM installations WHERE order_id=$1 AND status='COMPLETED' FOR UPDATE",[orderId])).rows[0];
+    'SELECT id FROM installations WHERE order_id=$1 FOR UPDATE',[orderId])).rows[0];
   if(!existing) return;
   const old=await rowOf(tx,existing.id);
+  if(old.status==='COMPLETED' && nextStatus==='INSTALLED' || old.status!=='COMPLETED' && old.production_ready) return;
+  if(old.status==='POSTPONED') return;
+  const now=await serverNow(tx);
+  const segments:Array<{workedById:string;elapsedSeconds:number}>=[];
+  for(const member of old.members) if(member.active_since) {
+    const elapsedSeconds=Math.max(0,(now.getTime()-new Date(member.active_since).getTime())/1000);
+    segments.push({workedById:member.user_id,elapsedSeconds});
+    await tx.query(`UPDATE installation_members SET status='PAUSED',active_since=NULL,work_seconds=work_seconds+$4
+      WHERE installation_id=$1 AND cycle=$2 AND user_id=$3`,[old.id,old.cycle,member.user_id,elapsedSeconds]);
+  }
+  const nextCycle=old.status==='COMPLETED'?old.cycle+1:old.cycle;
   await tx.query(`UPDATE installations SET status='POSTPONED',completed_at=NULL,started_at=NULL,
     active_since=NULL,result=NULL,checklist=NULL,location_exception=false,location_exception_reason=NULL,
-    cycle=cycle+1,updated_at=clock_timestamp(),version=version+1 WHERE id=$1`,[existing.id]);
-  await replaceMembers(tx,{id:existing.id,cycle:old.cycle+1},old.members.map(member=>member.user_id));
+    work_seconds=(SELECT coalesce(sum(work_seconds),0) FROM installation_members WHERE installation_id=$1),
+    cycle=$2,updated_at=clock_timestamp(),version=version+1 WHERE id=$1`,[existing.id,nextCycle]);
+  if(nextCycle!==old.cycle) await replaceMembers(tx,{id:existing.id,cycle:nextCycle},old.members.map(member=>member.user_id));
   const updated=await rowOf(tx,existing.id);
   await writeEvent(tx,updated,actor.id,'production-reopened',old.status,
-    'Aplazó la instalación al reabrirse la producción de la OT.',{
-      reason:'Administración añadió actividades de producción a la OT.',previousCompletedAt:iso(old.completed_at),
-      previousResult:old.result,previousChecklist:old.checklist,previousPhotoId:old.evidence_id});
+    'Aplazó la instalación al cambiar la disponibilidad de la OT.',{
+      reason:nextStatus==='IN_PRODUCTION'?'Administración añadió actividades de producción a la OT.':
+        'La OT dejó de estar disponible para instalar tras una corrección administrativa.',
+      previousCompletedAt:iso(old.completed_at),previousResult:old.result,previousChecklist:old.checklist,
+      previousPhotoId:old.evidence_id,...(segments.length?{workSegments:segments}:{})},previousStatus);
 }

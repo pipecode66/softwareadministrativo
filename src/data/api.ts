@@ -164,11 +164,12 @@ function orderFields(input: OrderInput) {
     } : { reteFuente: 0, reteIva: 0, ica: 0 }) };
 }
 function productFields(products: OrderProductInput[] | undefined) {
-  return products?.map(product => ({ description: product.description, quantity: product.quantity,
+  return products?.map(product => ({ ...(product.id ? { id: product.id } : {}), description: product.description, quantity: product.quantity,
     unitValue: product.unitValue,
     materials: product.materials.map(material => ({ material: material.material, length: material.length, width: material.width })),
     activities: product.activities.map(activity => ({ area: activity.area,
       ...(activity.area === 'PRINTING' ? { printingType: activity.printingType ?? 'PRINT' } : {}),
+      ...(activity.area === 'PRINTING' && activity.laserMinutes != null ? { laserMinutes: activity.laserMinutes } : {}),
       ...(activity.assignedUserId ? { assignedUserId: activity.assignedUserId } : {}) })),
   }));
 }
@@ -208,6 +209,13 @@ export async function apiUpdateOrder(id: string, input: OrderInput, expectedVers
   return asOrder(body.order);
 }
 export type NewPayment = { date: string; amount: number; method: Exclude<PaymentMethod, 'LEGACY'> };
+export type PaymentCorrection = { date: string; amount: number; method: PaymentMethod };
+export async function apiCorrectPayment(orderId: string, paymentId: string, payment: PaymentCorrection, expectedVersion: number): Promise<WorkOrder> {
+  const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(orderId)}/payments/${encodeURIComponent(paymentId)}`, {
+    method: 'PATCH', body: JSON.stringify({ ...payment, expectedVersion }),
+  });
+  return asOrder(body.order);
+}
 export async function apiAddPayment(id: string, payment: NewPayment, requestId: string): Promise<WorkOrder> {
   const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}/payments`, { method: 'POST', body: JSON.stringify({ ...payment, requestId }) });
   return asOrder(body.order);

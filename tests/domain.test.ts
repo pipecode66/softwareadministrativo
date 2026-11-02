@@ -191,6 +191,7 @@ describe('Edición protegida de órdenes', () => {
   it.each([
     ['ADMINMASTER', 'COMPLETED'], ['ADMIN_GENERAL', 'COMPLETED'],
     ['ADMINMASTER', 'INSTALLED'], ['ADMIN_GENERAL', 'INSTALLED'],
+    ['ADMINMASTER', 'PENDING_INSTALLATION'], ['ADMIN_GENERAL', 'PENDING_INSTALLATION'],
   ] as [Role, WorkStatus][])('%s conserva Diseño terminado y agrega áreas faltantes al reabrir una OT %s', (role, status) => {
     const original = order({ status, route:'MULTI_AREA', printing:undefined, products:[{
       id:'product-1', description:'Arte', quantity:1, unitValue:100000, materials:[], activities:[{
