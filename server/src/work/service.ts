@@ -3,7 +3,7 @@ import type { AuthSession, Role } from '../contracts.js';
 import type { Database, SqlConnection } from '../db/types.js';
 import { ApiError } from '../errors.js';
 import { requireCurrentActor } from '../security/actor.js';
-import { activityListSchema, designDetailsSchema, laserMinutesSchema, productsSchema, type ParsedProduct, type ProductInput } from './schemas.js';
+import { activityListSchema, designDetailsSchema, laserMinutesSchema, productsSchema, workQueueSchema, type ParsedProduct, type ProductInput } from './schemas.js';
 import type { z } from 'zod';
 
 type Area = 'DESIGN' | 'PRINTING' | 'WORKSHOP' | 'EXTERNAL';
@@ -438,6 +438,60 @@ export async function listActivities(db: Database, auth: AuthSession, query: z.i
     `, [...params, input.pageSize, (input.page - 1) * input.pageSize])).rows;
     const materials = await activityMaterials(tx, [...new Set(rows.map(row => row.product_id))]);
     return { items: rows.map(row => activityDto(row, materials.get(row.product_id) ?? [])),
+      page: input.page, pageSize: input.pageSize, total };
+  });
+}
+
+/** Page OT identities first, then include every authorized product activity of each selected OT. */
+export async function listWorkQueue(db: Database, auth: AuthSession, query: z.input<typeof workQueueSchema>) {
+  if (!admin(auth.user.role) && !['DISENO', 'IMPRESION', 'TALLER'].includes(auth.user.role)) {
+    throw new ApiError(403, 'FORBIDDEN', 'Tu perfil no tiene acceso a las bandejas de producción.');
+  }
+  const input = workQueueSchema.parse(query);
+  return db.transaction(async tx => {
+    await tx.exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const params: unknown[] = [input.area];
+    const conditions = ['a.area=$1'];
+    if (auth.user.role === 'DISENO') {
+      params.push(auth.user.id);
+      conditions.push(`a.area='DESIGN' AND a.assigned_user_id=$${params.length}`);
+    } else if (auth.user.role === 'IMPRESION') conditions.push("a.area='PRINTING'");
+    else if (auth.user.role === 'TALLER') conditions.push("a.area='WORKSHOP'");
+    const where = conditions.map(condition => `(${condition})`).join(' AND ');
+    const total = Number((await tx.query<{ count: string }>(
+      `SELECT count(DISTINCT a.order_id) AS count FROM order_activities a WHERE ${where}`, params)).rows[0].count);
+    const groups = (await tx.query<{ order_id: string; order_number: number; status: Status }>(`
+      WITH visible_orders AS (SELECT DISTINCT a.order_id FROM order_activities a WHERE ${where})
+      SELECT o.id AS order_id,o.number AS order_number,
+        CASE WHEN bool_and(a.status='COMPLETED') THEN 'COMPLETED'
+          WHEN bool_or(a.status<>'PENDING') THEN 'IN_PROGRESS' ELSE 'PENDING' END AS status
+      FROM visible_orders visible JOIN orders o ON o.id=visible.order_id
+      JOIN order_activities a ON a.order_id=o.id AND a.area=$1
+      GROUP BY o.id,o.number
+      ORDER BY CASE WHEN bool_and(a.status='COMPLETED') THEN 2
+        WHEN bool_or(a.status<>'PENDING') THEN 1 ELSE 0 END,o.number DESC,o.id
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `, [...params, input.pageSize, (input.page - 1) * input.pageSize])).rows;
+    if (!groups.length) return { items: [], page: input.page, pageSize: input.pageSize, total };
+    const rows = (await tx.query<ListedActivityRow>(`
+      SELECT a.*,o.number AS order_number,p.position AS product_position,p.description AS product_description,
+        EXISTS (SELECT 1 FROM order_activities printing WHERE printing.product_id=a.product_id
+          AND printing.area='PRINTING' AND printing.printing_type='PRINT') AS requires_print_materials,
+        NOT EXISTS (SELECT 1 FROM order_activities prior WHERE prior.product_id=a.product_id
+          AND prior.position<a.position AND prior.status<>'COMPLETED') AS ready
+      FROM order_activities a JOIN order_products p ON p.id=a.product_id JOIN orders o ON o.id=a.order_id
+      WHERE ${where} AND a.order_id=ANY($${params.length + 1}::uuid[])
+      ORDER BY p.position,a.position,a.id
+    `, [...params, groups.map(group => group.order_id)])).rows;
+    const materials = await activityMaterials(tx, [...new Set(rows.map(row => row.product_id))]);
+    const activitiesByOrder = new Map<string, ReturnType<typeof activityDto>[]>();
+    for (const row of rows) {
+      const entries = activitiesByOrder.get(row.order_id) ?? [];
+      entries.push(activityDto(row, materials.get(row.product_id) ?? []));
+      activitiesByOrder.set(row.order_id, entries);
+    }
+    return { items: groups.map(group => ({ orderId: group.order_id, orderNumber: Number(group.order_number),
+      status: group.status, activities: activitiesByOrder.get(group.order_id) ?? [] })),
       page: input.page, pageSize: input.pageSize, total };
   });
 }

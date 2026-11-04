@@ -2,6 +2,8 @@
 
 El módulo está conservado en la rama **local** `feature/instalaciones-local`, commit `ffe9a06`. No se hizo push de esa rama ni se ejecutó su migración015 en Supabase. La solicitud posterior del usuario de publicar dos cambios en main **no autoriza publicar Instalaciones**.
 
+Actualización del04/11: el módulo ya se retomó y quedó guardado localmente en `332e20d` con main579d2ce integrado y pruebas aprobadas; su guía actual está en esa rama. Ahora main recibe por separado la corrección de bandejas agrupadas por OT. Antes de continuar Instalaciones, integrar este nuevo main HACIA la rama local; preservar el módulo, su contexto y sus pruebas. La decisión63 de main corresponde a la agrupación; conciliar la numeración coincidente de decisiones locales al fusionar.
+
 Antes de retomar:
 
 1. Comprobar que el trabajo productivo está guardado y que el árbol está limpio.

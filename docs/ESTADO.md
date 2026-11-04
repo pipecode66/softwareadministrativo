@@ -1,8 +1,18 @@
 # Estado de continuidad
 
-Actualizado: 2026-10-29.
+Actualizado: 2026-11-04.
 
 ## Estado actual
+
+**Corrección de bandejas por OT — 04/11.** El usuario reportó dos tarjetas OT#0110 con productos distintos y confirmó agruparlos bajo una sola tarjeta. El diagnóstico de código mostró una venta principal única y una tarjeta por actividad; no se consultó ni limpió el registro productivo de esa OT. Se prepara exclusivamente esta corrección en main, manteniendo Instalaciones sólo local en `feature/instalaciones-local` (`332e20d`), sin fusionar esa rama ni la migración015.
+
+Nuevo GET `/work/queue` devuelve grupos de OT con todos los productos autorizados del área. Primero pagina identidades de OT y luego recupera sus actividades completas, sin dividir una orden con muchos productos entre páginas. Total y paginación cuentan OT únicas. El estado general del área es Terminada únicamente cuando todas sus actividades están completas; el progreso parcial se muestra En proceso. Diseño continúa viendo sólo sus trabajos asignados; el estado resumido del área no expone descripciones de otros diseñadores. Se conserva `/work/activities` para sus consumidores actuales.
+
+Diseño, Impresión y Taller muestran una tarjeta por OT, secciones por producto con responsable/materiales/estado y controles individuales, más un único enlace Ver OT. No se alteran productos almacenados, ventas, pagos, recorridos, numeración ni reglas de finalización. No requiere migración SQL. Archivos: `server/src/work/{schemas,router,service}.ts`, `server/tests/work.test.ts`, `src/{data/api.ts,domain/types.ts,pages/{Queues.tsx,operations.css}}`, `tests/queues-api.spec.ts` y configuración E2E.
+
+Verificación aprobada: frontend173/173 y servidor313/313, ambos builds/typechecks; cuatro recorridos E2E API/PGlite (agrupación con controles de las tres áreas, OT con13 productos y paginación real, correcciones administrativas y reportes financieros). Se comprobó estado parcial y final, materiales/recepción en Taller, observaciones, permisos sin importes y un único enlace a la OT completa. Sin desbordamiento en320/390/768/1440px; capturas de escritorio/móvil revisadas en `test-results/ot-queue-grouping` (ignorado por git). Publicación por commit/push exclusivo a main; consultar git log. No se afirma despliegue posterior de Vercel comprobado.
+
+Esta corrección de representación/paginación no se cuenta como ampliación comercial ni cambio significativo adicional. Se conserva el contador de entregas61/34; Instalaciones sigue pendiente de aceptación local. Al retomar ese módulo, integrar este main HACIA su rama local y conciliar las decisiones del documento; nunca publicar Instalaciones como parte de este arreglo.
 
 **Entrega de producción del29/10 — implementada y verificada.** El usuario pidió pausar Instalaciones y publicar por separado dos cambios: conservar progreso de cada sección al navegar y edición administrativa integral (materiales, productos, abonos) sin bloqueos por etapas, con recálculo de saldo/estadísticas y auditoría. Instalaciones se conserva sólo local en `feature/instalaciones-local`, commit `ffe9a06`; NO fusionar esa rama ni su migración015 en este push. Esta rama main parte de `712819a`, igual a origin/main al comenzar. El usuario confirmó **impedir pagos por encima del total**: se conserva esa validación y no se borran/compensan otros pagos automáticamente. No requiere SQL ni migración nueva.
 

@@ -66,6 +66,8 @@
 61. Ambos administradores pueden corregir importe, fecha y medio de un pago existente sin duplicarlo; saldo/reportes y total de lote multiabono se recalculan. Se audita actor, fecha y antes/después, filtrado como información financiera. El usuario respondió explícitamente **impedir que el pago supere el total**, por lo que tampoco se permite reducir la OT por debajo de pagos existentes. No se borran ni compensan otros pagos automáticamente, ni se añade saldo a favor. No se habilita eliminación/renumeración de OT.
 62. Instalaciones queda pausado y SOLO LOCAL en `feature/instalaciones-local`, commit `ffe9a06`. El usuario autorizó push a main únicamente para las solicitudes de progreso/edición integral. No fusionar esa rama ni copiar su migración015 a producción. Al retomar, integrar estos cambios productivos con cuidado, conservando la navegación con memoria, permisos y correcciones de consumo/pagos.
 
+63. Confirmación del usuario del04/11: las bandejas de Diseño, Impresión y Taller deben mostrar una tarjeta por OT con los productos y sus acciones dentro, sin aparentar OT diferentes por cada actividad. Se pagina y cuenta por OT en servidor antes de recuperar los trabajos completos. El estado general del área sólo es COMPLETED cuando todas sus actividades concluyeron; progreso parcial es IN_PROGRESS. Se conservan permisos por asignación y estado individual, sin modificar productos, ventas o consecutivos. Es una corrección del listado existente, sin incremento comercial. Instalaciones permanece exclusivamente local y no se incluye en esta publicación.
+
 ## Decisiones sustituidas
 
 - La regla del 15/09 que sumaba retenciones al cobrable fue sustituida por la solicitud del 20/09 para nuevas FACT. Solo se conserva como LEGACY para datos previos.

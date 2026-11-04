@@ -234,6 +234,9 @@ export function apiWorkOrder(id: string): Promise<{ products: OrderProduct[] }> 
 export function apiListActivities(query: { orderId?: string; area?: import('../domain/types').WorkArea; page?: number; pageSize?: number } = {}) {
   return request<{ items: OrderActivity[]; page: number; pageSize: number; total: number }>(`/work/activities?${queryString(query)}`);
 }
+export function apiWorkQueue(query: { area: import('../domain/types').WorkArea; page?: number; pageSize?: number }) {
+  return request<{ items: import('../domain/types').WorkQueueOrder[]; page: number; pageSize: number; total: number }>(`/work/queue?${queryString(query)}`);
+}
 export function apiDesignerLoad() {
   return request<{ items: Array<{ id: string; name: string; pending: number; inProgress: number; total: number }>; unassigned: number }>('/work/designers/load');
 }

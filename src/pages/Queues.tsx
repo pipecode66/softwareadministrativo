@@ -2,8 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Check, CheckCircle2, ClipboardCheck, Clock3, Hammer, MapPin, Pencil, Plus, Printer, Ruler, Trash2, Workflow } from 'lucide-react';
 import { useApp } from '../data/AppContext';
-import { apiChangeActivity, apiListActivities, apiSaveLaserMinutes, apiUpdateDesignDetails, apiWorkOrder, usingApi } from '../data/api';
-import type { Material, OrderAction, OrderActivity, Role, WorkArea, WorkOrder } from '../domain/types';
+import { apiChangeActivity, apiSaveLaserMinutes, apiUpdateDesignDetails, apiWorkOrder, apiWorkQueue, usingApi } from '../data/api';
+import type { Material, OrderAction, OrderActivity, Role, WorkArea, WorkOrder, WorkQueueOrder } from '../domain/types';
 import { areaOf, dateOnly, formatDate, formatMeasure, formatNumber, isAdmin, MATERIALS, normalize, ROUTE_LABELS, today, visibleOrders } from '../domain/utils';
 import { Button, Card, DataTable, EmptyState, Field, KpiCard, Modal, PageHeader, Pagination, SearchInput, WorkBadge } from '../components/ui';
 import './operations.css';
@@ -93,7 +93,7 @@ type DesignMaterialDraft = { key: string; material: Material; length: string; wi
 
 function CompositeActivityQueue({ department }: { department: QueueDepartment }) {
   const { user, data, refreshData, toast } = useApp();
-  const [items, setItems] = useState<OrderActivity[]>([]);
+  const [items, setItems] = useState<WorkQueueOrder[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -116,7 +116,7 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
     async function load(silent: boolean) {
       if (!silent) setLoading(true);
       try {
-        const result = await apiListActivities({ area, page, pageSize });
+        const result = await apiWorkQueue({ area, page, pageSize });
         if (!active) return;
         setItems(result.items);
         setTotal(result.total);
@@ -198,17 +198,19 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
   }
 
   return <Card className="ops-activity-section">
-    <div className="ops-activity-header"><div><span className="eyebrow">Trabajo por producto</span><h2>Actividades de {department === 'DISENO' ? 'Diseño' : department === 'IMPRESION' ? 'Impresión' : 'Taller'}</h2><p className="muted">Cada producto conserva su propio recorrido. El importe comercial permanece en la OT principal.</p></div><span className="ops-area-chip">{total} actividades</span></div>
+    <div className="ops-activity-header"><div><span className="eyebrow">Trabajo por orden</span><h2>Actividades de {department === 'DISENO' ? 'Diseño' : department === 'IMPRESION' ? 'Impresión' : 'Taller'}</h2><p className="muted">Cada OT reúne sus productos y el avance de cada trabajo en esta área.</p></div><span className="ops-area-chip">{total} {total === 1 ? 'OT' : 'OTs'}</span></div>
     {error && <p className="notice notice-warning" role="alert">{error}</p>}
     {loading && !items.length ? <p className="muted ops-activity-loading">Cargando actividades…</p> : !items.length ? <EmptyState title="No hay actividades en esta área" description="Los trabajos por producto aparecerán aquí al crear una OT que los incluya." /> : <>
-      <div className="ops-activity-grid">{items.map(activity => {
+      <div className="ops-activity-grid">{items.map(order => <article key={order.orderId} data-order-id={order.orderId} aria-label={`OT #${String(order.orderNumber).padStart(4, '0')}`} className={`ops-activity-card is-${order.status.toLowerCase()}`}>
+        <div className="ops-activity-top"><Link className="link cell-title" to={`/orders/${order.orderId}`}>OT #{String(order.orderNumber).padStart(4, '0')}</Link><span className="ops-area-chip">{activityStatusLabel[order.status]}</span></div>
+        <div className="ops-order-products">{order.activities.map(activity => {
         const owner = data.users.find(person => person.id === activity.assignedUserId);
         const canOperate = isAdmin(user?.role) || user?.role === department && (department !== 'DISENO' || activity.assignedUserId === user.id);
         const canEditDesign = department === 'DISENO' && user?.role === 'DISENO' && activity.assignedUserId === user.id && activity.status !== 'COMPLETED';
         const isLaser = department === 'IMPRESION' && activity.printingType === 'LASER';
         const materials = activity.materials ?? [];
-        return <article key={activity.id} className={`ops-activity-card is-${activity.status?.toLowerCase() || 'pending'}`}>
-          <div className="ops-activity-top"><Link className="link cell-title" to={`/orders/${activity.orderId}`}>OT #{String(activity.orderNumber ?? '').padStart(4, '0')}</Link><span className="ops-area-chip">{activityStatusLabel[activity.status || 'PENDING']}</span></div>
+        return <section key={activity.id} data-activity-id={activity.id} className={`ops-product-activity is-${activity.status?.toLowerCase() || 'pending'}`}>
+          <div className="ops-product-heading"><span>Producto {activity.productPosition ?? 1}</span><span className="ops-product-status">{activityStatusLabel[activity.status || 'PENDING']}</span></div>
           <h3>{activity.productDescription || 'Trabajo sin descripción'}</h3>
           {department === 'DISENO' && <p className="muted ops-small">Responsable: {owner?.name || (activity.assignedUserId ? 'Diseñador asignado' : 'Sin asignar')}</p>}
           {activity.receivedByWorkshop && <p className="muted ops-small"><strong>Recibe en Taller:</strong> {activity.receivedByWorkshop}</p>}
@@ -216,7 +218,7 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
           {isLaser && <div className="ops-laser-summary"><strong>Corte láser · $1.000 COP/min</strong><span>{activity.laserMinutes ? `${activity.laserMinutes} minutos registrados` : 'Tiempo pendiente por registrar'}</span></div>}
           {materials.length > 0 && <div className="ops-activity-materials">{materials.map((material, index) => <span key={material.id || index}>{material.material} · {formatMeasure(material.length)} × {formatMeasure(material.width)} m · {formatMeasure(material.areaM2 ?? areaOf(material))} m²</span>)}</div>}
           {activity.ready === false && activity.status === 'PENDING' && <p className="ops-activity-wait">Espera la actividad anterior de este producto.</p>}
-          <div className="ops-activity-actions"><Link className="link ops-detail-link" to={`/orders/${activity.orderId}`}>Ver OT <ArrowRight size={14} /></Link>
+          <div className="ops-activity-actions">
             {canEditDesign && <Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void openDesignEdit(activity)}><Pencil size={14} /> Completar información técnica</Button>}
             {canOperate && isLaser && activity.status !== 'COMPLETED' && !!activity.id && <div className="ops-laser-entry"><input className="input" type="number" min="1" step="1" aria-label={`Minutos de corte láser para OT ${activity.orderNumber}`} value={laserMinutes[activity.id] ?? String(activity.laserMinutes ?? '')} onChange={event => setLaserMinutes(current => ({ ...current, [activity.id!]: event.target.value }))} /><span>min</span><Button type="button" variant="secondary" disabled={!!busyId} onClick={() => void saveLaser(activity)}>Guardar</Button></div>}
             {canOperate && activity.status === 'PENDING' && activity.ready !== false && <Button type="button" disabled={!!busyId} onClick={() => void change(activity, 'start')}>Iniciar</Button>}
@@ -224,8 +226,10 @@ function CompositeActivityQueue({ department }: { department: QueueDepartment })
             {user?.role === 'TALLER' && activity.area === 'WORKSHOP' && activity.status === 'IN_PROGRESS' && !!activity.id && <div className="ops-printing-handoff"><label htmlFor={`queue-workshop-notes-${activity.id}`}>Observaciones de Taller</label><textarea id={`queue-workshop-notes-${activity.id}`} className="textarea" rows={3} maxLength={4000} value={workshopNotes[activity.id] ?? ''} onChange={event => setWorkshopNotes(current => ({ ...current, [activity.id!]: event.target.value }))} /></div>}
             {canOperate && activity.status === 'IN_PROGRESS' && <Button type="button" disabled={!!busyId || isLaser && !activity.laserMinutes} onClick={() => void change(activity, 'complete')}>Finalizar</Button>}
           </div>
-        </article>;
+        </section>;
       })}</div>
+        <div className="ops-order-footer"><Link className="link ops-detail-link" to={`/orders/${order.orderId}`}>Ver OT <ArrowRight size={14} /></Link></div>
+      </article>)}</div>
       <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
     </>}
     <Modal open={Boolean(editActivity)} onClose={() => { if (!editSaving) setEditActivity(null); }} title="Editar información del trabajo">

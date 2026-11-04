@@ -30,6 +30,11 @@ export interface OrderProduct {
   id?: string; position?: number; description: string; quantity: number; unitValue?: number;
   lineTotal?: number; materials: ProductMaterial[]; activities: OrderActivity[];
 }
+export interface WorkQueueOrder {
+  orderId: string; orderNumber: number;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  activities: OrderActivity[];
+}
 export type OrderProductInput = OrderProduct & { unitValue: number };
 export interface WorkOrder {
   id: string; number: number; clientId: string; description: string; value: number;
