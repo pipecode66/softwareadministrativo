@@ -68,6 +68,8 @@
 
 63. Confirmación del usuario del04/11: las bandejas de Diseño, Impresión y Taller deben mostrar una tarjeta por OT con los productos y sus acciones dentro, sin aparentar OT diferentes por cada actividad. Se pagina y cuenta por OT en servidor antes de recuperar los trabajos completos. El estado general del área sólo es COMPLETED cuando todas sus actividades concluyeron; progreso parcial es IN_PROGRESS. Se conservan permisos por asignación y estado individual, sin modificar productos, ventas o consecutivos. Es una corrección del listado existente, sin incremento comercial. Instalaciones permanece exclusivamente local y no se incluye en esta publicación.
 
+64. Solicitud del06/11: habilitar «Eliminar abono» dentro de Corregir pago para ADMINMASTER y ADMIN_GENERAL. Marcar la casilla requiere confirmación explícita antes del borrado. Se recalculan saldo, cartera y reportes, sin restricción por etapa/cierre de OT; se conserva auditoría financiera y se protegen versiones/reintentos. Un multiabono pierde sólo la asignación seleccionada, sin redistribución ni recreación posterior. Los lotes vacíos reservan su request_key y devuelven importe vigente cero; los reportes usan pagos existentes. No requiere migración SQL ni permite eliminar OT. Es1 cambio significativo completo, llevando el acumulado a62/35. Instalaciones permanece sólo local.
+
 ## Decisiones sustituidas
 
 - La regla del 15/09 que sumaba retenciones al cobrable fue sustituida por la solicitud del 20/09 para nuevas FACT. Solo se conserva como LEGACY para datos previos.

@@ -75,6 +75,7 @@ export const paymentCorrectionSchema = z.object({
   expectedVersion: z.number().int().positive(), date: dateSchema,
   amount: positivePaymentSchema, method: z.enum([...paymentMethods, 'LEGACY']),
 }).strict();
+export const paymentDeletionSchema = z.object({ expectedVersion: z.number().int().positive() }).strict();
 export const bulkPaymentSchema = z.object({
   clientId: z.uuid(), selectedOrderIds: z.array(z.uuid()).min(1).max(100), date: dateSchema,
   amount: positivePaymentSchema, method: paymentMethodSchema, requestId: z.uuid(),

@@ -85,3 +85,19 @@ test('administración corrige un abono desde la OT y se recalcula el saldo',asyn
   const updated=await page.evaluate(id=>JSON.parse(localStorage.getItem('intermedios.frontend.v1')!).orders.find((item:{id:string})=>item.id===id),order.id);
   expect(updated.payments.find((item:{id:string})=>item.id===original.id)).toMatchObject({amount:original.amount/2,method:'DAVIVIENDA'});
 });
+
+test('eliminar abono requiere confirmar desde Corregir y conserva los demás pagos en la revisión local',async({page})=>{
+  const order=makeSeed().orders.find(item=>item.payments.length>0)!;
+  const original=order.payments[0];
+  await login(page);await page.goto(`/orders/${order.id}`);
+  await page.getByRole('button',{name:`Corregir pago de ${formatCOP(original.amount)}`,exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Corregir pago',exact:true});
+  await dialog.getByRole('checkbox',{name:'Eliminar abono',exact:true}).check();
+  let stored=await page.evaluate(id=>JSON.parse(localStorage.getItem('intermedios.frontend.v1')!).orders.find((item:{id:string})=>item.id===id),order.id);
+  expect(stored.payments).toHaveLength(order.payments.length);
+  await dialog.getByRole('button',{name:'Eliminar abono',exact:true}).click();
+  await expect(dialog).toHaveCount(0);
+  stored=await page.evaluate(id=>JSON.parse(localStorage.getItem('intermedios.frontend.v1')!).orders.find((item:{id:string})=>item.id===id),order.id);
+  expect(stored.payments).toEqual(order.payments.filter(item=>item.id!==original.id));
+  expect(stored.number).toBe(order.number);expect(stored.status).toBe(order.status);
+});

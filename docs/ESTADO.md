@@ -1,8 +1,16 @@
 # Estado de continuidad
 
-Actualizado: 2026-11-04.
+Actualizado: 2026-11-06.
 
 ## Estado actual
+
+**Eliminar abono desde Corregir — 06/11.** ADMINMASTER y ADMIN_GENERAL disponen de una casilla «Eliminar abono» dentro de Corregir pago. Marcarla muestra el importe original, fecha, medio y saldo posterior; sólo confirmar con el botón elimina el registro. Oculta los campos de corrección, impide doble envío y conserva mensajes de error. El saldo y estado de pago, cartera y reportes se recalculan desde los pagos restantes; se conserva el estado productivo y el cierre administrativo de la OT. La trazabilidad se refresca inmediatamente con su nueva versión.
+
+DELETE `/orders/:id/payments/:paymentId` valida sesión, rol, CSRF, pertenencia y versión. Deja auditoría con actor, fecha/hora y datos originales marcados sensibles. El reenvío del mismo borrado por su actor confirma el estado sin duplicar eventos; la solicitud original de un abono individual eliminado queda bloqueada para que no se recree. Si pertenece a multiabono, sólo se elimina esa asignación, sin redistribuir otros pagos. Un lote sin asignaciones conserva su referencia/request_key histórica para evitar recreación; su campo amount positivo se mantiene por la restricción histórica, pero no alimenta cartera/reportes y el replay devuelve suma vigente cero. Los lotes con pagos vigentes se concilian normalmente. No requiere SQL ni migración nueva; no se han borrado datos productivos desde este entorno.
+
+Archivos: `src/components/PaymentCorrection.tsx`, `src/data/{api.ts,AppContext.tsx}`, `src/domain/service.ts`, `src/pages/OrderDetail.tsx`, `server/src/orders/{domain,router,service}.ts`, pruebas `tests/{domain.test,progress.spec,payments-api.spec}.ts`, `server/tests/orders.test.ts`, configuración E2E y documentos. Verificación aprobada:182 pruebas frontend,323 servidor, ambos builds/typechecks;4 recorridos API/PGlite (eliminación con confirmación, cartera/reportes/historial/cierre, multiabono vacío/reenvíos y regresiones de corrección/reportes) y2 locales (corrección y eliminación desde modal). Captura móvil320px revisada; resultados ignorados por git en `test-results/payment-deletion-{api,local}`.
+
+Se entrega únicamente este cambio por commit/push a main (consultar git log); el despliegue posterior no se ha verificado. Instalaciones permanece sólo local en `feature/instalaciones-local` (`332e20d`) y015 fuera de producción. Se considera1 cambio significativo nuevo por habilitar eliminación financiera con auditoría y conciliación: acumulado62 cambios/35 significativos; Instalaciones sigue excluido mientras no se acepte como entrega.
 
 **Corrección de bandejas por OT — 04/11.** El usuario reportó dos tarjetas OT#0110 con productos distintos y confirmó agruparlos bajo una sola tarjeta. El diagnóstico de código mostró una venta principal única y una tarjeta por actividad; no se consultó ni limpió el registro productivo de esa OT. Se prepara exclusivamente esta corrección en main, manteniendo Instalaciones sólo local en `feature/instalaciones-local` (`332e20d`), sin fusionar esa rama ni la migración015.
 
@@ -273,9 +281,12 @@ Se cuentan solicitudes funcionales agrupando como un solo cambio cada petición 
 | Restauración de carteras acumuladas con y sin IVA del 21/10 | 1 | 0 |
 | Conservación de progreso entre secciones del29/10 | 1 | 1 |
 | Corrección administrativa integral de OT, consumo y abonos del29/10 | 1 | 1 |
-| **Acumulado** | **61** | **34** |
+| Eliminación administrativa de abonos con auditoría y recálculo del06/11 | 1 | 1 |
+| **Acumulado** | **62** | **35** |
 
 Para la entrega del 30/09, los dos cambios significativos son el selector desplegable de clientes y la conservación de página/filtros del historial. Convertir los enlaces de clientes en botones se cuenta como un ajuste visual independiente, pero no significativo.
+
+Eliminar abonos se considera significativo porque incorpora una operación financiera nueva protegida, auditoría, reversión del importe recibido y conciliación de multiabonos, con protección para no recrear pagos eliminados al reintentar. Se cuenta como una solicitud completa, sin separar la casilla, servidor y recálculos en varios cambios.
 
 La identificación del creador solicitada el 01/10 se cuenta como un cambio menor de visibilidad operativa, no como un cambio significativo.
 

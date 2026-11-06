@@ -130,6 +130,13 @@ export function recordPayment(user: User, order: WorkOrder, payment: { date: str
   assert(!payment.method || ['EFECTIVO', 'BANCOLOMBIA', 'DAVIVIENDA'].includes(payment.method), 'Selecciona un medio de pago válido.');
   return { ...order, payments: [...order.payments, { id: crypto.randomUUID(), date: payment.date, amount: roundMoney(payment.amount), method: payment.method ?? 'EFECTIVO', recordedBy: user.id }] };
 }
+export function deleteWorkOrderPayment(user: User, order: WorkOrder, paymentId: string, expectedVersion: number): WorkOrder {
+  assert(user.active && isAdmin(user.role), 'Solo Administración puede eliminar abonos.');
+  assert((order.version ?? 1) === expectedVersion, 'Otra persona actualizó la OT. Actualiza sus datos antes de eliminar el abono.');
+  assert(order.payments.some(payment => payment.id === paymentId), 'No encontramos este abono dentro de la OT.');
+  return { ...order, payments:order.payments.filter(payment => payment.id !== paymentId),
+    version:(order.version ?? 1) + 1, updatedAt:new Date().toISOString() };
+}
 export function transitionWorkOrder(user: User, order: WorkOrder, action: OrderAction, details?: { date?: string; note?: string; receivedByWorkshop?: string; workshopNotes?: string }): WorkOrder {
   assert(user.active && canViewOrder(user, order), 'No tienes permiso para modificar esta orden.');
   const admin = isAdmin(user.role);

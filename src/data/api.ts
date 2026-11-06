@@ -216,6 +216,12 @@ export async function apiCorrectPayment(orderId: string, paymentId: string, paym
   });
   return asOrder(body.order);
 }
+export async function apiDeletePayment(orderId: string, paymentId: string, expectedVersion: number): Promise<WorkOrder> {
+  const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(orderId)}/payments/${encodeURIComponent(paymentId)}`, {
+    method: 'DELETE', body: JSON.stringify({ expectedVersion }),
+  });
+  return asOrder(body.order);
+}
 export async function apiAddPayment(id: string, payment: NewPayment, requestId: string): Promise<WorkOrder> {
   const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}/payments`, { method: 'POST', body: JSON.stringify({ ...payment, requestId }) });
   return asOrder(body.order);

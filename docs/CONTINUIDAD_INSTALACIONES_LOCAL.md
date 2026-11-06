@@ -4,6 +4,8 @@ El módulo está conservado en la rama **local** `feature/instalaciones-local`, 
 
 Actualización del04/11: el módulo ya se retomó y quedó guardado localmente en `332e20d` con main579d2ce integrado y pruebas aprobadas; su guía actual está en esa rama. Ahora main recibe por separado la corrección de bandejas agrupadas por OT. Antes de continuar Instalaciones, integrar este nuevo main HACIA la rama local; preservar el módulo, su contexto y sus pruebas. La decisión63 de main corresponde a la agrupación; conciliar la numeración coincidente de decisiones locales al fusionar.
 
+El06/11 main incorpora además eliminación administrativa de abonos desde Corregir, con auditoría, recálculo y protección de reenvíos (decisión64). Conservarla al integrar main hacia la rama local. No habilita publicar el módulo de Instalaciones ni ejecutar015 en Supabase. Contador productivo actualizado62/35; el módulo local sigue sin contarse como entrega aceptada.
+
 Antes de retomar:
 
 1. Comprobar que el trabajo productivo está guardado y que el árbol está limpio.

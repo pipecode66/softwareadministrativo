@@ -4,7 +4,7 @@ const dataDir = `.data/e2e-api-${process.pid}`;
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['**/api-e2e.spec.ts', '**/queues-api.spec.ts'],
+  testMatch: ['**/api-e2e.spec.ts', '**/queues-api.spec.ts', '**/payments-api.spec.ts'],
   fullyParallel: false,
   workers: 1,
   timeout: 90_000,
