@@ -87,6 +87,78 @@ beforeEach(async()=>{
 });
 afterAll(async()=>{await db?.close();});
 
+describe('Administrador de Instaladores',()=>{
+  it('Adminmaster puede crear el rol y éste gestiona programación, equipos, excepciones y evidencias sin dinero',async()=>{
+    const email=`manager-${randomUUID()}@example.test`;
+    const createdUser=await post('/users',{name:'Coordinación de instalaciones',email,
+      role:'ADMIN_INSTALADORES',active:true,password:PASSWORD});
+    expect(createdUser.status,JSON.stringify(createdUser.body)).toBe(201);
+    expect(createdUser.body.user).toMatchObject({role:'ADMIN_INSTALADORES',mustChangePassword:true});
+    const initial=await login(email);
+    const changed=await post('/auth/password',{currentPassword:PASSWORD,newPassword:'Clave personal de coordinación 2026!'},initial);
+    expect(changed.status,JSON.stringify(changed.body)).toBe(200);
+    const manager=sessionOf(changed);
+    expect(manager.user).toMatchObject({role:'ADMIN_INSTALADORES',mustChangePassword:false});
+    const ready=await readyOrder();
+    const available=await get('/installations',manager);
+    expect(available.status).toBe(200);expect(available.body.availableOrders.map((row:{id:string})=>row.id)).toContain(ready.id);
+    expect(available.body.installers.map((row:{id:string})=>row.id)).toEqual(expect.arrayContaining([installer.user.id,other.user.id]));
+    expect(available.body.installers.map((row:{id:string})=>row.id)).not.toContain(manager.user.id);
+    expect(available.body.performance).toBeInstanceOf(Array);
+    const team=await post('/installations/teams',{requestId:randomUUID(),name:'Cuadrilla coordinada',
+      leaderId:installer.user.id,memberIds:[installer.user.id,other.user.id]},manager);
+    expect(team.status).toBe(201);
+    const scheduled=await post('/installations',schedule(ready.id,{installerId:undefined,teamId:team.body.team.id}),manager);
+    expect(scheduled.status,JSON.stringify(scheduled.body)).toBe(201);
+    let row=scheduled.body.installation as Installation;
+    const correction=await action(row,'edit-details',{address:'Carrera 30 # 15-40',contactName:'Nuevo contacto',
+      contactPhone:'3007654321',instructions:'Usar el acceso lateral.',reason:'Datos confirmados por el cliente.'},manager);
+    expect(correction.status).toBe(200);row=correction.body.installation;
+    const postponed=await action(row,'postpone',{reason:'Reprogramación por coordinación.'},manager);
+    expect(postponed.status).toBe(200);row=postponed.body.installation;
+    const reassigned=await action(row,'assign',{installerId:installer.user.id,reason:'Responsable individual para nueva visita.'},manager);
+    expect(reassigned.status).toBe(200);row=reassigned.body.installation;
+    const rescheduled=await action(row,'reschedule',{scheduledStartAt:new Date().toISOString(),
+      scheduledEndAt:new Date(Date.now()+7200000).toISOString(),reason:'Horario confirmado con el cliente.'},manager);
+    expect(rescheduled.status).toBe(200);row=rescheduled.body.installation;
+    const exception=await action(row,'authorize-location-exception',{reason:'Teléfono sin señal GPS, visita verificada por coordinación.'},manager);
+    expect(exception.status).toBe(200);row=await start(exception.body.installation);
+    const saved=await photo(row);expect(saved.status).toBe(201);row=saved.body.installation;
+    expect((await get(saved.body.evidence.url.replace(API,''),manager)).status).toBe(200);
+    const detail=await get(`/installations/${row.id}`,manager);
+    expect(detail.status).toBe(200);
+    expect(detail.body.events.find((entry:{action:string})=>entry.action==='authorize-location-exception').actor)
+      .toMatchObject({id:manager.user.id,role:'ADMIN_INSTALADORES'});
+    expect(JSON.stringify(detail.body)).not.toMatch(/unitValue|lineTotal|financials|payments|reteFuente|reteIva|collectible|balance/);
+    const another=await create({installerId:other.user.id});
+    const all=await get('/installations',manager);
+    expect(all.body.items.map((entry:{id:string})=>entry.id)).toEqual(expect.arrayContaining([row.id,another.id]));
+    expect(all.body.metrics.inProgress).toBe(1);
+    const editedTeam=await request(app).patch(`${API}/installations/teams/${team.body.team.id}`).set('Origin',ORIGIN)
+      .set('Cookie',manager.cookie).set('X-CSRF-Token',manager.csrf)
+      .send({requestId:randomUUID(),version:team.body.team.version,name:'Cuadrilla archivada',active:false});
+    expect(editedTeam.status).toBe(200);expect(editedTeam.body.team.active).toBe(false);
+    expect((await get('/installations/teams',manager)).body.items[0].name).toBe('Cuadrilla archivada');
+  });
+
+  it('no suplanta asistencia, fotografías ni cierre ni puede asignarse como instalador',async()=>{
+    const manager=await actor('ADMIN_INSTALADORES','Coordinador de campo');
+    let row=await create();
+    expect((await action(row,'arrive',{location:location()},manager)).status).toBe(403);
+    expect((await action(row,'assign',{installerId:manager.user.id,reason:'Intento de asignación como instalador.'},manager)).body.error.code)
+      .toBe('INSTALLER_UNAVAILABLE');
+    row=await start(row);
+    for(const [name,details] of [
+      ['pause',{kind:'REST'}],['resume',{}],['checkout',{location:location()}],
+      ['complete',{location:location(),result:'Intento administrativo',checklist:{mounted:true,electrical:'VERIFIED'},photoId:randomUUID()}],
+    ] as [string,Record<string,unknown>][]) expect((await action(row,name,details,manager)).status).toBe(403);
+    const upload=await post(`/installations/${row.id}/evidence`,{requestId:randomUUID(),version:row.version,
+      imageBase64:JPEG.toString('base64')},manager);
+    expect(upload.status).toBe(403);
+    expect((await get(`/installations/${row.id}`,manager)).body.installation.version).toBe(row.version);
+  });
+});
+
 describe('Instalaciones: correcciones administrativas de la OT',()=>{
   async function editParent(row:Installation,addWork=false,requiresInstallation=true) {
     const parent=(await get(`/orders/${row.orderId}`)).body.order;

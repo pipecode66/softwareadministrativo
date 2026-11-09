@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { CheckCircle2, CircleAlert, X } from 'lucide-react';
 import type { AppData, Client, OrderAction, OrderInput, User, WorkOrder } from '../domain/types';
-import { createWorkOrder, editWorkOrder, recordPayment, transitionWorkOrder, validateClient } from '../domain/service';
+import { createWorkOrder, deleteWorkOrderPayment, editWorkOrder, recordPayment, transitionWorkOrder, validateClient } from '../domain/service';
 import { financials, isAdmin, ROLE_LABELS } from '../domain/utils';
 import {
-  apiAddPayment, apiCorrectPayment, apiBulkPayment, apiCertificateReport, apiSetCertificates, apiChangePassword, apiCreateOrder, apiCreateUser, apiDeleteClient, apiListClients, apiListOrders, apiListUsers, apiLogin, apiLogout, apiResetPassword,
+  apiAddPayment, apiCorrectPayment, apiDeletePayment, apiBulkPayment, apiCertificateReport, apiSetCertificates, apiChangePassword, apiCreateOrder, apiCreateUser, apiDeleteClient, apiListClients, apiListOrders, apiListUsers, apiLogin, apiLogout, apiResetPassword,
   apiMaterialReport, apiPortfolioReport, apiSalesReport, apiSaveClient, apiSession, apiTransitionOrder, apiUpdateOrder, apiUpdateUser,
   ApiRequestError, forgetApiSession, usingApi,
 } from './api';
@@ -32,6 +32,7 @@ interface AppContextValue {
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   createOrder: (input: OrderInput) => Promise<WorkOrder>; updateOrder: (id: string, input: OrderInput, expectedVersion?: number) => Promise<void>;
   correctPayment: (orderId: string, paymentId: string, payment: PaymentCorrection, expectedVersion: number) => Promise<void>;
+  deletePayment: (orderId: string, paymentId: string, expectedVersion: number) => Promise<void>;
   addPayment: (id: string, payment: NewPayment) => Promise<void>;
   bulkPayment: (input: { clientId: string; selectedOrderIds: string[] } & NewPayment, requestId: string) => Promise<BulkPaymentResult>;
   transitionOrder: (id: string, action: OrderAction, details?: { date?: string; note?: string; receivedByWorkshop?: string; workshopNotes?: string }) => Promise<void>;
@@ -161,7 +162,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const [users, clients, remoteOrders] = await remote(() => Promise.all([
         current.role === 'ADMINMASTER' ? apiListUsers() : Promise.resolve([current]),
         isAdmin(current.role) || current.role === 'DISENO' || current.role === 'APOYO_COMERCIAL' ? apiListClients() : Promise.resolve([]),
-        current.role === 'APOYO_COMERCIAL' || current.role === 'INSTALADOR' ? Promise.resolve({ orders: [], clients: [] }) : apiListOrders(),
+        current.role === 'APOYO_COMERCIAL' || current.role === 'INSTALADOR' || current.role === 'ADMIN_INSTALADORES' ? Promise.resolve({ orders: [], clients: [] }) : apiListOrders(),
       ]));
       if (epoch !== sessionEpoch.current) return;
       const previousOrders = dataRef.current.orders;
@@ -268,6 +269,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (financials(updated).balance < 0) throw new Error('Los pagos no pueden superar el total de la OT.');
         return updated;
       });
+    },
+    async deletePayment(orderId, paymentId, expectedVersion) {
+      if (usingApi) {
+        const updated = await remote(() => apiDeletePayment(orderId, paymentId, expectedVersion));
+        replaceData({ ...dataRef.current, orders:dataRef.current.orders.map(order => order.id === orderId ? preserveCreator(order, updated) : order) });
+        return;
+      }
+      modifyOrder(orderId, (order, _current, account) => deleteWorkOrderPayment(account, order, paymentId, expectedVersion));
     },
     async addPayment(id, payment) {
       if (usingApi) {

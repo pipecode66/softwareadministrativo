@@ -596,5 +596,84 @@ test('trazabilidad: una reapertura conserva resultado, excepción GPS y fotograf
   } finally { await own.context.close(); }
 });
 
+test('Administrador de Instaladores se crea desde Usuarios y sólo accede a gestión de Instalaciones',async({page,browser},testInfo)=>{
+  test.setTimeout(120_000);
+  const admin=await adminSession(page);
+  const owner=await newInstaller(admin);
+  const order=await newOrder(admin);
+  const email=`admin-instalaciones-${randomUUID()}@example.test`;
+  await page.goto('/settings/users');
+  await page.getByRole('button',{name:'Nuevo usuario',exact:true}).click();
+  const userForm=page.getByRole('dialog',{name:'Nuevo usuario',exact:true});
+  await userForm.getByLabel('Nombre',{exact:true}).fill('Responsable de Instalaciones');
+  await userForm.getByLabel('Correo',{exact:true}).fill(email);
+  await userForm.getByLabel('Perfil',{exact:true}).selectOption({label:'Administrador de Instaladores'});
+  await userForm.getByLabel('Contraseña temporal',{exact:true}).fill(TEMPORARY_PASSWORD);
+  const createdResponse=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/users'));
+  await userForm.getByRole('button',{name:'Guardar usuario',exact:true}).click();
+  const created=await json(await createdResponse,201);expect(created.user.role).toBe('ADMIN_INSTALADORES');
+  await expect(userForm).toHaveCount(0);
+  const context=await browser.newContext({baseURL:ORIGIN,viewport:{width:1440,height:1000},locale:'es-CO',timezoneId:'America/Bogota'});
+  try {
+    const manager=await context.newPage();
+    const administrativeRequests:string[]=[];
+    manager.on('request',request=>{
+      if(/\/api\/v1\/(orders|clients|users)(?:[/?]|$)/.test(request.url())) administrativeRequests.push(request.url());
+    });
+    await manager.goto('/login');
+    await manager.getByLabel('Usuario o correo',{exact:true}).fill(email);
+    await manager.getByLabel('Contraseña',{exact:true}).fill(TEMPORARY_PASSWORD);
+    await manager.getByRole('button',{name:'Ingresar al sistema',exact:true}).click();
+    await expect(manager).toHaveURL(/\/change-password$/);
+    await manager.getByLabel('Contraseña actual',{exact:true}).fill(TEMPORARY_PASSWORD);
+    await manager.getByLabel('Nueva contraseña',{exact:true}).fill(PERSONAL_PASSWORD);
+    await manager.getByLabel('Confirmar nueva contraseña',{exact:true}).fill(PERSONAL_PASSWORD);
+    await manager.getByRole('button',{name:'Guardar nueva contraseña',exact:true}).click();
+    await expect(manager).toHaveURL(/\/installations$/);
+    await expect(manager.getByRole('heading',{name:'Gestión de Instalaciones',exact:true})).toBeVisible();
+    await expect(manager.locator('.app-sidebar nav[aria-label="Navegación principal"] a')).toHaveCount(1);
+    await expect(manager.locator('.app-sidebar nav').getByRole('link',{name:'Instalaciones',exact:true})).toBeVisible();
+    expect(administrativeRequests).toEqual([]);
+    await manager.getByRole('button',{name:'Nueva instalación',exact:true}).click();
+    const form=manager.getByRole('dialog',{name:'Nueva instalación',exact:true});
+    await form.getByLabel('OT lista para instalar',{exact:true}).selectOption(order.id);
+    await form.getByLabel('Instalador responsable',{exact:true}).selectOption(owner.id);
+    const localInput=(offset:number)=>new Date(Date.now()-5*3600000+offset).toISOString().slice(0,16);
+    await form.getByLabel('Inicio programado',{exact:true}).fill(localInput(0));
+    await form.getByLabel('Finalización programada',{exact:true}).fill(localInput(7200000));
+    await form.getByLabel('Dirección de instalación',{exact:true}).fill('Carrera 15 # 20-30, Bucaramanga');
+    const scheduleResponse=manager.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/installations'));
+    await form.getByRole('button',{name:'Programar instalación',exact:true}).click();
+    const scheduled=await json(await scheduleResponse,201);expect(scheduled.installation.installerId).toBe(owner.id);
+    const detail=manager.getByRole('dialog',{name:`OT #${String(order.number).padStart(4,'0')} · Instalación`,exact:true});
+    await expect(detail.getByRole('button',{name:'Reasignar responsable',exact:true})).toBeVisible();
+    await expect(detail.getByRole('link',{name:'Abrir OT completa',exact:true})).toHaveCount(0);
+    await expect(detail.getByRole('button',{name:'Registrar llegada',exact:true})).toHaveCount(0);
+    await expect(detail.getByRole('button',{name:'Finalizar instalación',exact:true})).toHaveCount(0);
+    noFinancialFields(scheduled);
+    await detail.getByRole('button',{name:'Cerrar',exact:true}).click();
+    await noHorizontalOverflow(manager);
+    await manager.screenshot({path:testInfo.outputPath('admin-instaladores-1440.png'),fullPage:true});
+    await manager.setViewportSize({width:390,height:844});await noHorizontalOverflow(manager);
+    await manager.screenshot({path:testInfo.outputPath('admin-instaladores-390.png'),fullPage:true});
+    for(const path of ['/orders','/orders/new','/clients','/reports','/portfolio','/history','/design','/printing','/workshop','/settings/users']) {
+      await manager.goto(path);
+      await expect(manager.getByRole('heading',{name:'Acceso restringido',exact:true})).toBeVisible();
+    }
+    const sessionBody=await json(await context.request.get(`${API}/auth/session`));
+    const headers={Origin:ORIGIN,'X-CSRF-Token':sessionBody.csrfToken};
+    const day=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+    for(const path of ['/orders','/clients','/users','/history','/work/activities','/work/queue?area=WORKSHOP',
+      `/reports/sales?from=${day}&to=${day}`,`/reports/portfolio?cutoff=${day}`,`/reports/materials?from=${day}&to=${day}`]) {
+      const response=await context.request.get(`${API}${path}`);expect(response.status(),path).toBe(403);
+    }
+    expect((await context.request.get(`${API}/orders/${order.id}`)).status()).toBe(404);
+    expect((await context.request.get(`${API}/work/orders/${order.id}`)).status()).toBe(404);
+    expect((await context.request.post(`${API}/installations/${scheduled.installation.id}/actions`,{headers,
+      data:{requestId:randomUUID(),version:scheduled.installation.version,action:'arrive'}})).status()).toBe(403);
+    await manager.goto('/');await expect(manager).toHaveURL(/\/installations$/);
+  } finally {await context.close();}
+});
+
 // All data belongs to the ephemeral PGlite server configured by playwright.api.config.ts.
 // No existing production accounts, orders, photographs or locations are accessed.

@@ -64,6 +64,11 @@ export const activityListSchema = z.object({
   page: page.default(1),
   pageSize: page.max(100).default(50),
 }).strict();
+export const workQueueSchema = z.object({
+  area: z.enum(['DESIGN', 'PRINTING', 'WORKSHOP', 'EXTERNAL']),
+  page: page.default(1),
+  pageSize: page.max(100).default(12),
+}).strict();
 export const activityParamsSchema = z.object({ id: z.uuid() }).strict();
 export const workOrderParamsSchema = z.object({ orderId: z.uuid() }).strict();
 export const assignSchema = z.object({ assignedUserId: z.uuid() }).strict();

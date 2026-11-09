@@ -32,7 +32,7 @@ function Guard({roles,children,allowPasswordChange=false}:{roles?:Role[];childre
   if(roles&&!roles.includes(user.role))return <EmptyState title="Acceso restringido" description="Tu perfil no tiene permisos para consultar esta sección." action={<Link className="btn btn-secondary" to="/">Volver a mi inicio</Link>}/>;
   return children;
 }
-function Home(){const {user}=useApp();return user?.role==='INSTALADOR'?<Navigate to="/installations" replace/>:user?.role==='APOYO_COMERCIAL'?<Navigate to="/orders/new" replace/>:user?.role==='DISENO'?<Navigate to="/design" replace/>:user?.role==='IMPRESION'?<Navigate to="/printing" replace/>:user?.role==='TALLER'?<Navigate to="/workshop" replace/>:<DashboardPage/>;}
+function Home(){const {user}=useApp();return user?.role==='INSTALADOR'||user?.role==='ADMIN_INSTALADORES'?<Navigate to="/installations" replace/>:user?.role==='APOYO_COMERCIAL'?<Navigate to="/orders/new" replace/>:user?.role==='DISENO'?<Navigate to="/design" replace/>:user?.role==='IMPRESION'?<Navigate to="/printing" replace/>:user?.role==='TALLER'?<Navigate to="/workshop" replace/>:<DashboardPage/>;}
 function Loading(){return <div className="page-stack loading-screen" aria-busy="true" aria-label="Cargando pantalla"><div className="skeleton skeleton-heading"/><div className="grid-3">{[1,2,3].map(n=><div className="skeleton skeleton-card" key={n}/>)}</div><div className="skeleton skeleton-table"/></div>;}
 export class AppErrorBoundary extends Component<{children:ReactNode},{failed:boolean}>{
   state={failed:false};static getDerivedStateFromError(){return {failed:true};}componentDidCatch(error:Error,_info:ErrorInfo){console.error('Intermedios: error de interfaz',error);}
@@ -58,7 +58,7 @@ export default function App(){return <AppErrorBoundary><AppProvider><BrowserRout
     <Route path="design" element={<Guard roles={[...operationsAdmins,'DISENO']}><QueuePage department="DISENO"/></Guard>}/>
     <Route path="printing" element={<Guard roles={[...operationsAdmins,'IMPRESION']}><QueuePage department="IMPRESION"/></Guard>}/>
     <Route path="workshop" element={<Guard roles={[...operationsAdmins,'TALLER']}><QueuePage department="TALLER"/></Guard>}/>
-    <Route path="installations" element={<Guard roles={[...operationsAdmins,'INSTALADOR']}><InstallationsPage/></Guard>}/>
+    <Route path="installations" element={<Guard roles={[...operationsAdmins,'INSTALADOR','ADMIN_INSTALADORES']}><InstallationsPage/></Guard>}/>
     <Route path="settings/users" element={<Guard roles={['ADMINMASTER']}><UsersPage/></Guard>}/>
     <Route path="*" element={<EmptyState title="Esta página no existe" description="Comprueba la dirección o vuelve al inicio." action={<Link className="btn btn-primary" to="/">Ir al inicio</Link>}/>}/>
   </Route>

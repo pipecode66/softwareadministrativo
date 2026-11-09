@@ -11,7 +11,7 @@ import {
   type Installation, type InstallationAction, type InstallationEvent, type InstallationList,
   type InstallationFilterStatus, type InstallationLocation, type InstallationMetrics, type InstallationPersonalStatus, type InstallationStatus, type InstallationTeam, type NewInstallation,
 } from '../data/installations';
-import { formatDate, formatNumber, initials, isAdmin, ROLE_LABELS } from '../domain/utils';
+import { formatDate, formatNumber, initials, isAdmin, isInstallationAdmin, ROLE_LABELS } from '../domain/utils';
 import type { Role } from '../domain/types';
 import './installations.css';
 
@@ -84,7 +84,7 @@ export function InstallationsPage() {
 
 function ConnectedInstallations() {
   const { user } = useApp();
-  const admin = isAdmin(user?.role);
+  const admin = isInstallationAdmin(user?.role);
   const online = useConnectivity();
   const [params, setParams] = useSearchParams();
   const query = (params.get('q') || '').slice(0, 200);
@@ -496,7 +496,7 @@ function InstallationDetails({ id, admin, installers, teams, onClose, onChanged 
     <div className="stack installation-detail" data-testid="installation-detail" aria-busy={Boolean(busy) || loading}>
       {loading ? <p role="status">Consultando la instalación…</p> : installation && <>
         <div className="installation-detail-heading"><InstallationState installation={installation} admin={admin} /><span className="installation-version">Versión {installation.version} · Actualizada {formatDate(installation.updatedAt, true)}</span></div>
-        <div className="installation-detail-client"><h3>{installation.clientName}</h3><p>{installation.description}</p>{admin && <Link className="link" to={`/orders/${installation.orderId}`}>Abrir OT completa<ArrowRight size={14} /></Link>}</div>
+        <div className="installation-detail-client"><h3>{installation.clientName}</h3><p>{installation.description}</p>{isAdmin(user?.role) && <Link className="link" to={`/orders/${installation.orderId}`}>Abrir OT completa<ArrowRight size={14} /></Link>}</div>
         {Boolean(installation.products?.length) && <section className="installation-members"><h4><ClipboardCheck size={18} />Trabajos de la OT</h4><ul>{installation.products.map(product => <li key={product.id}><strong>{product.description}</strong><p>Cantidad: {formatNumber(product.quantity)}</p>{product.materials.map(material => <p key={material.id}>{material.material}: {measureText(material.length)} m × {measureText(material.width)} m · {measureText(material.areaM2)} m²</p>)}</li>)}</ul></section>}
         {!installation.productionReady && !finished && <p className="form-alert" role="alert">La OT tiene producción pendiente. No se puede avanzar la instalación hasta que termine.</p>}
         <dl className="installation-detail-facts"><div><dt>Responsable principal</dt><dd>{installation.installerName || 'Sin asignar'}</dd></div><div><dt>Inicio programado</dt><dd>{formatDate(installation.scheduledStartAt, true)}</dd></div><div><dt>Finalización programada</dt><dd>{formatDate(installation.scheduledEndAt, true)}</dd></div><div><dt>Tiempo activo registrado</dt><dd>{durationText(installation.netWorkMinutes)}</dd></div>{installation.startedAt && <div><dt>Primera llegada</dt><dd>{formatDate(installation.startedAt, true)}</dd></div>}{installation.completedAt && <div><dt>Finalización</dt><dd>{formatDate(installation.completedAt, true)}</dd></div>}</dl>

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Database } from '../db/types.js';
-import { activityListSchema, activityParamsSchema, assignSchema, completeActivitySchema, designDetailsSchema, laserMinutesSchema, workOrderParamsSchema } from './schemas.js';
-import { changeActivity, designerLoad, designerOptions, editDesignDetails, listActivities, saveLaserMinutes, workOrder } from './service.js';
+import { activityListSchema, activityParamsSchema, assignSchema, completeActivitySchema, designDetailsSchema, laserMinutesSchema, workOrderParamsSchema, workQueueSchema } from './schemas.js';
+import { changeActivity, designerLoad, designerOptions, editDesignDetails, listActivities, listWorkQueue, saveLaserMinutes, workOrder } from './service.js';
 
 const emptyBody = z.object({}).strict();
 
@@ -11,6 +11,9 @@ export function createWorkRouter(db: Database): Router {
   const router = Router();
   router.get('/activities', async (req, res) => {
     res.json(await listActivities(db, req.auth!, activityListSchema.parse(req.query)));
+  });
+  router.get('/queue', async (req, res) => {
+    res.json(await listWorkQueue(db, req.auth!, workQueueSchema.parse(req.query)));
   });
   router.get('/designers/load', async (req, res) => {
     res.json(await designerLoad(db, req.auth!));

@@ -46,6 +46,14 @@
 .ops-activity-card{display:grid;align-content:start;gap:12px;min-width:0;padding:16px;border:1px solid #e2e8f0;border-left:3px solid #eab308;border-radius:10px;background:#fff;box-shadow:0 1px 2px #0f172a05}
 .ops-activity-card.is-in_progress{border-left-color:#3b82f6;background:#f8fbff}
 .ops-activity-card.is-completed{border-left-color:#22c55e;background:#f8fdf9}
+.ops-order-products{display:grid;align-content:start;gap:12px;min-width:0}
+.ops-product-activity{display:grid;align-content:start;gap:10px;min-width:0;padding:12px;border:1px solid #e2e8f0;border-radius:8px;background:#ffffffb3}
+.ops-product-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 10px;min-width:0;color:#64748b;font-size:10px;font-weight:700}
+.ops-product-status{padding:3px 6px;border-radius:5px;background:#f1f5f9;color:#475569;white-space:nowrap}
+.ops-product-activity.is-in_progress .ops-product-status{background:#dbeafe;color:#1d4ed8}
+.ops-product-activity.is-completed .ops-product-status{background:#dcfce7;color:#166534}
+.ops-order-footer{padding-top:11px;border-top:1px solid #e2e8f0}
+.ops-product-activity .ops-activity-actions:empty{display:none}
 .ops-activity-top{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
 .ops-activity-top>.cell-title{min-width:0;overflow-wrap:anywhere}
 .ops-activity-card h3{margin:0;color:#172033;font-size:14px;line-height:1.55;overflow-wrap:anywhere}

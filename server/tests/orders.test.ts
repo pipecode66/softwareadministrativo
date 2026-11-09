@@ -112,6 +112,11 @@ function correct(order: OrderView, paymentId: string, fields: Record<string, unk
     .send({expectedVersion:order.version,date:dateOnly(),amount:10000,method:'EFECTIVO',...fields});
 }
 
+function removePayment(order: OrderView, paymentId: string, session = admin, fields: Record<string, unknown> = {}) {
+  return request(app).delete(`${API}/orders/${order.id}/payments/${paymentId}`).set('Origin',ORIGIN)
+    .set('Cookie',session.cookie).set('X-CSRF-Token',session.csrf).send({expectedVersion:order.version,...fields});
+}
+
 async function move(order: OrderView, action: string, session = admin, details: Record<string, unknown> = {}): Promise<OrderView> {
   const actionDetails = action === 'finishPrinting' && details.receivedByWorkshop === undefined
     ? { ...details, receivedByWorkshop: 'Carlos Taller' } : details;
@@ -820,5 +825,98 @@ describe('Corrección administrativa de pagos',()=>{
     expect(Number(header.amount)).toBe(140000);
     expect((await post('/orders/bulk-payments',payload)).status).toBe(200);
     expect((await db.query('SELECT id FROM payments')).rows).toHaveLength(2);
+  });
+});
+
+describe('Eliminación administrativa de abonos',()=>{
+  it.each(['ADMINMASTER','ADMIN_GENERAL'] as Role[])('%s elimina un abono de una OT cerrada y actualiza saldo, reportes y auditoría',async role=>{
+    let order=(await payment(await create({route:'WORKSHOP_ONLY',printing:undefined}),20000)).body.order as OrderView;
+    order=(await payment(order,30000,admin,{method:'DAVIVIENDA'})).body.order;
+    await db.query("UPDATE orders SET status='COMPLETED',closed_at=clock_timestamp() WHERE id=$1",[order.id]);
+    order=(await get(`/orders/${order.id}`)).body.order;
+    const [target,other]=order.payments as Array<{id:string}>;
+    const administrator=await actor(role);
+    const deleted=await removePayment(order,target.id,administrator);expect(deleted.status,JSON.stringify(deleted.body)).toBe(200);
+    expect(deleted.body.order).toMatchObject({number:order.number,status:'COMPLETED',closedAt:order.closedAt,
+      financials:{paid:30000,balance:70000},payments:[{id:other.id,amount:30000}]});
+    expect((await db.query('SELECT id FROM payments WHERE id=$1',[target.id])).rows).toHaveLength(0);
+    const history=(await get(`/history?orderId=${order.id}`)).body.items;
+    const audit=history.find((item:{action:string})=>item.action==='paymentDeletion');
+    expect(audit.actor.id).toBe(administrator.user.id);
+    expect(new Date(audit.occurredAt).getTime()).toBeGreaterThan(Date.now()-10000);
+    expect(audit.details.changes).toEqual(expect.arrayContaining([
+      expect.objectContaining({label:'Pago eliminado',before:target.id,sensitive:true}),
+      expect.objectContaining({label:'Valor recibido eliminado',before:20000,sensitive:true}),
+      expect.objectContaining({label:'Fecha del pago eliminado',before:dateOnly(),sensitive:true}),
+      expect.objectContaining({label:'Medio del pago eliminado',before:'EFECTIVO',sensitive:true}),
+    ]));
+    const report=await get(`/reports/sales?from=${dateOnly()}&to=${dateOnly()}`);
+    expect(report.body.totals).toMatchObject({received:30000,base:100000});
+    const portfolio=await get(`/reports/portfolio?cutoff=${dateOnly()}`);
+    expect(portfolio.body.totalBalance).toBe(70000);
+    const next=await create();expect(next.number).toBe(order.number+1);
+  });
+  it('rechaza versiones antiguas, identificadores ajenos y datos inválidos antes de borrar',async()=>{
+    let order=(await payment(await create(),20000)).body.order as OrderView;
+    const stale={...order};const target=(order.payments as Array<{id:string}>)[0];
+    order=(await payment(order,5000)).body.order;
+    expect((await removePayment(stale,target.id)).status).toBe(409);
+    const foreign=(await payment(await create(),4000)).body.order as OrderView;
+    expect((await removePayment(order,(foreign.payments as Array<{id:string}>)[0].id)).status).toBe(404);
+    expect((await removePayment(order,missingId)).status).toBe(404);
+    expect((await removePayment(order,target.id,admin,{expectedVersion:0})).status).toBe(400);
+    expect((await removePayment(order,target.id,admin,{amount:0})).status).toBe(400);
+    expect((await db.query('SELECT id FROM payments WHERE order_id=$1',[order.id])).rows).toHaveLength(2);
+  });
+  it.each(['APOYO_COMERCIAL','DISENO','IMPRESION','TALLER'] as Role[])('%s no puede eliminar pagos por petición directa',async role=>{
+    const order=(await payment(await create(),20000)).body.order as OrderView;
+    const target=(order.payments as Array<{id:string}>)[0];
+    expect((await removePayment(order,target.id,await actor(role))).status).toBe(403);
+    expect((await db.query('SELECT amount FROM payments WHERE id=$1',[target.id])).rows[0].amount).toBe('20000.00');
+  });
+  it('un reenvío de la eliminación confirma el resultado sin duplicar eventos ni recrear el abono original',async()=>{
+    const created=await create();const requestId=randomUUID();
+    const order=(await payment(created,20000,admin,{requestId})).body.order as OrderView;
+    const target=(order.payments as Array<{id:string}>)[0];
+    const first=await removePayment(order,target.id);expect(first.status).toBe(200);
+    const replay=await removePayment(order,target.id);expect(replay.status).toBe(200);
+    expect(replay.body.order.version).toBe(first.body.order.version);
+    expect((await db.query("SELECT id FROM order_events WHERE order_id=$1 AND action='paymentDeletion'",[order.id])).rows).toHaveLength(1);
+    const oldRequest=await payment(first.body.order,20000,admin,{requestId});
+    expect(oldRequest.status).toBe(409);expect(oldRequest.body.error.message).toContain('fue eliminado');
+    expect((await db.query('SELECT id FROM payments WHERE order_id=$1',[order.id])).rows).toHaveLength(0);
+    expect((await removePayment(first.body.order,target.id,await actor('ADMIN_GENERAL'))).status).toBe(404);
+    expect((await payment(first.body.order,15000)).status).toBe(201);
+  });
+  it('un multiabono conserva pagos ajenos, concilia su importe y nunca revive asignaciones eliminadas',async()=>{
+    const first=await create(),second=await create();
+    const payload={clientId,selectedOrderIds:[first.id,second.id],date:dateOnly(),amount:150000,method:'EFECTIVO',requestId:randomUUID()};
+    const batch=await post('/orders/bulk-payments',payload);expect(batch.status).toBe(201);
+    const originalFirst=(await get(`/orders/${first.id}`)).body.order as OrderView;
+    const secondPaid=(await get(`/orders/${second.id}`)).body.order as OrderView;
+    const removed=await removePayment(secondPaid,(secondPaid.payments as Array<{id:string}>)[0].id);
+    expect(removed.status).toBe(200);expect(removed.body.order.financials).toMatchObject({paid:0,balance:100000});
+    expect((await get(`/orders/${first.id}`)).body.order).toMatchObject({version:originalFirst.version,payments:originalFirst.payments});
+    expect((await db.query('SELECT amount FROM bulk_payment_batches WHERE id=$1',[batch.body.batchId])).rows[0].amount).toBe('100000.00');
+    const partialReplay=await post('/orders/bulk-payments',payload);expect(partialReplay.status).toBe(200);
+    expect(partialReplay.body).toMatchObject({amount:100000,replayed:true,allocations:[{orderId:first.id,amount:100000}]});
+    const final=await removePayment(originalFirst,(originalFirst.payments as Array<{id:string}>)[0].id);expect(final.status).toBe(200);
+    expect((await db.query('SELECT id FROM bulk_payment_batches WHERE id=$1',[batch.body.batchId])).rows).toHaveLength(1);
+    const emptyReplay=await post('/orders/bulk-payments',payload);expect(emptyReplay.status).toBe(200);
+    expect(emptyReplay.body).toMatchObject({batchId:batch.body.batchId,amount:0,allocations:[],remaining:0,replayed:true});
+    expect((await db.query('SELECT id FROM payments WHERE bulk_batch_id=$1',[batch.body.batchId])).rows).toHaveLength(0);
+    const report=await get(`/reports/sales?from=${dateOnly()}&to=${dateOnly()}`);
+    expect(report.body.totals).toMatchObject({received:0,base:200000});
+  });
+  it('mantiene la clasificación compuesta y oculta el desglose financiero a Diseño',async()=>{
+    const designer=await actor('DISENO');
+    const created=await create({route:'MULTI_AREA',printing:undefined,products:[{description:'Arte',quantity:1,unitValue:100000,
+      materials:[],activities:[{area:'DESIGN',assignedUserId:designer.user.id}]}]});
+    const paid=(await payment(created,20000)).body.order as OrderView;
+    const deleted=await removePayment(paid,(paid.payments as Array<{id:string}>)[0].id);expect(deleted.status).toBe(200);
+    expect(deleted.body.order.isComposite).toBe(true);
+    const visible=(await get(`/history?orderId=${paid.id}`,designer)).body.items;
+    const audit=visible.find((item:{action:string})=>item.action==='paymentDeletion');
+    expect(audit.details.changes).toEqual([]);
   });
 });

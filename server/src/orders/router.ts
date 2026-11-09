@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Database } from '../db/types.js';
-import { bulkPaymentSchema, categories, createSchema, dateSchema, editSchema, paymentSchema, paymentCorrectionSchema, saveDraftSchema, statuses, transitionSchema } from './domain.js';
-import { allocateBulkPayment, correctPayment, createOrder, deleteOrderDraft, editOrder, getOrder, getOrderDraft, listOrders, recordPayment, saveOrderDraft, transitionOrder } from './service.js';
+import { bulkPaymentSchema, categories, createSchema, dateSchema, editSchema, paymentSchema, paymentCorrectionSchema, paymentDeletionSchema, saveDraftSchema, statuses, transitionSchema } from './domain.js';
+import { allocateBulkPayment, correctPayment, createOrder, deleteOrderDraft, deletePayment, editOrder, getOrder, getOrderDraft, listOrders, recordPayment, saveOrderDraft, transitionOrder } from './service.js';
 
 const listSchema = z.object({
   page: z.coerce.number().int().min(1).max(1000000).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(50),
@@ -29,6 +29,9 @@ export function createOrdersRouter(db: Database) {
   router.post('/:id/payments', async (req,res) => { const result = await recordPayment(db, req.auth!, z.uuid().parse(req.params.id), paymentSchema.parse(req.body)); res.status(result.replayed ? 200 : 201).json(result); });
   router.patch('/:id/payments/:paymentId', async (req,res) => {
     res.json({ order: await correctPayment(db, req.auth!, z.uuid().parse(req.params.id), z.uuid().parse(req.params.paymentId), paymentCorrectionSchema.parse(req.body)) });
+  });
+  router.delete('/:id/payments/:paymentId', async (req,res) => {
+    res.json({ order: await deletePayment(db, req.auth!, z.uuid().parse(req.params.id), z.uuid().parse(req.params.paymentId), paymentDeletionSchema.parse(req.body)) });
   });
   router.post('/:id/transitions', async (req,res) => { res.json({ order: await transitionOrder(db, req.auth!, z.uuid().parse(req.params.id), transitionSchema.parse(req.body)) }); });
   return router;

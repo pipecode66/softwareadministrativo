@@ -1,4 +1,4 @@
-export type Role = 'ADMINMASTER' | 'ADMIN_GENERAL' | 'APOYO_COMERCIAL' | 'DISENO' | 'IMPRESION' | 'TALLER' | 'INSTALADOR';
+export type Role = 'ADMINMASTER' | 'ADMIN_GENERAL' | 'APOYO_COMERCIAL' | 'DISENO' | 'IMPRESION' | 'TALLER' | 'INSTALADOR' | 'ADMIN_INSTALADORES';
 export type WorkStatus = 'NEW' | 'PENDING_ADMIN_REVIEW' | 'IN_PRINTING' | 'IN_WORKSHOP' | 'IN_EXTERNAL' | 'IN_PRODUCTION' | 'PENDING_INSTALLATION' | 'COMPLETED' | 'INSTALLED';
 export type PaymentStatus = 'PENDING' | 'PARTIAL' | 'PAID' | 'SPECIAL';
 export type PaymentMethod = 'EFECTIVO' | 'BANCOLOMBIA' | 'DAVIVIENDA' | 'LEGACY';
@@ -29,6 +29,11 @@ export interface OrderActivity {
 export interface OrderProduct {
   id?: string; position?: number; description: string; quantity: number; unitValue?: number;
   lineTotal?: number; materials: ProductMaterial[]; activities: OrderActivity[];
+}
+export interface WorkQueueOrder {
+  orderId: string; orderNumber: number;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  activities: OrderActivity[];
 }
 export type OrderProductInput = OrderProduct & { unitValue: number };
 export interface WorkOrder {

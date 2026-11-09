@@ -33,7 +33,8 @@ interface Metrics {
   completedThisMonth:number; inProgress:number; postponed:number;
   onTime:number; scheduledCompleted:number; netWorkMinutes:number;
 }
-const admins:Role[] = ['ADMINMASTER','ADMIN_GENERAL'];
+// This manager role is scoped to Installations, never the application's financial administration.
+const admins:Role[] = ['ADMINMASTER','ADMIN_GENERAL','ADMIN_INSTALADORES'];
 const readers:Role[] = [...admins, 'INSTALADOR'];
 const admin = (role:Role) => admins.includes(role);
 const missing = () => new ApiError(404,'INSTALLATION_NOT_FOUND','No encontramos esta instalación o no está disponible para tu perfil.');

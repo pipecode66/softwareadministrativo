@@ -466,6 +466,93 @@ describe('Productos y trabajo interno', () => {
   });
 });
 
+describe('Bandejas agrupadas por OT', () => {
+  const piece = (index: number) => ({ description: `Trabajo agrupado ${index}`, quantity: 1, unitValue: 1000,
+    materials: [], activities: [{ area: 'DESIGN' }] });
+
+  it('pagina órdenes completas y conserva más actividades que el tamaño de una página sin duplicar ventas', async () => {
+    const small = await create({ value: 1000, products: [piece(1)] });
+    const large = await create({ value: 13000, products: Array.from({ length: 13 }, (_, index) => piece(index + 1)) });
+    const first = await get('/work/queue?area=DESIGN&page=1&pageSize=1');
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ total: 2, page: 1, pageSize: 1,
+      items: [{ orderId: large.id, orderNumber: large.number, status: 'PENDING' }] });
+    expect(first.body.items).toHaveLength(1);
+    expect(first.body.items[0].activities).toHaveLength(13);
+    expect(new Set(first.body.items[0].activities.map((item: { productId: string }) => item.productId)).size).toBe(13);
+    expect(first.body.items[0].activities.every((item: { orderId: string }) => item.orderId === large.id)).toBe(true);
+    const second = await get('/work/queue?area=DESIGN&page=2&pageSize=1');
+    expect(second.body).toMatchObject({ total: 2, items: [{ orderId: small.id }] });
+    expect(second.body.items[0].activities).toHaveLength(1);
+    expect((await get('/work/queue?area=DESIGN&page=3&pageSize=1')).body).toMatchObject({ total: 2, items: [] });
+    expect((await db.query('SELECT id FROM orders')).rows).toHaveLength(2);
+    const sales = await get(`/reports/sales?from=${dateOnly()}&to=${dateOnly()}`);
+    expect(sales.body.totals.base).toBe(14000);
+    // Existing activity consumers keep their own contract and pagination.
+    const activities = await get('/work/activities?area=DESIGN&pageSize=1');
+    expect(activities.body.total).toBe(14);expect(activities.body.items).toHaveLength(1);
+  });
+
+  it('conserva cada avance y sólo termina el área cuando todos sus productos están completos', async () => {
+    const order = await create({ value: 2000, products: [piece(1), piece(2)] });
+    const activityPage = await get(`/work/activities?orderId=${order.id}`);
+    const [first, second] = activityPage.body.items as Activity[];
+    expect((await post(`/work/activities/${first.id}/start`, {})).status).toBe(200);
+    expect((await post(`/work/activities/${first.id}/complete`, {})).status).toBe(200);
+    let response = await get('/work/queue?area=DESIGN');
+    expect(response.body.items[0]).toMatchObject({ orderId: order.id, status: 'IN_PROGRESS' });
+    expect(response.body.items[0].activities.map((item: Activity) => item.status)).toEqual(['COMPLETED', 'PENDING']);
+    const pending = await create({ value: 1000, products: [piece(3)] });
+    response = await get('/work/queue?area=DESIGN');
+    expect(response.body.items.map((item: { orderId: string }) => item.orderId)).toEqual([pending.id, order.id]);
+    expect((await post(`/work/activities/${second.id}/start`, {})).status).toBe(200);
+    expect((await post(`/work/activities/${second.id}/complete`, {})).status).toBe(200);
+    response = await get('/work/queue?area=DESIGN');
+    expect(response.body.items[1]).toMatchObject({ orderId: order.id, status: 'COMPLETED' });
+    expect(response.body.items[1].activities.every((item: Activity) => item.status === 'COMPLETED')).toBe(true);
+  });
+
+  it('agrupa para cada diseñador sin entregar productos ajenos ni precios y conserva estado global del área', async () => {
+    const designer = await actor('DISENO', 'Diseñador principal');
+    const other = await actor('DISENO', 'Otro diseñador');
+    const order = await create({ value: 3000, products: [
+      { ...piece(1), description: 'Producto propio', activities: [{ area: 'DESIGN', assignedUserId: designer.user.id }] },
+      { ...piece(2), description: 'Producto reservado de otro diseñador', activities: [{ area: 'DESIGN', assignedUserId: other.user.id }] },
+      { ...piece(3), description: 'Producto legado sin asignar', activities: [{ area: 'DESIGN', assignedUserId: other.user.id }] },
+    ] });
+    const all = (await get(`/work/activities?orderId=${order.id}`)).body.items as (Activity & { productId: string })[];
+    const orphan = all[2];
+    await db.query('UPDATE order_activities SET assigned_user_id=NULL WHERE id=$1', [orphan.id]);
+    expect((await post(`/work/activities/${all[0].id}/start`, {}, designer)).status).toBe(200);
+    expect((await post(`/work/activities/${all[0].id}/complete`, {}, designer)).status).toBe(200);
+    const own = await get('/work/queue?area=DESIGN', designer);
+    expect(own.body.total).toBe(1);expect(own.body.items[0].status).toBe('IN_PROGRESS');
+    expect(own.body.items[0].activities).toHaveLength(1);
+    expect(own.body.items[0].activities[0]).toMatchObject({ productDescription: 'Producto propio', status: 'COMPLETED' });
+    expect(JSON.stringify(own.body)).not.toMatch(/unitValue|lineTotal|"value"|Producto reservado|Producto legado/);
+    expect((await get('/work/queue?area=PRINTING', designer)).body.items).toHaveLength(0);
+    const general = await actor('ADMIN_GENERAL');
+    expect((await get('/work/queue?area=DESIGN', general)).body.items[0].activities).toHaveLength(3);
+  });
+
+  it('limita Impresión y Taller a su área y rechaza Apoyo Comercial y consultas inválidas', async () => {
+    const order = await create();
+    for (const [role, area] of [['IMPRESION', 'PRINTING'], ['TALLER', 'WORKSHOP']] as const) {
+      const session = await actor(role);
+      const response = await get(`/work/queue?area=${area}`, session);
+      expect(response.status).toBe(200);expect(response.body.total).toBe(1);
+      expect(response.body.items[0]).toMatchObject({ orderId: order.id,
+        activities: [expect.objectContaining({ area, ready: false })] });
+      expect(JSON.stringify(response.body)).not.toMatch(/unitValue|lineTotal|"value"/);
+      expect((await get('/work/queue?area=EXTERNAL', session)).body.items).toHaveLength(0);
+    }
+    expect((await get('/work/queue?area=DESIGN', await actor('APOYO_COMERCIAL'))).status).toBe(403);
+    for (const query of ['', '?area=INVALID', '?area=DESIGN&page=0', '?area=DESIGN&pageSize=101']) {
+      expect((await get(`/work/queue${query}`)).status).toBe(400);
+    }
+  });
+});
+
 describe('Corrección administrativa integral de materiales', () => {
   it('corrige minutos de Corte Láser finalizado y recompone el valor sin reiniciar el trabajo',async()=>{
     const order=await create({route:'PRINT_ONLY',products:[{description:'Corte',quantity:1,unitValue:100000,

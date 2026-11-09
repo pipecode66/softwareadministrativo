@@ -34,6 +34,8 @@ function AppShellContent() {
     {to:'/workshop',label:'Taller',icon:Hammer,group:'Bandejas operativas'},
     {to:'/installations',label:'Instalaciones',icon:MapPin,group:'Bandejas operativas'},
     ...(user?.role === 'ADMINMASTER' ? [{to:'/settings/users',label:'Usuarios',icon:Settings2,group:'Sistema'}] : []),
+  ] : user?.role === 'ADMIN_INSTALADORES' ? [
+    {to:'/installations',label:'Instalaciones',icon:MapPin,group:'Gestión de instalaciones'},
   ] : user?.role === 'INSTALADOR' ? [
     {to:'/installations',label:'Mis instalaciones',icon:MapPin,group:'Trabajo en campo'},
   ] : user?.role === 'DISENO' ? [

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppData, OrderInput, Role, User, WorkOrder, WorkStatus } from '../src/domain/types';
-import { createWorkOrder, editWorkOrder, recordPayment, transitionWorkOrder, validateClient, validateInput } from '../src/domain/service';
+import { createWorkOrder, deleteWorkOrderPayment, editWorkOrder, recordPayment, transitionWorkOrder, validateClient, validateInput } from '../src/domain/service';
 import { areaOf, canCreate, canViewOrder, CATEGORIES, currentMonthRange, dateOnly, financials, formatDate, formatMeasure, formatPesosInput, inRange, isAdmin, isCalendarDate, isFinished, MATERIALS, normalize, roundMoney, today, visibleOrders } from '../src/domain/utils';
 
 const NOW = '2026-09-14T15:00:00.000Z';
-const roles: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'APOYO_COMERCIAL', 'DISENO', 'IMPRESION', 'TALLER', 'INSTALADOR'];
+const roles: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL', 'APOYO_COMERCIAL', 'DISENO', 'IMPRESION', 'TALLER', 'INSTALADOR', 'ADMIN_INSTALADORES'];
 const user = (role: Role = 'ADMIN_GENERAL', overrides: Partial<User> = {}): User => ({ id: `user-${role}`, name: role, email: `${role}@example.test`, role, active: true, ...overrides });
 const input = (overrides: Partial<OrderInput> = {}): OrderInput => ({ number: 1, clientId: 'client-1', description: '  Trabajo publicitario  ', value: 100000, documentType: 'REM', category: 'Otras', route: 'PRINT_WORKSHOP', requiresInstallation: false, printing: { material: 'Panaflex', length: 2.5, width: 1.2 }, ...overrides });
 const order = (overrides: Partial<WorkOrder> = {}): WorkOrder => ({ ...input(), reteFuente: 0, reteIva: 0, ica: 0, id: 'order-1', createdAt: '2026-01-15T18:00:00.000Z', updatedAt: '2026-01-15T18:00:00.000Z', createdBy: user('DISENO').id, payments: [], status: 'NEW', ...overrides });
@@ -45,6 +45,37 @@ describe('Cálculos de dinero y cartera', () => {
   it('suma retenciones aunque superen el valor base', () => {
     const result = financials(order({ documentType: 'FACT', financialRule: 'LEGACY', value: 100, reteFuente: 119 }));
     expect(result).toMatchObject({ collectible: 238, balance: 238, paymentStatus: 'PENDING' });
+  });
+});
+
+describe('Eliminación administrativa de abonos', () => {
+  const paidOrder = () => order({ status:'COMPLETED', closedAt:'2026-09-01T15:00:00Z', version:3,
+    payments:[{id:'abono-a',amount:25000,date:'2026-09-01',method:'EFECTIVO',recordedBy:'admin-original'},
+      {id:'abono-b',amount:10000,date:'2026-09-02',method:'BANCOLOMBIA',recordedBy:'admin-original'}] });
+  it.each(['ADMINMASTER','ADMIN_GENERAL'] as Role[])('%s elimina sólo el abono elegido y recalcula una OT cerrada sin cambiar su producción', role => {
+    const original=paidOrder();
+    const changed=deleteWorkOrderPayment(user(role),original,'abono-a',3);
+    expect(changed).toMatchObject({id:original.id,number:original.number,status:'COMPLETED',closedAt:original.closedAt,version:4});
+    expect(changed.payments).toEqual([original.payments[1]]);
+    expect(financials(changed)).toMatchObject({paid:10000,balance:90000,paymentStatus:'PARTIAL'});
+    expect(original.payments).toHaveLength(2);
+  });
+  it('eliminar el último abono devuelve todo el saldo a pendiente', () => {
+    const original=order({payments:[{id:'ultimo',amount:100000,date:'2026-09-01',recordedBy:'admin'}]});
+    expect(financials(original).paymentStatus).toBe('PAID');
+    const changed=deleteWorkOrderPayment(user(),original,'ultimo',1);
+    expect(changed.payments).toHaveLength(0);
+    expect(financials(changed)).toMatchObject({paid:0,balance:100000,paymentStatus:'PENDING'});
+  });
+  it.each(['APOYO_COMERCIAL','DISENO','IMPRESION','TALLER'] as Role[])('%s no elimina abonos', role => {
+    expect(()=>deleteWorkOrderPayment(user(role),paidOrder(),'abono-a',3)).toThrow(/Solo Administración/);
+  });
+  it('impide borrar con una cuenta administrativa inactiva o una versión desactualizada', () => {
+    expect(()=>deleteWorkOrderPayment(user('ADMINMASTER',{active:false}),paidOrder(),'abono-a',3)).toThrow(/Solo Administración/);
+    expect(()=>deleteWorkOrderPayment(user(),paidOrder(),'abono-a',2)).toThrow(/Otra persona actualizó/);
+  });
+  it('rechaza un identificador de pago que no pertenece a la OT', () => {
+    expect(()=>deleteWorkOrderPayment(user(),paidOrder(),'pago-de-otra-ot',3)).toThrow(/dentro de la OT/);
   });
 });
 
@@ -268,12 +299,17 @@ describe('Registro de abonos', () => {
 
 describe('Permisos de visualización', () => {
   it.each(roles)('define capacidad administrativa y de creación para %s', role => {
-    expect(isAdmin(role)).toBe(role.startsWith('ADMIN'));
-    expect(canCreate(role)).toBe(role.startsWith('ADMIN') || role === 'APOYO_COMERCIAL' || role === 'DISENO');
+    expect(isAdmin(role)).toBe(role === 'ADMINMASTER' || role === 'ADMIN_GENERAL');
+    expect(canCreate(role)).toBe(role === 'ADMINMASTER' || role === 'ADMIN_GENERAL' || role === 'APOYO_COMERCIAL' || role === 'DISENO');
   });
   it('anónimos e inactivos no ven órdenes', () => {
     expect(canViewOrder(null, order())).toBe(false);
     expect(canViewOrder(user('ADMINMASTER', { active: false }), order())).toBe(false);
+  });
+  it('Administración de Instaladores no recibe órdenes aun con una marca de visibilidad del servidor',()=>{
+    expect(canViewOrder(user('ADMIN_INSTALADORES'),order({serverVisible:true}))).toBe(false);
+    expect(visibleOrders(user('ADMIN_INSTALADORES'),[order({serverVisible:true})])).toHaveLength(0);
+    expect(()=>recordPayment(user('ADMIN_INSTALADORES'),order(),{date:'2026-09-14',amount:1000})).toThrow(/Administración/);
   });
   it.each(['ADMINMASTER', 'ADMIN_GENERAL'] as Role[])('%s ve órdenes de todos los estados', role => {
     const statuses: WorkStatus[] = ['NEW', 'PENDING_ADMIN_REVIEW', 'IN_PRINTING', 'IN_WORKSHOP', 'PENDING_INSTALLATION', 'COMPLETED', 'INSTALLED'];

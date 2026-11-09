@@ -216,6 +216,12 @@ export async function apiCorrectPayment(orderId: string, paymentId: string, paym
   });
   return asOrder(body.order);
 }
+export async function apiDeletePayment(orderId: string, paymentId: string, expectedVersion: number): Promise<WorkOrder> {
+  const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(orderId)}/payments/${encodeURIComponent(paymentId)}`, {
+    method: 'DELETE', body: JSON.stringify({ expectedVersion }),
+  });
+  return asOrder(body.order);
+}
 export async function apiAddPayment(id: string, payment: NewPayment, requestId: string): Promise<WorkOrder> {
   const body = await request<{ order: RestrictedOrder }>(`/orders/${encodeURIComponent(id)}/payments`, { method: 'POST', body: JSON.stringify({ ...payment, requestId }) });
   return asOrder(body.order);
@@ -233,6 +239,9 @@ export function apiWorkOrder(id: string): Promise<{ products: OrderProduct[] }> 
 }
 export function apiListActivities(query: { orderId?: string; area?: import('../domain/types').WorkArea; page?: number; pageSize?: number } = {}) {
   return request<{ items: OrderActivity[]; page: number; pageSize: number; total: number }>(`/work/activities?${queryString(query)}`);
+}
+export function apiWorkQueue(query: { area: import('../domain/types').WorkArea; page?: number; pageSize?: number }) {
+  return request<{ items: import('../domain/types').WorkQueueOrder[]; page: number; pageSize: number; total: number }>(`/work/queue?${queryString(query)}`);
 }
 export function apiDesignerLoad() {
   return request<{ items: Array<{ id: string; name: string; pending: number; inProgress: number; total: number }>; unassigned: number }>('/work/designers/load');

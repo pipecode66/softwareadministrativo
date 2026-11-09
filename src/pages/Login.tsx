@@ -13,9 +13,10 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const location = useLocation();
-  const home = user ? isAdmin(user.role) ? '/' : user.role === 'INSTALADOR' ? '/installations' : user.role === 'APOYO_COMERCIAL' ? '/orders/new' : user.role === 'DISENO' ? '/design' : user.role === 'IMPRESION' ? '/printing' : '/workshop' : '/';
+  const home = user ? isAdmin(user.role) ? '/' : user.role === 'INSTALADOR' || user.role === 'ADMIN_INSTALADORES' ? '/installations' : user.role === 'APOYO_COMERCIAL' ? '/orders/new' : user.role === 'DISENO' ? '/design' : user.role === 'IMPRESION' ? '/printing' : '/workshop' : '/';
   const requested = (location.state as { from?: string } | null)?.from;
-  const destination = requested?.startsWith('/') && !requested.startsWith('//') && requested.split(/[?#]/)[0] !== '/login' ? requested : home;
+  const destination = requested?.startsWith('/') && !requested.startsWith('//') && requested.split(/[?#]/)[0] !== '/login'
+    && (user?.role !== 'ADMIN_INSTALADORES' || requested.split(/[?#]/)[0] === '/installations') ? requested : home;
   if (!sessionReady) return <div className="loading-screen" role="status">Comprobando tu sesión…</div>;
   if (user) return <Navigate to={user.mustChangePassword ? '/change-password' : destination} replace />;
   async function submit(event: FormEvent) {

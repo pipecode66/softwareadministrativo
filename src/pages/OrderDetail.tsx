@@ -281,7 +281,7 @@ export function OrderDetailPage() {
         {order.documentType === 'FACT' && admin && <div className="order-form-note"><FileText size={19} /><p>FACT identifica la clasificación documental de esta OT. Esta vista no es una factura electrónica.</p></div>}
       </aside>
     </div>
-    {usingApi && <AuditHistory orderId={order.id} compact />}
+    {usingApi && <AuditHistory key={`${order.id}:${order.version}`} orderId={order.id} compact />}
     {admin && order.requiresInstallation && ['PENDING_INSTALLATION','INSTALLED'].includes(order.status) && <div className="order-action-bar"><div><span className="eyebrow">Trabajo en campo</span><strong>Asignación, avances y evidencia</strong></div><Link className="btn btn-primary" to={`/installations?q=${order.number}`}><MapPin size={18}/>Abrir Instalaciones</Link></div>}
     {nextAction && <div className="order-action-bar"><div><span className="eyebrow">Siguiente acción</span><strong>{STATUS_LABELS[order.status]}</strong></div><Button onClick={openAction}>{nextAction.action === 'close' ? <CheckCircle2 size={18} /> : <ArrowRight size={18} />}{nextAction.label}</Button></div>}
     <Modal open={paymentOpen} onClose={() => setPaymentOpen(false)} title={`Registrar pago · OT #${String(order.number).padStart(4, '0')}`}>

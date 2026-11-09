@@ -1,0 +1,4 @@
+-- Dedicated installation management; preserves all existing accounts and roles.
+ALTER TABLE users DROP CONSTRAINT users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN
+  ('ADMINMASTER','ADMIN_GENERAL','APOYO_COMERCIAL','DISENO','IMPRESION','TALLER','INSTALADOR','ADMIN_INSTALADORES'));

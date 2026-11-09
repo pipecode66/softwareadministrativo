@@ -11,7 +11,7 @@ import { changeInstallation, createInstallation, getInstallation, getInstallatio
 export function createInstallationsRouter(db:Database):Router {
   const router=Router();
   router.use((req,_res,next)=>{
-    if(!req.auth || !['ADMINMASTER','ADMIN_GENERAL','INSTALADOR'].includes(req.auth.user.role)) {
+    if(!req.auth || !['ADMINMASTER','ADMIN_GENERAL','ADMIN_INSTALADORES','INSTALADOR'].includes(req.auth.user.role)) {
       throw new ApiError(403,'FORBIDDEN','Tu perfil no tiene acceso al módulo Instalaciones.');
     }
     next();

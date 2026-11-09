@@ -6,7 +6,7 @@ import { ApiError } from '../errors.js';
 import { requireCurrentActor } from '../security/actor.js';
 import { correctOrderProducts, createOrderProducts } from '../work/service.js';
 import { syncInstallationAfterOrderEdit } from '../installations/service.js';
-import { cents, dateOnly, financials, isAdmin, orderDto, type DraftPayload, type OrderInput, type OrderRow, type PaymentRow, type bulkPaymentSchema, type createSchema, type editSchema, type paymentSchema, type paymentCorrectionSchema, type transitionSchema } from './domain.js';
+import { cents, dateOnly, financials, isAdmin, orderDto, type DraftPayload, type OrderInput, type OrderRow, type PaymentRow, type bulkPaymentSchema, type createSchema, type editSchema, type paymentSchema, type paymentCorrectionSchema, type paymentDeletionSchema, type transitionSchema } from './domain.js';
 
 const admins: Role[] = ['ADMINMASTER', 'ADMIN_GENERAL'];
 const creators: Role[] = [...admins, 'APOYO_COMERCIAL', 'DISENO'];
@@ -56,7 +56,7 @@ export async function deleteOrderDraft(db: Database, auth: AuthSession): Promise
 }
 export function canRead(user: { role: Role; id: string }, row: OrderRow): boolean {
   if (isAdmin(user.role)) return true;
-  if (user.role === 'APOYO_COMERCIAL' || user.role === 'INSTALADOR') return false;
+  if (user.role === 'APOYO_COMERCIAL' || user.role === 'INSTALADOR' || user.role === 'ADMIN_INSTALADORES') return false;
   if (user.role === 'DISENO') return row.created_by === user.id || Boolean(row.has_visible_activity);
   if (row.closed_at) return false;
   if (row.has_visible_activity) return true;
@@ -65,7 +65,7 @@ export function canRead(user: { role: Role; id: string }, row: OrderRow): boolea
 }
 export function visibility(user: { role: Role; id: string }, params: unknown[]): string {
   if (isAdmin(user.role)) return 'true';
-  if (user.role === 'APOYO_COMERCIAL' || user.role === 'INSTALADOR') return 'false';
+  if (user.role === 'APOYO_COMERCIAL' || user.role === 'INSTALADOR' || user.role === 'ADMIN_INSTALADORES') return 'false';
   if (user.role === 'DISENO') {
     params.push(user.id);
     return `(o.created_by = $${params.length} OR EXISTS (
@@ -316,6 +316,44 @@ export async function correctPayment(db: Database, auth: AuthSession, orderId: s
   });
 }
 
+export async function deletePayment(db: Database, auth: AuthSession, orderId: string, paymentId: string, input: z.infer<typeof paymentDeletionSchema>) {
+  return db.transaction(async tx => {
+    const actor = await requireCurrentActor(tx, auth, admins);
+    const row = await lockedOrder(tx, orderId);
+    const payments = await paymentsOf(tx, orderId);
+    const before = payments.find(payment => payment.id === paymentId);
+    if (!before) {
+      const replay = await tx.query(`SELECT id FROM order_events WHERE order_id=$1 AND actor_id=$2
+        AND action='paymentDeletion' AND details->'changes' @> $3::jsonb LIMIT 1`,
+      [orderId,actor.id,JSON.stringify([{label:'Pago eliminado',before:paymentId}])]);
+      if (replay.rows.length) return orderDto(row, payments, actor.role);
+      throw new ApiError(404, 'PAYMENT_NOT_FOUND', 'No encontramos este pago dentro de la OT.');
+    }
+    checkVersion(row, input.expectedVersion);
+    await tx.query('DELETE FROM payments WHERE id=$1 AND order_id=$2', [paymentId,orderId]);
+    if (before.bulk_batch_id) {
+      // Keep an empty batch as an idempotency reservation. Its positive historical
+      // amount is not a receivable or income; reports use only existing payments.
+      await tx.query(`UPDATE bulk_payment_batches SET amount=(
+        SELECT sum(amount) FROM payments WHERE bulk_batch_id=$1)
+        WHERE id=$1 AND EXISTS(SELECT 1 FROM payments WHERE bulk_batch_id=$1)`, [before.bulk_batch_id]);
+    }
+    const updated = (await tx.query<OrderRow>('UPDATE orders SET updated_at=clock_timestamp(),version=version+1 WHERE id=$1 RETURNING *', [orderId])).rows[0];
+    const oldDate = typeof before.date === 'string' ? before.date.slice(0,10) : before.date.toISOString().slice(0,10);
+    await event(tx, updated, actor.id, 'paymentDeletion', row.status, { summary:'Eliminó un abono de la OT.', changes:[
+      {label:'Pago eliminado',before:paymentId,sensitive:true},
+      {label:'Valor recibido eliminado',before:Number(before.amount),sensitive:true},
+      {label:'Fecha del pago eliminado',before:oldDate,sensitive:true},
+      {label:'Medio del pago eliminado',before:before.method,sensitive:true},
+      {label:'Registrado originalmente por',before:before.recorded_by,sensitive:true},
+      {label:'Solicitud del pago eliminado',before:before.request_key,sensitive:true},
+      ...(before.bulk_batch_id ? [{label:'Lote multiabono',before:before.bulk_batch_id,sensitive:true}] : []),
+    ] });
+    return orderDto({ ...updated,special_payment:row.special_payment,is_composite:row.is_composite },
+      payments.filter(payment => payment.id !== paymentId),actor.role);
+  });
+}
+
 export async function recordPayment(db: Database, auth: AuthSession, id: string, input: z.infer<typeof paymentSchema>) {
   return db.transaction(async tx => {
     const actor = await requireCurrentActor(tx, auth, admins);
@@ -327,6 +365,10 @@ export async function recordPayment(db: Database, auth: AuthSession, id: string,
       if (cents(previous.amount) !== cents(input.amount) || previousDate !== input.date || previous.method !== input.method || previous.recorded_by !== actor.id) throw conflict('Este identificador de abono ya se utilizó con otros datos.');
       return { order: orderDto(row, payments, actor.role), replayed: true };
     }
+    const deleted = await tx.query(`SELECT id FROM order_events WHERE order_id=$1 AND action='paymentDeletion'
+      AND details->'changes' @> $2::jsonb LIMIT 1`,
+    [id,JSON.stringify([{label:'Solicitud del pago eliminado',before:input.requestId}])]);
+    if (deleted.rows.length) throw conflict('Este abono fue eliminado. Registra un abono nuevo si corresponde; el reenvío anterior no se aplicó.');
     if (input.date < dateOnly(row.created_at) || input.date > dateOnly()) throw new ApiError(400, 'PAYMENT_DATE', 'La fecha del abono debe estar entre la creación de la OT y hoy.', 'date');
     if (cents(input.amount) > cents(financials(row, payments).balance)) throw conflict('El abono supera el saldo actual de la orden.');
     await tx.query('INSERT INTO payments (id,order_id,date,amount,method,recorded_by,request_key) VALUES ($1,$2,$3,$4,$5,$6,$7)', [randomUUID(), id, input.date, input.amount, input.method, actor.id, input.requestId]);
@@ -353,7 +395,7 @@ export async function allocateBulkPayment(db: Database, auth: AuthSession, input
       if (previous.fingerprint !== fingerprint) throw conflict('Este identificador de pago grupal ya se utilizó con otros datos.');
       const saved = (await tx.query<{order_id:string;amount:string}>(
         'SELECT order_id,amount FROM payments WHERE bulk_batch_id=$1 ORDER BY amount,order_id',[previous.id])).rows;
-      return { batchId:previous.id, clientId:input.clientId, amount:Number(previous.amount),
+      return { batchId:previous.id, clientId:input.clientId, amount:saved.reduce((sum,item)=>sum+cents(item.amount),0)/100,
         allocations:saved.map(item => ({orderId:item.order_id,amount:Number(item.amount)})), remaining:0, replayed:true };
     }
     if (input.date > dateOnly()) throw new ApiError(400,'PAYMENT_DATE','La fecha del pago no puede ser futura.','date');
@@ -462,7 +504,7 @@ export async function transitionOrder(db: Database, auth: AuthSession, id: strin
 
 export interface ListQuery { page: number; pageSize: number; q?: string; status?: string; documentType?: string; category?: string; paymentStatus?: string; from?: string; to?: string }
 export async function listOrders(db: Database, auth: AuthSession, input: ListQuery) {
-  if (auth.user.role === 'APOYO_COMERCIAL' || auth.user.role === 'INSTALADOR') throw new ApiError(403, 'FORBIDDEN', 'Tu perfil no tiene acceso al historial general de órdenes.');
+  if (auth.user.role === 'APOYO_COMERCIAL' || auth.user.role === 'INSTALADOR' || auth.user.role === 'ADMIN_INSTALADORES') throw new ApiError(403, 'FORBIDDEN', 'Tu perfil no tiene acceso al historial general de órdenes.');
   if (input.paymentStatus && !isAdmin(auth.user.role)) throw new ApiError(403, 'FORBIDDEN', 'El filtro de cobros corresponde a Administración.');
   return db.transaction(async tx => {
     await tx.exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');

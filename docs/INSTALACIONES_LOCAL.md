@@ -2,6 +2,10 @@
 
 Estado: desarrollo y validación local. No ejecutar015 en Supabase ni publicar esta rama hasta aprobar las pruebas. La rama de trabajo es `feature/instalaciones-local`; no se hace push.
 
+El09/11 se añade la migración016 y el rol «Administrador de Instaladores». Reinicia `npm run api:installations` para que aplique la migración en la base local existente. Desde Usuarios, con tu Adminmaster, selecciona ese nuevo perfil al crear la cuenta. Su menú sólo muestra Instalaciones y puede gestionarlas sin ver clientes, OT completas, finanzas, producción o usuarios. Comprueba que tampoco abre esas rutas directamente. No se ha creado ninguna cuenta real ni se ha ejecutado015/016 en Supabase.
+
+Verificación del09/11 aprobada:215 pruebas frontend,357 servidor y5 recorridos de navegador con API real/PGlite; incluyen creación del perfil desde Usuarios y bloqueo de otros módulos, junto con regresiones de Instalaciones y los últimos cambios de producción integrados. Capturas1440/390px revisadas. El GPS físico sigue pendiente de la prueba manual anterior; este nuevo rol sólo supervisa y no captura asistencia en nombre de otras personas.
+
 Verificado el02/11:204 pruebas frontend,340 servidor,12 recorridos API distintos y4 locales. Incluye asignaciones, equipos, privacidad, GPS emulado, fotos, cierre móvil, correcciones y reapertura de producción; escritorio/móvil entre320 y1440px. Falta confirmar el comportamiento en el celular real y la aceptación del flujo. No hay servidores de prueba persistentes abiertos al terminar esta revisión.
 
 ## Abrir el entorno separado

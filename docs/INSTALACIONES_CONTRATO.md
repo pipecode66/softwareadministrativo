@@ -4,7 +4,9 @@ Nuevo alcance autorizado: cuentas personales de instalador, planificación indiv
 
 ## Acceso y respuestas
 
-Base `/api/v1/installations`, misma cookie y CSRF existentes. Solo ADMINMASTER/ADMIN_GENERAL e INSTALADOR. Instalador únicamente sus instalaciones actuales; administración supervisa todas. Nunca se incluyen valores comerciales. Fechas ISO UTC; la interfaz presenta America/Bogota.
+Base `/api/v1/installations`, misma cookie y CSRF existentes. Acceden ADMINMASTER, ADMIN_GENERAL, ADMIN_INSTALADORES e INSTALADOR. Instalador únicamente sus instalaciones actuales; los tres perfiles de gestión supervisan todas. Nunca se incluyen valores comerciales. Fechas ISO UTC; la interfaz presenta America/Bogota. Donde este contrato indica Administración se incluyen los tres perfiles de gestión, exclusivamente dentro de Instalaciones.
+
+`ADMIN_INSTALADORES` se muestra como «Administrador de Instaladores». Dispone de la gestión completa del módulo y de sus equipos, evidencias y métricas. No accede a OT completas, directorios, finanzas, producción, usuarios ni historial general. Su única ruta operativa es `/installations`; conserva cambio de contraseña y cierre de su propia sesión. Registrar asistencia, subir evidencia y finalizar requieren ser el instalador asignado/principal, incluso si quien intenta hacerlo tiene este rol gestor. Se crea desde Usuarios/Adminmaster tras aplicar016 localmente; no se crea una cuenta automáticamente.
 
 `GET /?page=1&pageSize=25&status=ASSIGNED&installerId=uuid&q=texto`:
 
@@ -94,4 +96,4 @@ El usuario confirmó la excepción de ubicación autorizada por Administración 
 
 ## Activación
 
-Aplicar `server/migrations/015_installations.sql` antes de desplegar. RLS habilitado sin acceso directo anon/authenticated; acceso por servidor autenticado. No se alteran consecutivos, usuarios existentes ni datos comerciales. Evidencias y coordenadas son datos privados operativos: acceso por autorización y no enlaces públicos. Las OT ya instaladas por el flujo anterior conservan su historial y no se duplican.
+El módulo requiere `server/migrations/015_installations.sql` y `016_installation_admin_role.sql`. Por ahora sólo se prueban localmente; el lanzador aplica ambas al iniciar sin tocar conexiones productivas. RLS habilitado sin acceso directo anon/authenticated; acceso por servidor autenticado. No se alteran consecutivos, usuarios existentes ni datos comerciales. Evidencias y coordenadas son datos privados operativos: acceso por autorización y no enlaces públicos. Las OT ya instaladas por el flujo anterior conservan su historial y no se duplican.
