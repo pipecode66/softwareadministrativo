@@ -4,6 +4,14 @@ Actualizado: 2026-11-09.
 
 ## Estado actual
 
+**Publicación de Instalaciones autorizada el09/11.** El usuario revocó expresamente la restricción de trabajar sólo en local y pidió subir a main para probar en producción. Se publica el módulo completo con Instalador y Administrador de Instaladores, partiendo del commit local e57656b que ya integra main4129769. No se ha aplicado SQL ni creado perfiles en producción desde este entorno. Guía vigente: `docs/INSTALACIONES_PRODUCCION.md`; las notas anteriores de sólo-local quedan como antecedentes.
+
+Requisito de activación: aplicar en Supabase las migraciones pendientes015 y016, en ese orden. Vercel no las ejecuta automáticamente. Se añade compatibilidad para que las OT existentes se sigan editando mientras falta el esquema, y el módulo responda que necesita configuración en lugar de consultar tablas inexistentes. Los perfiles nuevos se crean desde Usuarios/Adminmaster después de aplicar ambas migraciones; el usuario se encargará de las cuentas.
+
+Validación previa del módulo/rol:215 pruebas frontend,357 servidor, typechecks/builds y5 recorridos E2E aprobados. Comprobación adicional de publicación:32/32 pruebas dirigidas aprobadas, incluido el arranque sin015, la edición de OT y la activación posterior en la misma aplicación; typecheck del servidor y recorrido E2E dirigido del Administrador de Instaladores aprobados. Resultados del navegador en `test-results/installations-release-api` (ignorado por git). Publicación por commit/push a main autorizada; consultar git log para el hash definitivo. El módulo y el nuevo rol son ampliaciones significativas pendientes de aceptación en las pruebas; el contador anterior62/35 se conserva hasta esa aceptación y no se cuentan de nuevo los cambios ya publicados de OT/pagos. No se ha verificado el despliegue remoto ni aplicado SQL productivo.
+
+### Antecedentes anteriores a la autorización de publicación
+
 **Administrador de Instaladores — 09/11, sólo local.** Se crea el rol `ADMIN_INSTALADORES`, mostrado como «Administrador de Instaladores». El usuario creará su cuenta desde Usuarios con su perfil superadmin; no se crea ninguna cuenta real desde este trabajo. Tiene una única pantalla operativa: Instalaciones, con programación, asignación/reasignación, equipos, corrección de datos del lugar, reprogramación/aplazamiento, excepciones GPS, evidencias, historial de cada instalación y métricas. No registra asistencia ni finaliza en nombre de un instalador. El cambio pertenece a `feature/instalaciones-local`; NO hacer push ni fusionar hacia main.
 
 Se integró main4129769 HACIA la rama local antes de ampliar permisos, conservando bandejas agrupadas por OT, eliminación de abonos, memoria de páginas y correcciones administrativas. Main/origin/main permanecen en4129769. Las decisiones productivas59–64 y locales65–70 se conciliaron sin perder antecedentes. La nueva decisión71 documenta este perfil.

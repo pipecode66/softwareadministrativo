@@ -41,6 +41,22 @@ const missing = () => new ApiError(404,'INSTALLATION_NOT_FOUND','No encontramos 
 const conflict = (message:string) => new ApiError(409,'INSTALLATION_CONFLICT',message);
 const iso = (value:Date|string|null) => value ? new Date(value).toISOString() : null;
 const fingerprint = (data:unknown) => createHash('sha256').update(JSON.stringify(data)).digest('hex');
+
+/** Deploys do not run SQL migrations on Vercel. Recheck to activate without restarting after setup. */
+export async function installationSchemaReady(connection:SqlConnection):Promise<boolean> {
+  const result=await connection.query<{ready:boolean}>(`SELECT
+    to_regclass('installations') IS NOT NULL
+    AND to_regclass('installation_members') IS NOT NULL
+    AND to_regclass('installation_events') IS NOT NULL
+    AND to_regclass('installation_evidence') IS NOT NULL
+    AND to_regclass('installation_requests') IS NOT NULL
+    AND to_regclass('installation_teams') IS NOT NULL
+    AND to_regclass('installation_team_members') IS NOT NULL
+    AND to_regclass('installation_team_events') IS NOT NULL
+    AND to_regclass('installation_team_requests') IS NOT NULL AS ready`);
+  return result.rows[0]?.ready===true;
+}
+
 const readySql = `o.requires_installation AND o.status='PENDING_INSTALLATION' AND o.closed_at IS NULL
   AND NOT EXISTS (SELECT 1 FROM order_activities a WHERE a.order_id=o.id AND a.status<>'COMPLETED')`;
 const selectInstallation = `SELECT i.*,o.number AS order_number,o.description,o.status AS order_status,
@@ -595,6 +611,7 @@ export async function saveInstallationTeam(db:Database,auth:AuthSession,id:strin
 
 /** Caller already holds actor and OT locks. OT corrections must not leave field clocks running on unavailable work. */
 export async function syncInstallationAfterOrderEdit(tx:SqlConnection,actor:{id:string},orderId:string,previousStatus:string,nextStatus:string) {
+  if(!await installationSchemaReady(tx)) return;
   const existing=(await tx.query<{id:string}>(
     'SELECT id FROM installations WHERE order_id=$1 FOR UPDATE',[orderId])).rows[0];
   if(!existing) return;

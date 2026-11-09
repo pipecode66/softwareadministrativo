@@ -5,7 +5,8 @@ import { createInstallationSchema, evidenceParamsSchema, installationActionSchem
   installationListSchema, installationParamsSchema } from './schemas.js';
 import { createTeamSchema, updateTeamSchema } from './schemas.js';
 import { changeInstallation, createInstallation, getInstallation, getInstallationEvidence,
-  listInstallations, saveInstallationEvidence, listInstallationTeams, saveInstallationTeam } from './service.js';
+  listInstallations, saveInstallationEvidence, listInstallationTeams, saveInstallationTeam,
+  installationSchemaReady } from './service.js';
 
 /** Mount after session, password-change and CSRF enforcement. */
 export function createInstallationsRouter(db:Database):Router {
@@ -13,6 +14,13 @@ export function createInstallationsRouter(db:Database):Router {
   router.use((req,_res,next)=>{
     if(!req.auth || !['ADMINMASTER','ADMIN_GENERAL','ADMIN_INSTALADORES','INSTALADOR'].includes(req.auth.user.role)) {
       throw new ApiError(403,'FORBIDDEN','Tu perfil no tiene acceso al módulo Instalaciones.');
+    }
+    next();
+  });
+  router.use(async(_req,_res,next)=>{
+    if(!await installationSchemaReady(db)) {
+      throw new ApiError(503,'INSTALLATIONS_SETUP_REQUIRED',
+        'Instalaciones requiere completar su configuración. Aplica las migraciones 015 y 016 de Instalaciones.');
     }
     next();
   });

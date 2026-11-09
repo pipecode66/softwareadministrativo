@@ -2,9 +2,11 @@
 
 ## Objetivo
 
-Intermedios Gestión centraliza clientes, ventas, cartera y producción publicitaria para una sola sede y hasta 15 usuarios. Los roles son ADMINMASTER, ADMIN_GENERAL, APOYO_COMERCIAL, DISENO, IMPRESION, TALLER y, en desarrollo local, INSTALADOR y ADMIN_INSTALADORES. Las fuentes de Downloads y el PDF son referencias de solo lectura; las instrucciones directas del usuario prevalecen.
+Intermedios Gestión centraliza clientes, ventas, cartera y producción publicitaria para una sola sede y hasta 15 usuarios. Los roles son ADMINMASTER, ADMIN_GENERAL, APOYO_COMERCIAL, DISENO, IMPRESION, TALLER, INSTALADOR y ADMIN_INSTALADORES. Las fuentes de Downloads y el PDF son referencias de solo lectura; las instrucciones directas del usuario prevalecen.
 
-## Nuevo alcance: Instalaciones (en desarrollo local)
+## Nuevo alcance: Instalaciones
+
+Última autorización del09/11: publicar el módulo completo y su rol gestor en main para realizar las pruebas en producción. Sustituye las restricciones anteriores de sólo-local, que se conservan como antecedentes en los documentos. Activación mediante015 y016 en Supabase, sin ejecutar SQL ni crear perfiles reales desde este entorno. Vercel no aplica migraciones automáticamente; la guía está en `docs/INSTALACIONES_PRODUCCION.md`. Los comandos de desarrollo aislado siguen siendo locales.
 
 Desde el09/11, «Administrador de Instaladores» (`ADMIN_INSTALADORES`) gestiona exclusivamente este módulo. Su inicio y único menú funcional son Instalaciones; dispone de las funciones de supervisión, programación, equipos, asignaciones y excepciones GPS, con consulta de evidencia/seguimiento/métricas. No accede a administración general, clientes, OT completas, pagos, reportes financieros, historial global, producción ni usuarios, tampoco registra llegada/salida/cierre por otra persona. Adminmaster podrá seleccionar este rol en Usuarios; el usuario se encargará de crear la cuenta. Requiere la nueva migración016 en el entorno local y no sustituye ni amplía los permisos de Administración general.
 

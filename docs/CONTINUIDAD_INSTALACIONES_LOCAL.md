@@ -1,5 +1,7 @@
 # Continuidad de Instalaciones — 09/11/2026
 
+**La instrucción vigente cambió:** el usuario autorizó posteriormente publicar Instalaciones en main para probar en producción. Ya no rige la restricción de sólo-local que aparece en las notas históricas siguientes. Leer primero `docs/ESTADO.md` y `docs/INSTALACIONES_PRODUCCION.md`; aplicar las migraciones pendientes015 y016 para activar el módulo. No se han ejecutado en Supabase desde este entorno.
+
 El módulo se retomó en la rama **local** `feature/instalaciones-local`, a partir del trabajo guardado en `ffe9a06`. Se integra main (`579d2ce`) HACIA esa rama local para conservar las correcciones administrativas y la memoria de secciones. No se hace push ni se ejecuta la migración015 en Supabase. El usuario reiteró el02/11 que debe probarse primero en local.
 
 El09/11 se integra también main4129769 hacia esta rama y se añade el rol exclusivo «Administrador de Instaladores». Se conserva toda la funcionalidad local y los cambios productivos de agrupación de OT/eliminación de abonos. La migración nueva016 amplía roles sin modificar015 ni crear perfiles reales. No ejecutar015/016 en Supabase, no hacer push. Para probar el nuevo rol, reiniciar `npm run api:installations` y crear la cuenta local desde Usuarios/Adminmaster; el usuario creará su perfil cuando corresponda.

@@ -79,6 +79,8 @@
 
 71. Solicitud del09/11: crear `ADMIN_INSTALADORES`, visible como «Administrador de Instaladores», con acceso exclusivo a la pantalla de gestión de Instalaciones. Puede gestionar todas las instalaciones y equipos, asignar, reprogramar, aplazar, corregir logística y autorizar excepciones GPS, consultar evidencia/seguimiento/métricas; no ejecutar asistencia ni cierre de un instalador. No es administración global ni recibe otros módulos/datos financieros. El usuario creará el perfil desde su superadmin. Nueva016 preserva015 y cuentas existentes; desarrollo y pruebas sólo local, sin push. Se conserva el contador productivo62/35 hasta aceptar el módulo.
 
+72. Autorización expresa posterior del09/11: subir a main el módulo completo de Instalaciones y Administrador de Instaladores para probar directamente en producción. Sustituye la restricción de sólo-local de62/67/71 y sus referencias históricas. Se mantiene el aislamiento funcional y financiero de ambos perfiles. Se deben aplicar015 y016 en Supabase antes de activar el módulo y crear sus cuentas; Vercel no ejecuta migraciones automáticamente. No se autoriza borrar datos ni cambiar consecutivos, y el usuario creará los perfiles. Publicar el código no implica afirmar SQL aplicado ni despliegue productivo verificado.
+
 ## Decisiones sustituidas
 
 - La regla del 15/09 que sumaba retenciones al cobrable fue sustituida por la solicitud del 20/09 para nuevas FACT. Solo se conserva como LEGACY para datos previos.

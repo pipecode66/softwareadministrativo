@@ -1,6 +1,8 @@
 # Probar Instalaciones sin tocar producción
 
-Estado: desarrollo y validación local. No ejecutar015 en Supabase ni publicar esta rama hasta aprobar las pruebas. La rama de trabajo es `feature/instalaciones-local`; no se hace push.
+Esta guía describe únicamente el entorno de desarrollo aislado. El09/11 el usuario autorizó publicar el módulo y el rol gestor en main para realizar pruebas en producción. Esa autorización sustituye la restricción histórica de no publicar; para la activación productiva seguir `docs/INSTALACIONES_PRODUCCION.md`. Los comandos de esta guía siguen usando exclusivamente la base local.
+
+Estado: módulo validado en entorno aislado y publicación en main autorizada para pruebas productivas. Esta guía conserva los comandos para probar en local; la activación en Supabase requiere aplicar las migraciones pendientes015 y016, en ese orden, según la guía de producción.
 
 El09/11 se añade la migración016 y el rol «Administrador de Instaladores». Reinicia `npm run api:installations` para que aplique la migración en la base local existente. Desde Usuarios, con tu Adminmaster, selecciona ese nuevo perfil al crear la cuenta. Su menú sólo muestra Instalaciones y puede gestionarlas sin ver clientes, OT completas, finanzas, producción o usuarios. Comprueba que tampoco abre esas rutas directamente. No se ha creado ninguna cuenta real ni se ha ejecutado015/016 en Supabase.
 
