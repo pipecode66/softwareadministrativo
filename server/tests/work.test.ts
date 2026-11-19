@@ -103,6 +103,27 @@ beforeEach(async () => {
 afterAll(async () => { await db?.close(); });
 
 describe('Productos y trabajo interno', () => {
+  it('conserva el diseñador eliminado en trabajo existente pero impide asignarle productos nuevos',async()=>{
+    const piece={description:'Diseño existente',quantity:1,unitValue:100000,materials:[],
+      activities:[{area:'DESIGN',assignedUserId:defaultDesignerId}]};
+    const order=await create({products:[piece]});
+    const removal=await request(app).delete(`${API}/users/${defaultDesignerId}`).set('Origin',ORIGIN)
+      .set('Cookie',admin.cookie).set('X-CSRF-Token',admin.csrf).send({});
+    expect(removal.status).toBe(204);
+    const payload={clientId,description:'Trabajo corregido sin reasignar',value:100000,documentType:'REM',category:'Proyecto',
+      route:'MULTI_AREA',requiresInstallation:false,products:[{...piece,description:'Descripción corregida'}],expectedVersion:order.version};
+    const corrected=await patch(`/orders/${order.id}`,payload);
+    expect(corrected.status,JSON.stringify(corrected.body)).toBe(200);
+    const tasks=(await get(`/work/activities?orderId=${order.id}`)).body.items as Activity[];
+    expect(tasks).toHaveLength(1);expect(tasks[0].assignedUserId).toBe(defaultDesignerId);
+    const newWork=await patch(`/orders/${order.id}`,{...payload,expectedVersion:corrected.body.order.version,products:[
+      {...piece,unitValue:50000},{...piece,description:'Trabajo adicional',unitValue:50000}]});
+    expect(newWork.status).toBe(400);expect(newWork.body.error.code).toBe('DESIGNER_UNAVAILABLE');
+    expect((await get(`/work/activities?orderId=${order.id}`)).body.items).toHaveLength(1);
+    const options=await get('/work/designers/options');expect(options.status).toBe(200);
+    expect(options.body.items).not.toEqual(expect.arrayContaining([expect.objectContaining({id:defaultDesignerId})]));
+  });
+
   it('exige un diseñador específico al incluir Diseño', async () => {
     const response = await post('/orders', {
       clientId, description: 'Diseño sin responsable', value: 40000, documentType: 'REM', category: 'Proyecto',

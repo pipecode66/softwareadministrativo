@@ -83,6 +83,8 @@
 
 73. Corrección del18/11: el nombre de quien registró un pago se resuelve en servidor mediante el ID `recorded_by`, incluyendo usuarios inactivos, y se entrega como `recordedByName` dentro de los pagos ya autorizados para ADMINMASTER/ADMIN_GENERAL. La tabla y las tarjetas móviles no dependen del directorio de usuarios del navegador, que Administración general no recibe. La corrección de un pago mantiene su autor original y su auditoría por separado. No se inventan responsables, no se reescriben pagos ni se amplían permisos; no requiere migración y no constituye ampliación comercial.
 
+74. Solicitud del19/11: ADMINMASTER puede eliminar usuarios desde su formulario de edición, con confirmación independiente de Guardar. Se conserva la edición existente de nombre, correo y rol. La eliminación es lógica mediante017/deleted_at: cuenta oculta e inactiva, sesiones revocadas, login/edición/reactivación/restablecimiento bloqueados. Se conservan ID/nombre/correo históricos para las FK de OT, pagos, eventos, producción y equipos; el correo puede reutilizarse con una identidad nueva sin heredar autoría. No se borran trabajos, abonos, borradores ni se reasignan responsabilidades automáticamente. Las asignaciones ya retenidas se conservan y no se permite asignar trabajo nuevo a una cuenta eliminada. Se protege la cuenta propia y la existencia de Adminmaster activo. El cambio se publica en main; el usuario aplica017 manualmente. La eliminación es1 ampliación significativa y la edición preexistente no se cuenta de nuevo.
+
 ## Decisiones sustituidas
 
 - La regla del 15/09 que sumaba retenciones al cobrable fue sustituida por la solicitud del 20/09 para nuevas FACT. Solo se conserva como LEGACY para datos previos.

@@ -3,6 +3,7 @@ import type { PublicUser, Role } from '../contracts.js';
 export interface UserRow {
   id: string; name: string; email: string; role: Role; is_active: boolean;
   password_hash: string; must_change_password: boolean;
+  deleted_at?: Date | string | null;
   created_at: Date | string; updated_at: Date | string;
 }
 export function publicUser(row: UserRow): PublicUser {

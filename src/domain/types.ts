@@ -8,7 +8,7 @@ export type Category = 'SuperGiros' | 'Carro Vallas' | 'Proyecto' | 'Otras';
 export type Material = 'Panaflex' | 'V. Corte' | 'V. Impresión' | 'Banner';
 export type ProductionRoute = 'PRINT_ONLY' | 'IMPRENTA' | 'EXTERNO' | 'WORKSHOP_ONLY' | 'PRINT_WORKSHOP' | 'MULTI_AREA';
 export type OrderAction = 'send' | 'finishPrinting' | 'startWorkshop' | 'finishWorkshop' | 'finishExternal' | 'install' | 'close';
-export interface User { id: string; name: string; email: string; role: Role; active: boolean; mustChangePassword?: boolean }
+export interface User { id: string; name: string; email: string; role: Role; active: boolean; mustChangePassword?: boolean; deletedAt?: string }
 export interface Client { id: string; name: string; identification: string; phone: string; specialPayment?: boolean; createdAt: string }
 export interface Printing { material: Material; length: number; width: number }
 export interface Payment { id: string; date: string; amount: number; recordedBy: string; recordedByName?: string; method?: PaymentMethod }

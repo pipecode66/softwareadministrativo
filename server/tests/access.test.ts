@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Express } from 'express';
 import request, { type Response } from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -53,6 +53,11 @@ function patch(path: string, session = admin) {
 
 function get(path: string, session = admin) {
   return request(app).get(`${API}${path}`).set('Cookie', session.cookie);
+}
+
+function removeUser(id: string, session = admin) {
+  return request(app).delete(`${API}/users/${id}`).set('Origin', ORIGIN)
+    .set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({});
 }
 
 async function createUser(overrides: Record<string, unknown> = {}): Promise<PublicUser> {
@@ -492,9 +497,9 @@ describe('Administration accounts and server-side authorization', () => {
     const searched = await get('/users?q=ANA');
     expect(searched.body.total).toBe(1);
     expect(searched.body.items[0].id).toBe(user.id);
-    const modified = await patch(`/users/${user.id}`).send({ name: 'Ana Taller', role: 'TALLER', active: false });
+    const modified = await patch(`/users/${user.id}`).send({ name: 'Ana Taller', email: 'ana.actualizada@example.test', role: 'TALLER', active: false });
     expect(modified.status).toBe(200);
-    expect(modified.body.user).toMatchObject({ id: user.id, name: 'Ana Taller', role: 'TALLER', active: false });
+    expect(modified.body.user).toMatchObject({ id: user.id, name: 'Ana Taller', email: 'ana.actualizada@example.test', role: 'TALLER', active: false });
     expect((await login(user.email)).status).toBe(401);
   });
 
@@ -513,6 +518,7 @@ describe('Administration accounts and server-side authorization', () => {
     expect((await post('/users', actor).send({ name: 'No permitido' })).status).toBe(403);
     expect((await patch(`/users/${master.id}`, actor).send({ role: 'DISENO' })).status).toBe(403);
     expect((await post(`/users/${master.id}/password`, actor).send({ password: NEW_PASSWORD })).status).toBe(403);
+    expect((await removeUser(master.id, actor)).status).toBe(403);
   });
 
   it('revokes a user session immediately on deactivation', async () => {
@@ -589,5 +595,70 @@ describe('Administration accounts and server-side authorization', () => {
     const anotherInactive = await createUser({ email: 'another-inactive@example.test', active: false });
     expect(anotherInactive.active).toBe(false);
     expect((await patch(`/users/${anotherInactive.id}`).send({ active: true })).status).toBe(409);
+  });
+
+  it('removes account access and listing, revokes sessions and permits email reuse without restoring the old identity',async()=>{
+    const user=await createUser(),session=await activeSession(user.email);
+    expect((await removeUser(user.id)).status).toBe(204);
+    const stored=(await db.query<{name:string;email:string;is_active:boolean;deleted_at:Date}>(
+      'SELECT name,email,is_active,deleted_at FROM users WHERE id=$1',[user.id])).rows[0];
+    expect(stored).toMatchObject({name:user.name,email:user.email,is_active:false});
+    expect(stored.deleted_at).toBeTruthy();
+    expect((await get('/auth/session',session)).status).toBe(401);
+    expect((await login(user.email,NEW_PASSWORD)).status).toBe(401);
+    expect((await get('/users')).body).toMatchObject({total:1,items:[{id:master.id}]});
+    expect((await get(`/users?q=${encodeURIComponent(user.email)}`)).body.total).toBe(0);
+    expect((await patch(`/users/${user.id}`).send({active:true,name:'Intento de restauración'})).status).toBe(404);
+    expect((await post(`/users/${user.id}/password`).send({password:THIRD_PASSWORD})).status).toBe(404);
+    expect((await removeUser(user.id)).status).toBe(204);
+    const replacement=await createUser({name:'Otra persona',email:user.email});
+    expect(replacement.id).not.toBe(user.id);
+    const signed=await login(user.email);
+    expect(signed.status).toBe(200);expect(signed.body.user.id).toBe(replacement.id);
+    expect((await login(user.email,NEW_PASSWORD)).status).toBe(401);
+    expect((await db.query('SELECT user_id FROM sessions WHERE user_id=$1',[user.id])).rows).toEqual([]);
+  });
+
+  it('keeps OT, payment authorship, history and the removed account draft intact',async()=>{
+    const user=await createUser({role:'ADMIN_GENERAL'}),session=await activeSession(user.email);
+    const client=(await post('/clients',session).send({name:'Cliente con autoría',phone:'3001234567',specialPayment:true})).body.client;
+    const created=await post('/orders',session).send({requestId:randomUUID(),clientId:client.id,
+      description:'Conservar autoría y cobros',value:100000,documentType:'REM',category:'Proyecto',
+      route:'WORKSHOP_ONLY',requiresInstallation:false,
+      initialPayment:{date:new Date().toISOString().slice(0,10),amount:25000,method:'BANCOLOMBIA'}});
+    expect(created.status,JSON.stringify(created.body)).toBe(201);
+    await db.query('INSERT INTO order_drafts(created_by,payload) VALUES($1,$2::jsonb)',[user.id,JSON.stringify({description:'Borrador conservado'})]);
+    expect((await removeUser(user.id)).status).toBe(204);
+    const viewed=await get(`/orders/${created.body.order.id}`);
+    expect(viewed.status).toBe(200);
+    expect(viewed.body.order).toMatchObject({createdBy:user.id,
+      payments:[{recordedBy:user.id,recordedByName:user.name,amount:25000}],financials:{paid:25000,balance:75000}});
+    expect((await get('/orders')).body.items.find((order:{id:string})=>order.id===created.body.order.id))
+      .toMatchObject({createdBy:user.id,creatorName:user.name});
+    const history=await get(`/history?orderId=${created.body.order.id}`);
+    expect(history.status).toBe(200);
+    expect(history.body.items).toHaveLength(2);
+    expect(history.body.items.every((entry:{actor:{id:string;name:string}})=>entry.actor.id===user.id&&entry.actor.name===user.name)).toBe(true);
+    expect((await db.query('SELECT payload FROM order_drafts WHERE created_by=$1',[user.id])).rows)
+      .toEqual([{payload:{description:'Borrador conservado'}}]);
+  });
+
+  it('protects the own account and leaves one active Adminmaster under concurrent mutual removal',async()=>{
+    expect((await removeUser(master.id)).body.error.code).toBe('OWN_ACCOUNT_PROTECTED');
+    const second=await createUser({role:'ADMINMASTER'}),session=await activeSession(second.email);
+    expect((await removeUser(master.id)).body.error.code).toBe('OWN_ACCOUNT_PROTECTED');
+    const concurrent=await Promise.all([removeUser(second.id),removeUser(master.id,session)]);
+    expect(concurrent.map(response=>response.status).sort()).toEqual([204,401]);
+    expect((await db.query("SELECT id FROM users WHERE role='ADMINMASTER' AND is_active=true")).rows).toHaveLength(1);
+  });
+
+  it('requires authentication, CSRF and valid target IDs for removal and enforces the inactive tombstone',async()=>{
+    const user=await createUser();
+    expect((await request(app).delete(`${API}/users/${user.id}`).set('Origin',ORIGIN).send({})).status).toBe(401);
+    expect((await request(app).delete(`${API}/users/${user.id}`).set('Origin',ORIGIN).set('Cookie',admin.cookie).send({})).status).toBe(403);
+    expect((await removeUser('00000000-0000-4000-8000-000000000099')).status).toBe(404);
+    expect([400,422]).toContain((await removeUser('invalid')).status);
+    expect((await removeUser(user.id)).status).toBe(204);
+    await expect(db.query('UPDATE users SET is_active=true WHERE id=$1',[user.id])).rejects.toMatchObject({code:'23514'});
   });
 });

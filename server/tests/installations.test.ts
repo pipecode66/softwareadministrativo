@@ -530,6 +530,19 @@ describe('Instalaciones: integridad y privacidad',()=>{
       leaderId:designer.user.id,memberIds:[designer.user.id]})).status).toBe(400);
     expect((await get('/installations/teams')).body.items[0].memberIds).toEqual([installer.user.id]);
   });
+  it('conserva integrantes eliminados al editar un equipo archivado, sin admitir nuevas asignaciones a esas cuentas',async()=>{
+    const team=(await post('/installations/teams',{requestId:randomUUID(),name:'Equipo con historial',active:false,
+      leaderId:installer.user.id,memberIds:[installer.user.id]})).body.team;
+    const removal=await request(app).delete(`${API}/users/${installer.user.id}`).set('Origin',ORIGIN)
+      .set('Cookie',admin.cookie).set('X-CSRF-Token',admin.csrf).send({});
+    expect(removal.status).toBe(204);
+    const renamed=await request(app).patch(`${API}/installations/teams/${team.id}`).set('Origin',ORIGIN)
+      .set('Cookie',admin.cookie).set('X-CSRF-Token',admin.csrf).send({requestId:randomUUID(),version:team.version,name:'Historial conservado'});
+    expect(renamed.status).toBe(200);expect(renamed.body.team.memberIds).toEqual([installer.user.id]);
+    const fresh=await post('/installations/teams',{requestId:randomUUID(),name:'Equipo nuevo inválido',active:false,
+      leaderId:installer.user.id,memberIds:[installer.user.id]});
+    expect(fresh.status).toBe(400);expect(fresh.body.error.code).toBe('INSTALLER_UNAVAILABLE');
+  });
   it.each(['ADMINMASTER','ADMIN_GENERAL'] as const)('%s corrige el lugar sin cambiar asistencia y audita antes/después',async role=>{
     const editor=role==='ADMINMASTER'?admin:await actor(role,'Administración general');
     const row=await start(await create());

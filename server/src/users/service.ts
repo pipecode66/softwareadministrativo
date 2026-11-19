@@ -38,7 +38,8 @@ async function ensureActiveCapacity(tx: SqlConnection): Promise<void> {
 }
 
 async function findUser(tx: SqlConnection, id: string): Promise<UserRow> {
-  const result = await tx.query<UserRow>('SELECT * FROM users WHERE id = $1 FOR UPDATE', [id]);
+  const result = await tx.query<UserRow>(`SELECT * FROM users
+    WHERE id = $1 AND (to_jsonb(users)->>'deleted_at') IS NULL FOR UPDATE`, [id]);
   if (!result.rows[0]) throw new ApiError(404, 'USER_NOT_FOUND', 'La cuenta no existe.');
   return result.rows[0];
 }
@@ -54,7 +55,9 @@ export async function listUsers(db: Database, input: ListUsersInput): Promise<{
   items: PublicUser[]; page: number; pageSize: number; total: number;
 }> {
   // POSITION treats %, _ and backslashes literally; all inputs remain bound parameters.
-  const filter = '($1 = \'\' OR position(lower($1) in lower(name)) > 0 OR position(lower($1) in lower(email)) > 0)';
+  // Reading the optional marker through JSON also supports a deployment before SQL017 is applied.
+  const filter = `(to_jsonb(users)->>'deleted_at') IS NULL
+    AND ($1 = '' OR position(lower($1) in lower(name)) > 0 OR position(lower($1) in lower(email)) > 0)`;
   const total = await db.query<{ total: string | number }>(`SELECT count(*) AS total FROM users WHERE ${filter}`, [input.q]);
   const result = await db.query<UserRow>(`
     SELECT * FROM users WHERE ${filter}
@@ -122,5 +125,37 @@ export async function resetUserPassword(db: Database, auth: AuthSession, id: str
       WHERE id = $1
     `, [id, passwordHash]);
     await tx.query('DELETE FROM sessions WHERE user_id = $1', [id]);
+  });
+}
+
+/** Preserve the identity referenced by OT, payments, assignments and events; only account access is removed. */
+export async function deleteUser(db: Database, auth: AuthSession, id: string): Promise<void> {
+  await db.transaction(async tx => {
+    const actor = await lockAndAuthorize(tx, auth);
+    if (id === actor.id) {
+      throw new ApiError(409, 'OWN_ACCOUNT_PROTECTED', 'No puedes eliminar tu propia cuenta.');
+    }
+    const ready = (await tx.query<{ ready: boolean }>(`SELECT EXISTS (
+      SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('users')
+        AND attname='deleted_at' AND NOT attisdropped
+    ) AS ready`)).rows[0]?.ready;
+    if (!ready) {
+      throw new ApiError(503, 'USER_DELETION_SETUP_REQUIRED',
+        'Eliminar usuarios requiere completar su configuración. Aplica la migración 017 de usuarios.');
+    }
+    const target = (await tx.query<UserRow>('SELECT * FROM users WHERE id=$1 FOR UPDATE', [id])).rows[0];
+    if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'La cuenta no existe.');
+    if (target.deleted_at) return;
+    if (target.is_active && target.role === 'ADMINMASTER') {
+      const masters = await tx.query<{ total: string | number }>(
+        "SELECT count(*) AS total FROM users WHERE is_active=true AND role='ADMINMASTER'",
+      );
+      if (Number(masters.rows[0].total) <= 1) {
+        throw new ApiError(409, 'LAST_ADMINMASTER_PROTECTED', 'Debe permanecer al menos un ADMINMASTER activo.');
+      }
+    }
+    await tx.query(`UPDATE users SET is_active=false,deleted_at=clock_timestamp(),updated_at=clock_timestamp()
+      WHERE id=$1`, [id]);
+    await tx.query('DELETE FROM sessions WHERE user_id=$1', [id]);
   });
 }

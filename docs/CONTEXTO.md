@@ -4,6 +4,10 @@
 
 Intermedios Gestión centraliza clientes, ventas, cartera y producción publicitaria para una sola sede y hasta 15 usuarios. Los roles son ADMINMASTER, ADMIN_GENERAL, APOYO_COMERCIAL, DISENO, IMPRESION, TALLER, INSTALADOR y ADMIN_INSTALADORES. Las fuentes de Downloads y el PDF son referencias de solo lectura; las instrucciones directas del usuario prevalecen.
 
+## Gestión de usuarios
+
+ADMINMASTER puede editar nombre, correo y rol desde Usuarios, además de activar/desactivar y restablecer contraseñas. Desde el19/11 se permite Eliminar usuario dentro de Editar, con confirmación. La cuenta deja de aparecer y no puede ingresar, editarse, reactivarse ni restablecerse. Su identidad y nombre se conservan para las OT, pagos, eventos y trabajos existentes. El correo queda disponible para una nueva cuenta, que tendrá ID distinto y no heredará registros. No se puede eliminar la propia cuenta ni dejar al sistema sin Adminmaster activo; los demás perfiles no administran cuentas. Requiere017 en Supabase; no se han eliminado usuarios reales desde este desarrollo ni aplicado SQL productivo.
+
 ## Nuevo alcance: Instalaciones
 
 Última autorización del09/11: publicar el módulo completo y su rol gestor en main para realizar las pruebas en producción. Sustituye las restricciones anteriores de sólo-local, que se conservan como antecedentes en los documentos. Activación mediante015 y016 en Supabase, sin ejecutar SQL ni crear perfiles reales desde este entorno. Vercel no aplica migraciones automáticamente; la guía está en `docs/INSTALACIONES_PRODUCCION.md`. Los comandos de desarrollo aislado siguen siendo locales.

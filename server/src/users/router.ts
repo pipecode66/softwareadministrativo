@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { Database } from '../db/types.js';
 import { ApiError } from '../errors.js';
 import { createUserSchema, listUsersSchema, resetPasswordSchema, updateUserSchema, userParamsSchema } from './schemas.js';
-import { createUser, listUsers, resetUserPassword, updateUser } from './service.js';
+import { createUser, deleteUser, listUsers, resetUserPassword, updateUser } from './service.js';
 
 /** Mounted after authentication, password-change enforcement and CSRF middleware. */
 export function createUsersRouter(db: Database): Router {
@@ -32,6 +32,12 @@ export function createUsersRouter(db: Database): Router {
     const input = updateUserSchema.parse(req.body);
     const user = await updateUser(db, req.auth!, id, input);
     res.json({ user });
+  });
+
+  router.delete('/:id', async (req, res) => {
+    const { id } = userParamsSchema.parse(req.params);
+    await deleteUser(db, req.auth!, id);
+    res.status(204).end();
   });
 
   router.post('/:id/password', async (req, res) => {

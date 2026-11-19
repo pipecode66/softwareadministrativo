@@ -4,7 +4,7 @@ import type { AppData, Client, OrderAction, OrderInput, User, WorkOrder } from '
 import { createWorkOrder, deleteWorkOrderPayment, editWorkOrder, recordPayment, transitionWorkOrder, validateClient } from '../domain/service';
 import { financials, isAdmin, ROLE_LABELS } from '../domain/utils';
 import {
-  apiAddPayment, apiCorrectPayment, apiDeletePayment, apiBulkPayment, apiCertificateReport, apiSetCertificates, apiChangePassword, apiCreateOrder, apiCreateUser, apiDeleteClient, apiListClients, apiListOrders, apiListUsers, apiLogin, apiLogout, apiResetPassword,
+  apiAddPayment, apiCorrectPayment, apiDeletePayment, apiBulkPayment, apiCertificateReport, apiSetCertificates, apiChangePassword, apiCreateOrder, apiCreateUser, apiDeleteUser, apiDeleteClient, apiListClients, apiListOrders, apiListUsers, apiLogin, apiLogout, apiResetPassword,
   apiMaterialReport, apiPortfolioReport, apiSalesReport, apiSaveClient, apiSession, apiTransitionOrder, apiUpdateOrder, apiUpdateUser,
   ApiRequestError, forgetApiSession, usingApi,
 } from './api';
@@ -39,6 +39,7 @@ interface AppContextValue {
   saveClient: (input: ClientInput, id?: string) => Promise<Client>;
   deleteClient: (id: string) => Promise<void>;
   saveUser: (input: UserInput, id?: string) => Promise<User>;
+  deleteUser: (id: string) => Promise<void>;
   resetPassword: (id: string, password: string) => Promise<void>;
   refreshAccounts: () => Promise<void>;
   toast: (message: string, type?: 'success' | 'error') => void;
@@ -59,7 +60,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [dataError, setDataError] = useState('');
   const [messages, setMessages] = useState<{ id: number; message: string; type: 'success' | 'error' }[]>([]);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const localUser = data.users.find(u => u.id === userId && u.active) || null;
+  const localUser = data.users.find(u => u.id === userId && u.active && !u.deletedAt) || null;
   const user = usingApi ? sessionUser : localUser;
   function toast(message: string, type: 'success' | 'error' = 'success') {
     const id = Date.now() + Math.random();
@@ -78,7 +79,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => { window.removeEventListener('storage', receive); timers.current.forEach(clearTimeout); };
   }, []);
   useEffect(() => {
-    if (!usingApi) { setAccounts(data.users); return; }
+    if (!usingApi) { setAccounts(data.users.filter(account => !account.deletedAt)); return; }
     const epoch = ++sessionEpoch.current;
     (async () => {
       try {
@@ -145,7 +146,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     commit({ ...current, orders: current.orders.map(o => o.id === id ? next : o) });
   }
   async function refreshAccounts() {
-    if (!usingApi) { setAccounts(latest().users); return; }
+    if (!usingApi) { setAccounts(latest().users.filter(account => !account.deletedAt)); return; }
     const current = sessionRef.current, epoch = sessionEpoch.current;
     if (current?.role !== 'ADMINMASTER' || current.mustChangePassword) return;
     const next = await remote(() => apiListUsers());
@@ -187,7 +188,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(timer);
   }, [sessionUser?.id, sessionUser?.role, sessionUser?.mustChangePassword]);
   const value: AppContextValue = {
-    data, user, accounts: usingApi ? accounts : data.users, sessionReady, usingApi, dataLoading, dataError, refreshData, refreshAccounts,
+    data, user, accounts: usingApi ? accounts : data.users.filter(account => !account.deletedAt), sessionReady, usingApi, dataLoading, dataError, refreshData, refreshAccounts,
     loadSalesReport: query => remote(() => apiSalesReport(query)),
     loadPortfolioReport: query => remote(() => apiPortfolioReport(query)),
     loadCertificateReport: query => remote(() => apiCertificateReport(query)),
@@ -370,13 +371,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const account = actor(current);
       if (account.role !== 'ADMINMASTER') throw new Error('Solo Adminmaster puede gestionar usuarios.');
       if (!input.name.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim()) || !(input.role in ROLE_LABELS)) throw new Error('Completa nombre, correo y perfil válidos.');
-      if (id && !current.users.some(u => u.id === id)) throw new Error('No encontramos este usuario.');
-      if (current.users.some(u => u.email.toLowerCase() === input.email.trim().toLowerCase() && u.id !== id)) throw new Error('Este correo ya está registrado.');
+      if (id && !current.users.some(u => u.id === id && !u.deletedAt)) throw new Error('No encontramos este usuario.');
+      if (current.users.some(u => !u.deletedAt && u.email.toLowerCase() === input.email.trim().toLowerCase() && u.id !== id)) throw new Error('Este correo ya está registrado.');
       if (input.active && current.users.filter(u => u.active && u.id !== id).length >= 15) throw new Error('La empresa puede tener hasta 15 usuarios activos.');
       if (id === account.id && (!input.active || input.role !== 'ADMINMASTER')) throw new Error('No puedes desactivar tu propio acceso ni cambiar tu perfil.');
       const next: User = { id: id || crypto.randomUUID(), name: input.name.trim(), email: input.email.trim().toLowerCase(), role: input.role, active: input.active };
       commit({ ...current, users: id ? current.users.map(u => u.id === id ? next : u) : [...current.users, next] });
       return next;
+    },
+    async deleteUser(id) {
+      if (usingApi) {
+        if (sessionRef.current?.role !== 'ADMINMASTER') throw new Error('Solo Adminmaster puede eliminar usuarios.');
+        if (id === sessionRef.current.id) throw new Error('No puedes eliminar tu propia cuenta.');
+        const epoch = sessionEpoch.current;
+        await remote(() => apiDeleteUser(id));
+        if (epoch !== sessionEpoch.current) return;
+        setAccounts(current => current.filter(account => account.id !== id));
+        replaceData({ ...dataRef.current, users: dataRef.current.users.filter(account => account.id !== id) });
+        return;
+      }
+      const current = latest(), account = actor(current);
+      if (account.role !== 'ADMINMASTER') throw new Error('Solo Adminmaster puede eliminar usuarios.');
+      if (id === account.id) throw new Error('No puedes eliminar tu propia cuenta.');
+      const target = current.users.find(person => person.id === id);
+      if (!target) throw new Error('No encontramos este usuario.');
+      if (target.deletedAt) return;
+      commit({ ...current, users: current.users.map(person => person.id === id ? { ...person, active: false, deletedAt: new Date().toISOString() } : person) });
     },
     async resetPassword(id, password) {
       if (!usingApi) throw new Error('El restablecimiento de contraseña corresponde a la API.');

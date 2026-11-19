@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from 'react';
-import { KeyRound, Pencil, Plus, ShieldCheck, UsersRound } from 'lucide-react';
+import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UsersRound } from 'lucide-react';
 import { useApp } from '../data/AppContext';
 import type { Role, User } from '../domain/types';
 import { initials, ROLE_LABELS } from '../domain/utils';
 import { Button, Card, DataTable, EmptyState, Field, KpiCard, Modal, PageHeader, SearchInput } from '../components/ui';
 
 export function UsersPage() {
-  const { accounts, user, saveUser, resetPassword, usingApi, dataLoading, toast } = useApp();
+  const { accounts, user, saveUser, deleteUser, resetPassword, usingApi, dataLoading, toast } = useApp();
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<User | 'new' | null>(null);
   const [resetting, setResetting] = useState<User | null>(null);
@@ -14,22 +14,33 @@ export function UsersPage() {
   const [temporaryPassword, setTemporaryPassword] = useState('');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const rows = accounts.filter(u => `${u.name} ${u.email} ${ROLE_LABELS[u.role]}`.toLowerCase().includes(query.toLowerCase()));
   const active = accounts.filter(u => u.active).length;
   function open(value: User | 'new') {
-    setEditing(value); setError('');
+    setEditing(value); setError(''); setConfirmingDelete(false);
     setForm(value === 'new' ? { name: '', email: '', role: 'ADMIN_GENERAL', active: true, password: '' } : { name: value.name, email: value.email, role: value.role, active: value.active, password: '' });
   }
-  function close() { if (!pending) { setEditing(null); setResetting(null); setTemporaryPassword(''); setForm(current => ({ ...current, password: '' })); } }
+  function close() { if (!pending) { setEditing(null); setResetting(null); setConfirmingDelete(false); setTemporaryPassword(''); setForm(current => ({ ...current, password: '' })); } }
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (pending) return;
+    if (pending || confirmingDelete) return;
     setPending(true); setError('');
     try {
       await saveUser(form, editing && editing !== 'new' ? editing.id : undefined);
       setEditing(null); setForm(current => ({ ...current, password: '' }));
       toast(usingApi ? 'Usuario guardado en el servidor.' : 'Usuario guardado en el entorno local.');
     } catch (err) { setError(err instanceof Error ? err.message : 'No fue posible guardar.'); }
+    finally { setPending(false); }
+  }
+  async function confirmDelete() {
+    if (!editing || editing === 'new' || !confirmingDelete || pending) return;
+    setPending(true); setError('');
+    try {
+      await deleteUser(editing.id);
+      setEditing(null); setConfirmingDelete(false);
+      toast('Usuario eliminado. Se conserva su nombre en las órdenes, pagos e historial.');
+    } catch (err) { setError(err instanceof Error ? err.message : 'No fue posible eliminar el usuario.'); }
     finally { setPending(false); }
   }
   async function submitReset(event: FormEvent) {
@@ -58,12 +69,20 @@ export function UsersPage() {
     ]} renderCard={u => <div className="stack"><div className="row"><span className="avatar">{initials(u.name)}</span><strong>{u.name}</strong></div><span className="muted break-word">{u.email}</span><div className="row wrap"><span className="badge badge-slate">{ROLE_LABELS[u.role]}</span><span className={`badge badge-${u.active ? 'green' : 'slate'}`}>{u.active ? 'Activo' : 'Inactivo'}</span></div>{usingApi && u.mustChangePassword && <span className="cell-subtitle">Cambio de contraseña pendiente</span>}{actions(u)}</div>}/> : <EmptyState title={dataLoading ? 'Cargando usuarios…' : 'No encontramos usuarios'} description={dataLoading ? 'Consultando las cuentas del servidor.' : 'Prueba otro nombre o correo.'}/>}</Card>
     <p className="notice">{usingApi ? 'Las contraseñas no se muestran ni se recuperan. Comparte la contraseña temporal de forma privada; al ingresar, la persona deberá cambiarla. Desactivar una cuenta, cambiar su perfil o restablecer su contraseña cierra sus sesiones.' : 'Los cambios de cuentas corresponden al entorno local de revisión. Las contraseñas y su restablecimiento se gestionan únicamente en modo servidor.'}</p>
     <Modal open={!!editing} onClose={close} title={editing === 'new' ? 'Nuevo usuario' : 'Editar usuario'}><form className="stack" onSubmit={submit} aria-busy={pending}>
+      {confirmingDelete && editing && editing !== 'new' ? <>
+        <p className="break-word">¿Eliminar a <strong>{editing.name}</strong> ({editing.email})?</p>
+        <p>La cuenta desaparecerá de Usuarios y no podrá ingresar. Sus órdenes, pagos e historial conservarán su nombre.</p>
+        <div className="modal-actions"><Button variant="secondary" disabled={pending} onClick={() => { setConfirmingDelete(false); setError(''); }}>Cancelar eliminación</Button><Button variant="danger" disabled={pending} onClick={() => void confirmDelete()}><Trash2 size={16}/>{pending ? 'Eliminando…' : 'Confirmar eliminación'}</Button></div>
+      </> : <>
       <Field label="Nombre" htmlFor="user-name"><input className="input" id="user-name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required maxLength={120} disabled={pending}/></Field>
       <Field label="Correo" htmlFor="user-email"><input className="input" id="user-email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required maxLength={160} disabled={pending}/></Field>
       <Field label="Perfil" htmlFor="user-role"><select className="select" id="user-role" value={form.role} onChange={e => setForm({ ...form, role: e.target.value as Role })} disabled={pending}>{Object.entries(ROLE_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field>
       <label className="check-field"><input type="checkbox" checked={form.active} onChange={e => setForm({ ...form, active: e.target.checked })} disabled={pending}/>Usuario activo</label>
       {usingApi && editing === 'new' && <Field label="Contraseña temporal" htmlFor="user-password" hint="Entre 12 y 128 caracteres. Será obligatorio cambiarla al ingresar."><input className="input" id="user-password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} disabled={pending}/></Field>}
-      {error && <p className="form-alert" role="alert">{error}</p>}<div className="modal-actions"><Button variant="secondary" onClick={close} disabled={pending}>Cancelar</Button><Button type="submit" disabled={pending}>{pending ? 'Guardando…' : 'Guardar usuario'}</Button></div>
+      <div className="modal-actions"><Button variant="secondary" onClick={close} disabled={pending}>Cancelar</Button><Button type="submit" disabled={pending}>{pending ? 'Guardando…' : 'Guardar usuario'}</Button></div>
+      {editing && editing !== 'new' && editing.id !== user.id && <Button variant="danger" disabled={pending} onClick={() => { setConfirmingDelete(true); setError(''); }}><Trash2 size={16}/>Eliminar usuario</Button>}
+      </>}
+      {error && <p className="form-alert" role="alert">{error}</p>}
     </form></Modal>
     <Modal open={!!resetting} onClose={close} title="Restablecer contraseña"><form className="stack" onSubmit={submitReset} aria-busy={pending}>
       <p>Se cerrarán todas las sesiones de <strong>{resetting?.name}</strong>. La persona deberá cambiar esta contraseña temporal al volver a ingresar.</p>

@@ -134,7 +134,8 @@ export async function createAuth(db: Database, config: AppConfig): Promise<{
 
   router.post('/login', async (request, response) => {
     const input = loginSchema.parse(request.body);
-    const { rows } = await db.query<UserRow>('SELECT * FROM users WHERE email = $1', [input.email]);
+    const { rows } = await db.query<UserRow>(`SELECT * FROM users
+      WHERE email = $1 AND (to_jsonb(users)->>'deleted_at') IS NULL`, [input.email]);
     const candidate = rows[0];
     const valid = await verifyPassword(candidate?.password_hash ?? dummyHash, input.password);
     if (!valid || !candidate?.is_active) throw invalidCredentials();

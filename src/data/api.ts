@@ -123,6 +123,10 @@ export async function apiUpdateUser(id: string, input: { name?: string; email?: 
   return asUser(body.user);
 }
 
+export async function apiDeleteUser(id: string): Promise<void> {
+  await request<void>(`/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 export async function apiResetPassword(id: string, password: string): Promise<void> {
   await request<void>(`/users/${id}/password`, { method: 'POST', body: JSON.stringify({ password }) });
 }

@@ -146,9 +146,10 @@ async function assertInstaller(tx:SqlConnection,id:string) {
     "SELECT id FROM users WHERE id=$1 AND role='INSTALADOR' AND is_active=true FOR SHARE",[id])).rows[0];
   if(!installer) throw new ApiError(400,'INSTALLER_UNAVAILABLE','Selecciona un instalador activo.','installerId');
 }
-async function assertTeamMember(tx:SqlConnection,id:string,activeRequired:boolean) {
+async function assertTeamMember(tx:SqlConnection,id:string,activeRequired:boolean,retained=false) {
   const member=(await tx.query<{id:string}>(`SELECT id FROM users WHERE id=$1 AND role='INSTALADOR'
-    AND ($2::boolean=false OR is_active=true) FOR SHARE`,[id,activeRequired])).rows[0];
+    AND ($2::boolean=false OR is_active=true)
+    AND ($3::boolean=true OR (to_jsonb(users)->>'deleted_at') IS NULL) FOR SHARE`,[id,activeRequired,retained])).rows[0];
   if(!member) throw new ApiError(400,'INSTALLER_UNAVAILABLE',activeRequired?'Selecciona únicamente instaladores activos para activar el equipo.':
     'Los integrantes de un equipo deben existir y tener perfil de Instalador.','memberIds');
 }
@@ -585,7 +586,7 @@ export async function saveInstallationTeam(db:Database,auth:AuthSession,id:strin
       const name=parsed.name??old!.name,leaderId=parsed.leaderId??old!.leader_id;
       const ids=parsed.memberIds??old!.member_ids,active=parsed.active??old!.is_active;
       if(!ids.includes(leaderId)) throw new ApiError(400,'LEADER_NOT_MEMBER','El responsable debe pertenecer al equipo.','leaderId');
-      for(const memberId of [...ids].sort()) await assertTeamMember(tx,memberId,active);
+      for(const memberId of [...ids].sort()) await assertTeamMember(tx,memberId,active,Boolean(old?.member_ids.includes(memberId)));
       const teamId=id??randomUUID();
       if(id) await tx.query(`UPDATE installation_teams SET name=$2,leader_id=$3,is_active=$4,
         version=version+1,updated_at=clock_timestamp() WHERE id=$1`,[id,name,leaderId,active]);

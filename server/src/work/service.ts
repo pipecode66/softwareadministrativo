@@ -292,10 +292,15 @@ export async function correctOrderProducts(tx: SqlConnection, orderId: string, i
     if (used.has(product.id) || !current.some(item => item.id === product.id)) throw new ApiError(400, 'PRODUCT_ID', 'Selecciona productos de esta OT sin repetir.');
     used.add(product.id);
   }
+  const deletedDesigners = new Set<string>();
   for (const id of [...new Set(parsed.flatMap(product => product.activities.map(activity => activity.assignedUserId).filter((id): id is string => !!id)))].sort()) {
-    if (!(await tx.query("SELECT id FROM users WHERE id=$1 AND role='DISENO' FOR SHARE", [id])).rows.length) {
+    const designer = (await tx.query<{id:string;deleted:boolean}>(`SELECT id,
+      (to_jsonb(users)->>'deleted_at') IS NOT NULL AS deleted
+      FROM users WHERE id=$1 AND role='DISENO' FOR SHARE`, [id])).rows[0];
+    if (!designer) {
       throw new ApiError(400, 'DESIGNER_UNAVAILABLE', 'Selecciona un diseñador activo.');
     }
+    if (designer.deleted) deletedDesigners.add(id);
   }
   await tx.query('UPDATE order_products SET position=position+100000 WHERE order_id=$1', [orderId]);
   const retained: string[] = [];
@@ -319,6 +324,10 @@ export async function correctOrderProducts(tx: SqlConnection, orderId: string, i
       if (areas.has(activity.area)) throw new ApiError(400, 'DUPLICATE_AREA', 'Cada producto admite una actividad por área.');
       areas.add(activity.area);
       const old = previousActivities.find(item => item.area === activity.area);
+      if (activity.assignedUserId && deletedDesigners.has(activity.assignedUserId)
+          && old?.assigned_user_id !== activity.assignedUserId) {
+        throw new ApiError(400, 'DESIGNER_UNAVAILABLE', 'No puedes asignar trabajo nuevo a un usuario eliminado.');
+      }
       const type = activity.area === 'PRINTING' ? activity.printingType ?? 'PRINT' : null;
       const minutes = type === 'LASER' ? activity.laserMinutes ?? (old?.printing_type === 'LASER' ? old.laser_minutes : null) : null;
       if (type === 'LASER' && old?.status === 'COMPLETED' && !minutes) throw new ApiError(400, 'LASER_MINUTES_REQUIRED', 'Indica los minutos del Corte Láser ya finalizado.');
