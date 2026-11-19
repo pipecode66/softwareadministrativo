@@ -1,8 +1,12 @@
 # Estado de continuidad
 
-Actualizado: 2026-11-09.
+Actualizado: 2026-11-18.
 
 ## Estado actual
+
+**Corrección del autor de pagos y abonos — 18/11.** El usuario reportó «Usuario no disponible» en Registrado por desde Administración general. La causa está en la presentación: cada pago sólo entregaba `recordedBy` y la pantalla buscaba el nombre en `data.users`, que para ADMIN_GENERAL contiene únicamente la cuenta de la sesión. No es una pérdida de autoría en la base. Se añade `recordedByName` obtenido por JOIN con usuarios en las consultas de detalle/respuestas de cambios y listado de OT; incluye cuentas inactivas y sólo se expone donde ya se permiten pagos (ADMINMASTER/ADMIN_GENERAL). La tabla y las tarjetas móviles usan ese nombre y conservan el adaptador local como respaldo. Corregir un abono mantiene su autor original; quien lo corrige sigue registrado por auditoría. No requiere SQL, no cambia pagos, importes, saldos, reportes ni permisos. También corrige pagos anteriores al volver a consultar, sin migrar datos.
+
+Archivos: `server/src/orders/{domain,service}.ts`, `server/src/clients/service.ts`, `server/tests/{orders,clients}.test.ts`, `src/{domain/types.ts,pages/OrderDetail.tsx}`, `tests/payments-api.spec.ts` y continuidad. Se incluye la misma autoría en los pagos del historial de clientes, sin modificar su resumen financiero. Verificación aprobada: frontend215/215, servidor dirigido183/183 (órdenes121 y clientes62), ambos builds y3 recorridos E2E API/PGlite. El caso nuevo confirma Administración general con autores activos/inactivos, ausencia de descarga del directorio y denegación de /users, corrección que mantiene autor, recarga móvil y pago propio; las regresiones de eliminación/multiabono/saldos/reportes también pasaron. Captura390px en `test-results/payment-author-api` (ignorado por git). Publicación mediante commit/push a main conforme a la instrucción vigente; consultar git log para hash. Corrección del funcionamiento existente, sin incremento comercial (contador62/35 conservado). No se ha accedido a la OT de la captura ni modificado datos productivos; la comprobación funcional productiva sigue pendiente.
 
 **Instalaciones publicado el09/11.** El usuario revocó expresamente la restricción de trabajar sólo en local y pidió subir a main para probar en producción. El módulo completo con Instalador y Administrador de Instaladores se publicó en main/origin/main mediante el commit63a576e. GitHub informa estado Vercel success para ese commit. El usuario confirmó después que ejecutó los SQL015 y016 en Supabase; no se ha inspeccionado directamente el esquema productivo ni creado perfiles desde este entorno. Guía vigente: `docs/INSTALACIONES_PRODUCCION.md`; las notas anteriores de sólo-local quedan como antecedentes.
 

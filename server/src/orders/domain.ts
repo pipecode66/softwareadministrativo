@@ -119,7 +119,7 @@ export type OrderRow = {
   workshop_notes: string|null;
   installed_at: Date|string|null; installation_note: string|null; closed_at: Date|string|null; creation_key: string; creation_fingerprint: string;
 };
-export type PaymentRow = { id: string; order_id: string; date: string|Date; amount: string; method: typeof paymentMethods[number] | 'LEGACY'; recorded_by: string; request_key: string; bulk_batch_id?: string|null };
+export type PaymentRow = { id: string; order_id: string; date: string|Date; amount: string; method: typeof paymentMethods[number] | 'LEGACY'; recorded_by: string; recorded_by_name?: string|null; request_key: string; bulk_batch_id?: string|null };
 export const cents = (value: string|number) => Math.round(Number(value) * 100);
 export function financials(order: Pick<OrderRow,'value'|'document_type'|'rete_fuente'|'rete_iva'|'ica'> & Partial<Pick<OrderRow,'financial_rule'|'special_payment'>>, payments: Pick<PaymentRow,'amount'>[]) {
   const base = cents(order.value);
@@ -153,7 +153,8 @@ export function orderDto(row: OrderRow, payments: PaymentRow[], role: Role, desi
   return { ...operational, value: Number(row.value), reteFuente: Number(row.rete_fuente), reteIva: Number(row.rete_iva), ica: Number(row.ica),
     ...(row.invoice_reference ? { invoiceReference: row.invoice_reference } : {}),
     certificates: { reteFuente: row.certificate_rete_fuente, reteIva: row.certificate_rete_iva, ica: row.certificate_ica },
-    payments: payments.map(p => ({ id: p.id, date: typeof p.date === 'string' ? p.date.slice(0,10) : p.date.toISOString().slice(0,10), amount: Number(p.amount), method: p.method, recordedBy: p.recorded_by })),
+    payments: payments.map(p => ({ id: p.id, date: typeof p.date === 'string' ? p.date.slice(0,10) : p.date.toISOString().slice(0,10), amount: Number(p.amount), method: p.method, recordedBy: p.recorded_by,
+      ...(p.recorded_by_name ? { recordedByName: p.recorded_by_name } : {}) })),
     financials: financials(row, payments),
   };
 }

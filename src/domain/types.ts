@@ -11,7 +11,7 @@ export type OrderAction = 'send' | 'finishPrinting' | 'startWorkshop' | 'finishW
 export interface User { id: string; name: string; email: string; role: Role; active: boolean; mustChangePassword?: boolean }
 export interface Client { id: string; name: string; identification: string; phone: string; specialPayment?: boolean; createdAt: string }
 export interface Printing { material: Material; length: number; width: number }
-export interface Payment { id: string; date: string; amount: number; recordedBy: string; method?: PaymentMethod }
+export interface Payment { id: string; date: string; amount: number; recordedBy: string; recordedByName?: string; method?: PaymentMethod }
 export type WorkArea = 'DESIGN' | 'PRINTING' | 'WORKSHOP' | 'EXTERNAL';
 export type PrintingType = 'PRINT' | 'LASER';
 export interface ProductMaterial extends Printing { id?: string; areaM2?: number; consumedAt?: string | null }

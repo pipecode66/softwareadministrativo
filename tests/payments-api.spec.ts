@@ -96,3 +96,86 @@ test('eliminar asignaciones de un multiabono conserva otros pagos y el reenvío 
   expect(empty).toMatchObject({batchId:batch.batchId,amount:0,replayed:true,allocations:[]});
   for(const item of [first,second]) expect((await json(await page.request.get(`${API}/orders/${item.id}`))).order.financials).toMatchObject({paid:0,balance:100000});
 });
+
+test('Administración ve el autor de cada abono sin descargar usuarios, incluso tras desactivarlo o corregir el pago',async({page,browser},testInfo)=>{
+  test.setTimeout(120_000);
+  const {headers,actor}=await adminSession(page);
+  const temporary='Clave temporal pagos E2E 2026!',personal='Clave personal pagos E2E 2026!';
+  async function account(name:string) {
+    return (await json(await page.request.post(`${API}/users`,{headers,
+      data:{name,email:`payment-author-${randomUUID()}@example.test`,role:'ADMIN_GENERAL',active:true,password:temporary}}),201)).user;
+  }
+  const writer=await account('Administración autora de abono'),reader=await account('Administración consulta de abonos');
+  const writerContext=await browser.newContext({baseURL:ORIGIN});
+  const readerContext=await browser.newContext({baseURL:ORIGIN,viewport:{width:1440,height:1000},locale:'es-CO',timezoneId:'America/Bogota'});
+  try {
+    let order=await fixture(page,headers);
+    order=(await json(await page.request.post(`${API}/orders/${order.id}/payments`,{headers,
+      data:{requestId:randomUUID(),date:dateOnly(),amount:25000,method:'BANCOLOMBIA'}}),201)).order;
+    const login=await json(await writerContext.request.post(`${API}/auth/login`,{
+      headers:{Origin:ORIGIN},data:{email:writer.email,password:temporary}}));
+    const changed=await json(await writerContext.request.post(`${API}/auth/password`,{
+      headers:{Origin:ORIGIN,'X-CSRF-Token':login.csrfToken},data:{currentPassword:temporary,newPassword:personal}}));
+    order=(await json(await writerContext.request.post(`${API}/orders/${order.id}/payments`,{
+      headers:{Origin:ORIGIN,'X-CSRF-Token':changed.csrfToken},
+      data:{requestId:randomUUID(),date:dateOnly(),amount:15000,method:'EFECTIVO'}}),201)).order;
+    const original=order.payments.find((payment:{recordedBy:string})=>payment.recordedBy===writer.id);
+    expect(original).toMatchObject({recordedByName:writer.name,amount:15000});
+    await json(await page.request.patch(`${API}/users/${writer.id}`,{headers,data:{active:false}}));
+
+    const viewer=await readerContext.newPage(),directoryRequests:string[]=[];
+    viewer.on('request',request=>{if(/\/api\/v1\/users(?:[/?]|$)/.test(request.url())) directoryRequests.push(request.url());});
+    await viewer.goto('/login');
+    await viewer.getByLabel('Usuario o correo',{exact:true}).fill(reader.email);
+    await viewer.getByLabel('Contraseña',{exact:true}).fill(temporary);
+    await viewer.getByRole('button',{name:'Ingresar al sistema',exact:true}).click();
+    await expect(viewer).toHaveURL(/\/change-password$/);
+    await viewer.getByLabel('Contraseña actual',{exact:true}).fill(temporary);
+    await viewer.getByLabel('Nueva contraseña',{exact:true}).fill(personal);
+    await viewer.getByLabel('Confirmar nueva contraseña',{exact:true}).fill(personal);
+    await viewer.getByRole('button',{name:'Guardar nueva contraseña',exact:true}).click();
+    await expect(viewer).toHaveURL(/\/$/);
+    await viewer.goto(`/orders/${order.id}`);
+    const payments=viewer.locator('.order-payments-card'),rows=payments.locator('tbody tr');
+    await expect(rows.filter({hasText:formatCOP(25000)}).getByRole('cell',{name:actor.name,exact:true})).toBeVisible();
+    await expect(rows.filter({hasText:formatCOP(15000)}).getByRole('cell',{name:writer.name,exact:true})).toBeVisible();
+    await expect(payments).not.toContainText('Usuario no disponible');
+    expect(directoryRequests).toEqual([]);
+    expect((await readerContext.request.get(`${API}/users`)).status()).toBe(403);
+
+    await viewer.getByRole('button',{name:`Corregir pago de ${formatCOP(15000)}`,exact:true}).click();
+    const correction=viewer.getByRole('dialog',{name:'Corregir pago',exact:true});
+    await correction.getByLabel('Valor corregido (COP)',{exact:true}).fill('12000');
+    const correctionResponse=viewer.waitForResponse(response=>response.request().method()==='PATCH'&&response.url().endsWith(`/payments/${original.id}`));
+    await correction.getByRole('button',{name:'Guardar corrección',exact:true}).click();
+    const corrected=(await json(await correctionResponse)).order;
+    expect(corrected.payments.find((payment:{id:string})=>payment.id===original.id))
+      .toMatchObject({amount:12000,recordedBy:writer.id,recordedByName:writer.name});
+    await expect(correction).toHaveCount(0);
+    await expect(rows.filter({hasText:formatCOP(12000)}).getByRole('cell',{name:writer.name,exact:true})).toBeVisible();
+
+    await viewer.setViewportSize({width:390,height:844});
+    await viewer.reload();
+    const cards=payments.locator('.order-mobile-payment');
+    await expect(cards.filter({hasText:formatCOP(25000)})).toContainText(actor.name);
+    await expect(cards.filter({hasText:formatCOP(12000)})).toContainText(writer.name);
+    await expect(payments).not.toContainText('Usuario no disponible');
+    await payments.getByRole('button',{name:'Registrar pago',exact:true}).click();
+    const paymentForm=viewer.getByRole('dialog',{name:/Registrar pago · OT/});
+    await paymentForm.getByLabel('Valor del pago (COP) *',{exact:true}).fill('10000');
+    await paymentForm.getByLabel('Medio de pago *',{exact:true}).selectOption('DAVIVIENDA');
+    const paymentResponse=viewer.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith(`/orders/${order.id}/payments`));
+    await paymentForm.getByRole('button',{name:'Confirmar y registrar pago',exact:true}).click();
+    const withOwnPayment=(await json(await paymentResponse,201)).order;
+    expect(withOwnPayment.payments.find((payment:{recordedBy:string})=>payment.recordedBy===reader.id))
+      .toMatchObject({amount:10000,recordedByName:reader.name});
+    await expect(paymentForm).toHaveCount(0);
+    await expect(cards.filter({hasText:formatCOP(10000)})).toContainText(reader.name);
+    await expect(payments).not.toContainText('Usuario no disponible');
+    await payments.scrollIntoViewIfNeeded();
+    await viewer.screenshot({path:testInfo.outputPath('autores-abonos-administracion-390.png'),fullPage:false});
+  } finally {
+    await writerContext.close();await readerContext.close();
+    await json(await page.request.patch(`${API}/users/${reader.id}`,{headers,data:{active:false}}));
+  }
+});

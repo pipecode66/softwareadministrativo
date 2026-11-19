@@ -658,7 +658,50 @@ describe('Cambios financieros y ruta externa', () => {
     expect(created.body.order.status).toBe('NEW');
     const viewed = await get(`/orders/${created.body.order.id}`);
     expect(viewed.body.order.financials).toMatchObject({paid:25000,balance:75000,paymentStatus:'PARTIAL'});
-    expect(viewed.body.order.payments[0]).toMatchObject({amount:25000,method:'BANCOLOMBIA',recordedBy:designer.user.id});
+    expect(viewed.body.order.payments[0]).toMatchObject({amount:25000,method:'BANCOLOMBIA',recordedBy:designer.user.id,
+      recordedByName:designer.user.name});
+    const designerView = await get(`/orders/${created.body.order.id}`,designer);
+    expect(designerView.status).toBe(200);
+    expect(designerView.body.order).not.toHaveProperty('payments');
+    expect(designerView.text).not.toContain('recordedByName');
+  });
+
+  it('resuelve el autor original de abonos y multiabonos aunque su cuenta esté inactiva y otra persona corrija el pago',async()=>{
+    const recorder=await actor('ADMIN_GENERAL');
+    const expectedAuthor={recordedBy:recorder.user.id,recordedByName:recorder.user.name};
+    const first=await create({initialPayment:{date:dateOnly(),amount:25000,method:'BANCOLOMBIA'}},recorder);
+    expect(first.payments).toEqual([expect.objectContaining(expectedAuthor)]);
+    const received=await payment(first,10000,recorder);
+    expect(received.status).toBe(201);
+    expect(received.body.order.payments).toEqual([expect.objectContaining(expectedAuthor),expect.objectContaining(expectedAuthor)]);
+    const second=await create();
+    const bulk=await post('/orders/bulk-payments',{clientId,selectedOrderIds:[first.id,second.id],
+      date:dateOnly(),amount:100000,method:'DAVIVIENDA',requestId:randomUUID()},recorder);
+    expect(bulk.status).toBe(201);
+
+    // Historical attribution is independent from active-user directories and the viewer's account.
+    await db.query('UPDATE users SET is_active=false WHERE id=$1',[recorder.user.id]);
+    const listed=await get('/orders');
+    expect(listed.status).toBe(200);
+    for(const id of [first.id,second.id]) {
+      const summary=listed.body.items.find((order:OrderView)=>order.id===id);
+      const detail=await get(`/orders/${id}`);
+      expect(detail.status).toBe(200);
+      expect(detail.body.order.payments).toEqual(summary.payments);
+      expect(summary.payments.length).toBeGreaterThan(0);
+      for(const saved of summary.payments) {
+        expect(saved).toMatchObject(expectedAuthor);
+        expect(Object.keys(saved).sort()).toEqual(['amount','date','id','method','recordedBy','recordedByName']);
+      }
+    }
+    const viewed=(await get(`/orders/${first.id}`)).body.order;
+    const initial=viewed.payments.find((entry:{method:string})=>entry.method==='BANCOLOMBIA');
+    const corrected=await correct(viewed,initial.id,{amount:20000});
+    expect(corrected.status).toBe(200);
+    expect(corrected.body.order.payments.find((entry:{id:string})=>entry.id===initial.id)).toMatchObject({
+      ...expectedAuthor,amount:20000});
+    expect((await db.query('SELECT recorded_by FROM payments WHERE id=$1',[initial.id])).rows[0].recorded_by)
+      .toBe(recorder.user.id);
   });
 
   it('calcula retenciones automáticas solo sobre FACT mayor de $524.000 y permite ajustar en edición administrativa', async () => {

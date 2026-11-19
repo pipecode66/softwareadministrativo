@@ -81,6 +81,8 @@
 
 72. Autorización expresa posterior del09/11: subir a main el módulo completo de Instalaciones y Administrador de Instaladores para probar directamente en producción. Sustituye la restricción de sólo-local de62/67/71 y sus referencias históricas. Se mantiene el aislamiento funcional y financiero de ambos perfiles. Se deben aplicar015 y016 en Supabase antes de activar el módulo y crear sus cuentas; Vercel no ejecuta migraciones automáticamente. No se autoriza borrar datos ni cambiar consecutivos, y el usuario creará los perfiles. Publicar el código no implica afirmar SQL aplicado ni despliegue productivo verificado.
 
+73. Corrección del18/11: el nombre de quien registró un pago se resuelve en servidor mediante el ID `recorded_by`, incluyendo usuarios inactivos, y se entrega como `recordedByName` dentro de los pagos ya autorizados para ADMINMASTER/ADMIN_GENERAL. La tabla y las tarjetas móviles no dependen del directorio de usuarios del navegador, que Administración general no recibe. La corrección de un pago mantiene su autor original y su auditoría por separado. No se inventan responsables, no se reescriben pagos ni se amplían permisos; no requiere migración y no constituye ampliación comercial.
+
 ## Decisiones sustituidas
 
 - La regla del 15/09 que sumaba retenciones al cobrable fue sustituida por la solicitud del 20/09 para nuevas FACT. Solo se conserva como LEGACY para datos previos.

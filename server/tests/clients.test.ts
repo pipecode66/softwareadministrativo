@@ -282,15 +282,19 @@ describe('Clientes: permisos y sesiones', () => {
     for (const field of ['value', 'reteFuente', 'reteIva', 'ica', 'payments', 'financials', 'certificates']) {
       expect(designOrder).not.toHaveProperty(field);
     }
+    expect(designFirstPage.text).not.toContain('recordedByName');
     expect((await get(`/clients/${created.body.client.id}/orders?page=2&pageSize=1`, designer)).body.hasMore).toBe(false);
 
-    const administrative = await get(`/clients/${created.body.client.id}/orders`);
-    expect(administrative.status).toBe(200);
-    expect(administrative.body).toMatchObject({ total: 2, hasMore: false,
-      summary: { orders: 2, received: 10000, balance: 1204500 } });
-    expect(administrative.body.items.find((item: { id: string }) => item.id === secondId))
-      .toMatchObject({ value: 1000000, payments: [{ amount: 10000, method: 'EFECTIVO' }],
-        financials: { collectible: 1114500, balance: 1104500 } });
+    for(const viewer of [admin,await actorWithRole('ADMIN_GENERAL')]) {
+      const administrative = await get(`/clients/${created.body.client.id}/orders`,viewer);
+      expect(administrative.status).toBe(200);
+      expect(administrative.body).toMatchObject({ total: 2, hasMore: false,
+        summary: { orders: 2, received: 10000, balance: 1204500 } });
+      expect(administrative.body.items.find((item: { id: string }) => item.id === secondId))
+        .toMatchObject({ value: 1000000, payments: [{ amount: 10000, method: 'EFECTIVO',
+          recordedBy:admin.user.id,recordedByName:admin.user.name }],
+          financials: { collectible: 1114500, balance: 1104500 } });
+    }
   });
 
   it.each(['IMPRESION', 'TALLER'] as Role[])('%s no obtiene el directorio ni fichas de contacto', async role => {

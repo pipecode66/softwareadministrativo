@@ -82,7 +82,9 @@ export function visibility(user: { role: Role; id: string }, params: unknown[]):
       OR EXISTS (SELECT 1 FROM order_activities a WHERE a.order_id=o.id AND a.area='WORKSHOP'))`;
 }
 async function paymentsOf(tx: SqlConnection, id: string) {
-  return (await tx.query<PaymentRow>('SELECT * FROM payments WHERE order_id = $1 ORDER BY date, recorded_at, id', [id])).rows;
+  return (await tx.query<PaymentRow>(`SELECT p.*,recorder.name AS recorded_by_name
+    FROM payments p LEFT JOIN users recorder ON recorder.id=p.recorded_by
+    WHERE p.order_id=$1 ORDER BY p.date,p.recorded_at,p.id`, [id])).rows;
 }
 async function lockedOrder(tx: SqlConnection, id: string): Promise<OrderRow> {
   const row = (await tx.query<OrderRow>(`SELECT o.*,c.special_payment,
@@ -531,7 +533,9 @@ export async function listOrders(db: Database, auth: AuthSession, input: ListQue
       FROM orders o JOIN clients c ON c.id=o.client_id JOIN users creator ON creator.id=o.created_by
       WHERE ${where} ORDER BY o.number DESC LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, input.pageSize, (input.page-1)*input.pageSize])).rows;
     const ids = rows.map(row => row.id);
-    const payments = isAdmin(auth.user.role) && ids.length ? (await tx.query<PaymentRow>('SELECT * FROM payments WHERE order_id=ANY($1::uuid[]) ORDER BY date,recorded_at,id', [ids])).rows : [];
+    const payments = isAdmin(auth.user.role) && ids.length ? (await tx.query<PaymentRow>(`SELECT p.*,recorder.name AS recorded_by_name
+      FROM payments p LEFT JOIN users recorder ON recorder.id=p.recorded_by
+      WHERE p.order_id=ANY($1::uuid[]) ORDER BY p.date,p.recorded_at,p.id`, [ids])).rows : [];
     const clientRows = ids.length ? (await tx.query<{ id:string; name:string; created_at:Date|string }>('SELECT DISTINCT c.id,c.name,c.created_at FROM clients c JOIN orders o ON o.client_id=c.id WHERE o.id=ANY($1::uuid[])', [ids])).rows : [];
     return { items: rows.map(row => orderDto(row, payments.filter(p => p.order_id===row.id), auth.user.role,
       row.created_by === auth.user.id)), page: input.page, pageSize: input.pageSize, total,

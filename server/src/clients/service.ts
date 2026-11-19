@@ -86,7 +86,9 @@ export async function listClientOrders(
     const visibleRows = rows.slice(0, input.pageSize);
     const ids = visibleRows.map(row => row.id);
     const payments = administrative && ids.length
-      ? (await tx.query<PaymentRow>('SELECT * FROM payments WHERE order_id=ANY($1::uuid[]) ORDER BY date,recorded_at,id', [ids])).rows
+      ? (await tx.query<PaymentRow>(`SELECT p.*,recorder.name AS recorded_by_name
+        FROM payments p LEFT JOIN users recorder ON recorder.id=p.recorded_by
+        WHERE p.order_id=ANY($1::uuid[]) ORDER BY p.date,p.recorded_at,p.id`, [ids])).rows
       : [];
     const response = {
       items: visibleRows.map(row => orderDto(row, payments.filter(payment => payment.order_id === row.id), auth.user.role, false)),
