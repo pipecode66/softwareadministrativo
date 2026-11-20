@@ -581,8 +581,8 @@ describe('Administration accounts and server-side authorization', () => {
     expect((await get('/users')).body.total).toBe(1);
   });
 
-  it('enforces the 15-active-user cap during concurrent creation and activation', async () => {
-    for (let index = 0; index < 13; index++) await createUser({ email: `cap${index}@example.test` });
+  it('enforces the 20-active-user cap during concurrent creation and activation', async () => {
+    for (let index = 0; index < 18; index++) await createUser({ email: `cap${index}@example.test` });
     const inactive = await createUser({ email: 'inactive@example.test', active: false });
     const responses = await Promise.all([
       patch(`/users/${inactive.id}`).send({ active: true }),
@@ -591,7 +591,7 @@ describe('Administration accounts and server-side authorization', () => {
     expect(responses.filter(response => response.status === 200 || response.status === 201)).toHaveLength(1);
     expect(responses.filter(response => response.status === 409)).toHaveLength(1);
     const count = await db.query<{ count: number }>('SELECT COUNT(*)::integer AS count FROM users WHERE is_active = true');
-    expect(count.rows[0].count).toBe(15);
+    expect(count.rows[0].count).toBe(20);
     const anotherInactive = await createUser({ email: 'another-inactive@example.test', active: false });
     expect(anotherInactive.active).toBe(false);
     expect((await patch(`/users/${anotherInactive.id}`).send({ active: true })).status).toBe(409);

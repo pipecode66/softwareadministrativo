@@ -32,8 +32,8 @@ async function lockAndAuthorize(tx: SqlConnection, auth: AuthSession): Promise<U
 
 async function ensureActiveCapacity(tx: SqlConnection): Promise<void> {
   const result = await tx.query<{ total: string | number }>('SELECT count(*) AS total FROM users WHERE is_active = true');
-  if (Number(result.rows[0].total) >= 15) {
-    throw new ApiError(409, 'ACTIVE_USER_LIMIT', 'Se permiten como máximo 15 usuarios activos.', 'active');
+  if (Number(result.rows[0].total) >= 20) {
+    throw new ApiError(409, 'ACTIVE_USER_LIMIT', 'Se permiten como máximo 20 usuarios activos.', 'active');
   }
 }
 

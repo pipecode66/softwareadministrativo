@@ -85,6 +85,8 @@
 
 74. Solicitud del19/11: ADMINMASTER puede eliminar usuarios desde su formulario de edición, con confirmación independiente de Guardar. Se conserva la edición existente de nombre, correo y rol. La eliminación es lógica mediante017/deleted_at: cuenta oculta e inactiva, sesiones revocadas, login/edición/reactivación/restablecimiento bloqueados. Se conservan ID/nombre/correo históricos para las FK de OT, pagos, eventos, producción y equipos; el correo puede reutilizarse con una identidad nueva sin heredar autoría. No se borran trabajos, abonos, borradores ni se reasignan responsabilidades automáticamente. Las asignaciones ya retenidas se conservan y no se permite asignar trabajo nuevo a una cuenta eliminada. Se protege la cuenta propia y la existencia de Adminmaster activo. El cambio se publica en main; el usuario aplica017 manualmente. La eliminación es1 ampliación significativa y la edición preexistente no se cuenta de nuevo.
 
+75. Solicitud del 20/11: ampliar el cupo de 15 a 20 cuentas activas. Se aplica al crear y reactivar usuarios en servidor/adaptador local y al contador de Usuarios; las cuentas inactivas/eliminadas no ocupan cupo. El límite de integrantes de instalaciones/equipos se alinea con 20. No se agregan tipos de rol ni se modifican permisos. No requiere SQL; se publica en main. Es un ajuste menor de configuración, sin incremento de cambios significativos.
+
 ## Decisiones sustituidas
 
 - La regla del 15/09 que sumaba retenciones al cobrable fue sustituida por la solicitud del 20/09 para nuevas FACT. Solo se conserva como LEGACY para datos previos.

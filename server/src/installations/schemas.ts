@@ -4,7 +4,7 @@ export const installationStatuses = ['PENDING','ASSIGNED','IN_PROGRESS','PAUSED'
 const instant = z.iso.datetime({ offset: true });
 const reason = z.string().trim().min(1, 'Escribe el motivo.').max(2000);
 const common = { requestId: z.uuid(), version: z.number().int().positive() };
-const memberIds = z.array(z.uuid()).min(1).max(15).refine(ids=>new Set(ids).size===ids.length,'No repitas instaladores.');
+const memberIds = z.array(z.uuid()).min(1).max(20).refine(ids=>new Set(ids).size===ids.length,'No repitas instaladores.');
 const assignment={installerId:z.uuid().optional(),installerIds:memberIds.optional(),teamId:z.uuid().optional()};
 export const locationSchema = z.object({
   latitude: z.number().finite().min(-90).max(90),

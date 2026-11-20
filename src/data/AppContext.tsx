@@ -373,7 +373,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!input.name.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim()) || !(input.role in ROLE_LABELS)) throw new Error('Completa nombre, correo y perfil válidos.');
       if (id && !current.users.some(u => u.id === id && !u.deletedAt)) throw new Error('No encontramos este usuario.');
       if (current.users.some(u => !u.deletedAt && u.email.toLowerCase() === input.email.trim().toLowerCase() && u.id !== id)) throw new Error('Este correo ya está registrado.');
-      if (input.active && current.users.filter(u => u.active && u.id !== id).length >= 15) throw new Error('La empresa puede tener hasta 15 usuarios activos.');
+      if (input.active && current.users.filter(u => u.active && u.id !== id).length >= 20) throw new Error('La empresa puede tener hasta 20 usuarios activos.');
       if (id === account.id && (!input.active || input.role !== 'ADMINMASTER')) throw new Error('No puedes desactivar tu propio acceso ni cambiar tu perfil.');
       const next: User = { id: id || crypto.randomUUID(), name: input.name.trim(), email: input.email.trim().toLowerCase(), role: input.role, active: input.active };
       commit({ ...current, users: id ? current.users.map(u => u.id === id ? next : u) : [...current.users, next] });

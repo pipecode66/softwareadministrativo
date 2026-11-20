@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Intermedios Gestión centraliza clientes, ventas, cartera y producción publicitaria para una sola sede y hasta 15 usuarios. Los roles son ADMINMASTER, ADMIN_GENERAL, APOYO_COMERCIAL, DISENO, IMPRESION, TALLER, INSTALADOR y ADMIN_INSTALADORES. Las fuentes de Downloads y el PDF son referencias de solo lectura; las instrucciones directas del usuario prevalecen.
+Intermedios Gestión centraliza clientes, ventas, cartera y producción publicitaria para una sola sede y hasta 20 usuarios activos (cupo ampliado por el usuario el 20/11). Los roles son ADMINMASTER, ADMIN_GENERAL, APOYO_COMERCIAL, DISENO, IMPRESION, TALLER, INSTALADOR y ADMIN_INSTALADORES. Las fuentes de Downloads y el PDF son referencias de solo lectura; las instrucciones directas del usuario prevalecen.
 
 ## Gestión de usuarios
 

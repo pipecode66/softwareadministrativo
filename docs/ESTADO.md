@@ -1,8 +1,12 @@
 # Estado de continuidad
 
-Actualizado: 2026-11-19.
+Actualizado: 2026-11-20.
 
 ## Estado actual
+
+**Cupo de 20 usuarios activos — 20/11.** El usuario pidió ampliar el límite de 15 a 20 cuentas. Actualizados el límite del servidor al crear/reactivar, su mensaje, la validación del adaptador local y el contador/cupos disponibles en Usuarios. El máximo de integrantes de equipos/instalaciones se alinea con 20; los tipos de rol y permisos se conservan. No requiere migración SQL ni cambia usuarios existentes. La 017 sigue pendiente de confirmación para la función de eliminar cuentas; este aumento de cupo funciona sin ella. Verificación aprobada: 81/81 pruebas de acceso, typechecks/builds de ambos proyectos y 2 recorridos de navegador del adaptador local (alta/duplicados/protección propia y cupo de 20/rechazo de la 21/inactivos). La prueba de servidor también comprueba creación/reactivación concurrentes sin superar 20. Resultados en `test-results/users-capacity-20` (ignorado por git). Se publica por commit/push a main conforme a la instrucción vigente; consultar git log para hash. Ajuste menor: acumulado 64 cambios/36 significativos; no se considera una ampliación significativa adicional. No se consultaron ni crearon cuentas productivas; despliegue remoto no comprobado en este tramo.
+
+Archivos: `server/src/{users/service.ts,installations/schemas.ts}`, `server/tests/access.test.ts`, `src/{data/AppContext.tsx,pages/Users.tsx}`, `tests/frontend.spec.ts` y continuidad. Para retomar: `git status --short --branch` y leer este apartado; no ejecutar SQL ni crear cuentas reales para verificar el cupo desde este entorno.
 
 **Edición y eliminación de usuarios — 19/11.** Nueva petición: permitir eliminar cuentas desde Editar usuario, sólo para ADMINMASTER, y verificar edición de nombre/correo/rol. La edición de esos campos ya estaba implementada y se conserva. Se añade botón Eliminar usuario con confirmación dentro del mismo formulario, cuenta y correo identificados; cancelar no elimina y guardar una edición no ejecuta el borrado. La eliminación retira la cuenta del listado, cierra sus sesiones, bloquea login/edición/restablecimiento y libera el correo para otra cuenta con ID nuevo. Se conserva la identidad original para no perder autores de OT, pagos, historial ni asignaciones existentes. No se borran documentos, abonos, borradores, trabajos ni consecutivos, ni se reasigna trabajo automáticamente. No se puede borrar la propia cuenta ni dejar a la empresa sin Adminmaster activo.
 

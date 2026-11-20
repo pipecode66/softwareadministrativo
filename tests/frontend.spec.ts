@@ -580,7 +580,7 @@ test('usuarios: alta local, duplicado, cancelar y protección de la cuenta propi
   await dialog.getByLabel('Perfil', { exact: true }).selectOption('IMPRESION');
   await dialog.getByRole('button', { name: 'Guardar usuario' }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator('.kpi-card').filter({ hasText: 'Usuarios activos' })).toContainText('6 / 15');
+  await expect(page.locator('.kpi-card').filter({ hasText: 'Usuarios activos' })).toContainText('6 / 20');
   await page.getByRole('button', { name: 'Nuevo usuario', exact: true }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByLabel('Nombre', { exact: true }).fill('Duplicado');
@@ -588,7 +588,7 @@ test('usuarios: alta local, duplicado, cancelar y protección de la cuenta propi
   await dialog.getByRole('button', { name: 'Guardar usuario' }).click();
   await expect(dialog.getByRole('alert')).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
-  await expect(page.locator('.kpi-card').filter({ hasText: 'Usuarios activos' })).toContainText('6 / 15');
+  await expect(page.locator('.kpi-card').filter({ hasText: 'Usuarios activos' })).toContainText('6 / 20');
   await page.getByRole('row').filter({ hasText: 'adminmaster@intermedios.local' }).getByRole('button', { name: 'Editar', exact: true }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByRole('checkbox', { name: 'Usuario activo' }).uncheck();
@@ -646,10 +646,10 @@ test('regresión móvil: nombre de cliente de 115 caracteres sin espacios no des
   }
 });
 
-test('límite de 15 usuarios activos y rechazo del acceso de una cuenta inactiva', async ({ page }) => {
+test('límite de 20 usuarios activos y rechazo del acceso de una cuenta inactiva', async ({ page }) => {
   await login(page);
   await page.goto('/settings/users');
-  for (let index = 1; index <= 10; index++) {
+  for (let index = 1; index <= 15; index++) {
     await page.getByRole('button', { name: 'Nuevo usuario', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Nombre', { exact: true }).fill(`Operador de prueba ${index}`);
@@ -658,20 +658,20 @@ test('límite de 15 usuarios activos y rechazo del acceso de una cuenta inactiva
     await dialog.getByRole('button', { name: 'Guardar usuario', exact: true }).click();
     await expect(dialog).toHaveCount(0);
   }
-  await expect(page.locator('.kpi-card').filter({ hasText: 'Usuarios activos' })).toContainText('15 / 15');
+  await expect(page.locator('.kpi-card').filter({ hasText: 'Usuarios activos' })).toContainText('20 / 20');
   await page.getByRole('button', { name: 'Nuevo usuario', exact: true }).click();
   let dialog = page.getByRole('dialog');
-  await dialog.getByLabel('Nombre', { exact: true }).fill('Usuario dieciséis');
-  await dialog.getByLabel('Correo', { exact: true }).fill('limite16@intermedios.local');
+  await dialog.getByLabel('Nombre', { exact: true }).fill('Usuario veintiuno');
+  await dialog.getByLabel('Correo', { exact: true }).fill('limite21@intermedios.local');
   await dialog.getByRole('button', { name: 'Guardar usuario', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('15');
+  await expect(dialog.getByRole('alert')).toContainText('20');
   await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
   await page.getByRole('row').filter({ hasText: 'limite10@intermedios.local' }).getByRole('button', { name: 'Editar', exact: true }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByRole('checkbox', { name: 'Usuario activo' }).uncheck();
   await dialog.getByRole('button', { name: 'Guardar usuario', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator('.kpi-card').filter({ hasText: 'Usuarios activos' })).toContainText('14 / 15');
+  await expect(page.locator('.kpi-card').filter({ hasText: 'Usuarios activos' })).toContainText('19 / 20');
   await page.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel('Usuario o correo', { exact: true }).fill('limite10@intermedios.local');
